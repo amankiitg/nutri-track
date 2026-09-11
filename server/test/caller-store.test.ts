@@ -54,7 +54,11 @@ function fakeClient(recorded: Recorded, options: FakeOptions = {}) {
     },
     // `await builder` for the count query, which is not finished by maybeSingle.
     then: (resolve: (value: unknown) => unknown) =>
-      resolve({ count: options.count ?? 0, data: options.rows ?? null, error: options.error ?? null }),
+      resolve({
+        count: options.count ?? 0,
+        data: options.rows ?? null,
+        error: options.error ?? null,
+      }),
   };
 
   const client = {
@@ -145,7 +149,10 @@ describe("recordCall", () => {
 describe("timeZone", () => {
   it("filters profiles by user_id, which is its primary key", async () => {
     const recorded = newRecording();
-    const store = createCallerStore(fakeClient(recorded, { timeZoneRow: { timezone: "Europe/Berlin" } }), "user-1");
+    const store = createCallerStore(
+      fakeClient(recorded, { timeZoneRow: { timezone: "Europe/Berlin" } }),
+      "user-1",
+    );
 
     expect(await store.timeZone()).toBe("Europe/Berlin");
     expect(recorded.table).toBe("profiles");

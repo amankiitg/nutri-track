@@ -52,8 +52,8 @@ function TodayPage() {
       {/* The capture button is in the shell, so it is on this screen and every other
           authenticated one. Meal summaries belong here once the review screen lands. */}
       <p className="animate-rise rounded-2xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-        Tap <span className="font-semibold text-foreground">+</span> to log a meal by photo,
-        voice or text.
+        Tap <span className="font-semibold text-foreground">+</span> to log a meal by photo, voice
+        or text.
       </p>
     </div>
   );
