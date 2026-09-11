@@ -268,6 +268,7 @@ src/                           The browser app
     ui/                        shadcn/ui primitives
   lib/
     targets.ts                 BMR/TDEE/macro maths (pure, unit-tested)
+    dashboard.ts               Today's RPC calls and its presentation logic
     profile.ts                 Profile + target persistence
     onboarding.ts              Form state, Zod validation, draft persistence
   integrations/supabase/       Supabase clients (browser, server, auth middleware)
@@ -291,8 +292,40 @@ server/                        The parse-meal service (Express 5, deployed to Re
   scripts/sweep-orphan-photos.ts  The cron entry point
   scripts/smoke-gemini.ts      One real model call, run by hand
 
-supabase/migrations/           Postgres schema, RLS and views
+supabase/migrations/           Postgres schema, RLS, views and the dashboard functions
 ```
+
+### The Today dashboard
+
+A calorie ring, macro bars, a trailing-7-day verdict and the day's meal timeline with
+swipe-to-delete and undo, plus a quick weight entry.
+
+**Every number comes from a Postgres function**, not from the browser. A "day" is a day in
+the _profile's_ timezone, and the trailing window has to include the days on which nothing
+was logged — which is exactly what summing "the rows that came back" gets wrong. The
+functions read `daily_summaries` and keep RLS in force (`security invoker`):
+
+| Function                    | Returns                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| `daily_totals(date)`        | Today's totals, target, remaining and status                   |
+| `trailing_days(date, days)` | One row per day in the window, including empty ones            |
+| `week_verdict(date, days)`  | One row: the averages and the verdict                          |
+| `meals_for_day(date)`       | The day's meals with their items and per-meal totals, as jsonb |
+
+Two things about it are deliberate and easy to mistake for bugs:
+
+- **An unlogged day has a null `status`**, not `under`. `calorie_status(0, target)` is
+  "under" by arithmetic and a lie in English.
+- **The verdict only averages days that have both a meal and a target.** Averaging intake
+  over days-with-food against a target averaged over days-with-a-target mixes two different
+  spans, and on a new account that produced a confident `on_track` from four days of food
+  and one day of target. `days_judged` is reported separately from `days_logged` so the
+  sentence can be honest about its own sample, and too small a sample says so.
+
+Deleting from the timeline is a **soft delete** (`meals.deleted_at`), which is what makes
+undo possible and what takes the meal out of every total, since `daily_summaries` filters
+on it. The photos are deliberately kept: the row still names them, so the sweeper leaves
+them alone. See the note in AGENTS.md — a deleted meal's photos persist indefinitely.
 
 ## Conventions
 

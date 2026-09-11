@@ -1,7 +1,25 @@
+import { useState } from "react";
 import { createFileRoute, getRouteApi } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { fetchCurrentTarget, type Target } from "@/lib/profile";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CalorieRing } from "@/components/dashboard/CalorieRing";
+import { MacroBars, VerdictLine } from "@/components/dashboard/MacroBars";
+import { MealTimeline } from "@/components/dashboard/MealTimeline";
+import { WeightEntry } from "@/components/dashboard/WeightEntry";
+import { localDateString } from "@/lib/profile";
+import {
+  VERDICT_DAYS,
+  deleteMeal,
+  fetchDailyTotals,
+  fetchRecentWeights,
+  fetchTimeline,
+  fetchWeekVerdict,
+  logWeight,
+  mealTypeLabel,
+  restoreMeal,
+  type TimelineMeal,
+} from "@/lib/dashboard";
 
 const parentApi = getRouteApi("/_authenticated");
 
@@ -13,11 +31,89 @@ function TodayPage() {
   const { profile } = parentApi.useRouteContext();
   const userId = profile?.user_id ?? "";
   const timeZone = profile?.timezone ?? "UTC";
+  const unitSystem = profile?.units ?? "metric";
 
-  const target = useQuery<Target | null>({
-    queryKey: ["current-target", userId, timeZone],
-    queryFn: () => fetchCurrentTarget(userId, timeZone),
-    enabled: userId !== "",
+  // The profile's local date, not the device's. Every function on the other side
+  // resolves the day the same way, so the totals, the verdict and the timeline all
+  // agree about which day "today" is.
+  const today = localDateString(timeZone);
+  const [busyMealId, setBusyMealId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const enabled = userId !== "";
+
+  const totals = useQuery({
+    queryKey: ["daily-totals", userId, today],
+    queryFn: () => fetchDailyTotals(today),
+    enabled,
+  });
+
+  const verdict = useQuery({
+    queryKey: ["week-verdict", userId, today, VERDICT_DAYS],
+    queryFn: () => fetchWeekVerdict(today, VERDICT_DAYS),
+    enabled,
+  });
+
+  const timeline = useQuery({
+    queryKey: ["timeline", userId, today],
+    queryFn: () => fetchTimeline(today),
+    enabled,
+  });
+
+  const weights = useQuery({
+    queryKey: ["weights", userId],
+    queryFn: () => fetchRecentWeights(2),
+    enabled,
+  });
+
+  function refreshDay(): void {
+    void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
+    void queryClient.invalidateQueries({ queryKey: ["timeline"] });
+    void queryClient.invalidateQueries({ queryKey: ["week-verdict"] });
+  }
+
+  const remove = useMutation({
+    mutationFn: (meal: TimelineMeal) => deleteMeal(meal.id),
+    onMutate: (meal) => setBusyMealId(meal.id),
+    onSuccess: (_result, meal) => {
+      refreshDay();
+      // The undo lives in the toast rather than as a pending state on the row: the
+      // delete has already happened on the server, so the honest offer is to reverse
+      // it, not to pretend it has not happened yet.
+      toast(`${mealTypeLabel(meal.meal_type)} removed`, {
+        duration: 10000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void restoreMeal(meal.id)
+              .then(() => {
+                refreshDay();
+                toast.success("Meal restored");
+              })
+              .catch((error: unknown) => {
+                toast.error(
+                  error instanceof Error ? error.message : "Could not restore that meal.",
+                );
+              });
+          },
+        },
+      });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "Could not remove that meal.");
+    },
+    onSettled: () => setBusyMealId(null),
+  });
+
+  const saveWeight = useMutation({
+    mutationFn: (weightKg: number) => logWeight({ userId, date: today, weightKg }),
+    onSuccess: () => {
+      toast.success("Weight recorded");
+      void queryClient.invalidateQueries({ queryKey: ["weights"] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "Could not save that weight.");
+    },
   });
 
   return (
@@ -27,64 +123,58 @@ function TodayPage() {
         <h1 className="text-3xl font-semibold">{profile?.display_name ?? "there"}</h1>
       </header>
 
-      <Card className="card-soft animate-rise">
-        <CardHeader>
-          <CardTitle className="text-base">Today's target</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {target.isPending && (
-            <p className="text-sm text-muted-foreground">Loading your target…</p>
-          )}
-          {target.isError && (
+      {totals.isPending && (
+        <Card className="card-soft">
+          <CardContent className="py-6">
+            <p className="text-sm text-muted-foreground">Loading today…</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {totals.isError && (
+        <Card className="card-soft">
+          <CardContent className="py-6">
             <p role="alert" className="text-sm text-destructive">
-              Could not load your target. Pull to refresh or try again shortly.
+              Could not load today. Pull to refresh or try again shortly.
             </p>
-          )}
-          {target.isSuccess && !target.data && (
-            <p className="text-sm text-muted-foreground">
-              You don't have a target yet. Finish onboarding to set one.
-            </p>
-          )}
-          {target.isSuccess && target.data && <TargetSummary target={target.data} />}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* The capture button is in the shell, so it is on this screen and every other
-          authenticated one. Meal summaries belong here once the review screen lands. */}
-      <p className="animate-rise rounded-2xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-        Tap <span className="font-semibold text-foreground">+</span> to log a meal by photo, voice
-        or text.
-      </p>
-    </div>
-  );
-}
+      {totals.isSuccess && (
+        <>
+          <Card className="card-soft animate-rise">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Calories</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-6">
+              <CalorieRing consumed={totals.data.calories} target={totals.data.target_calories} />
+            </CardContent>
+          </Card>
 
-function TargetSummary({ target }: { target: Target }) {
-  return (
-    <div className="space-y-4">
-      <p className="text-4xl font-semibold tabular-nums">
-        {target.calories.toLocaleString()}
-        <span className="ml-2 text-base font-normal text-muted-foreground">kcal</span>
-      </p>
-      <dl className="grid grid-cols-3 gap-3 text-sm">
-        {[
-          { label: "Protein", value: target.protein_g },
-          { label: "Carbs", value: target.carbs_g },
-          { label: "Fat", value: target.fat_g },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl bg-secondary/60 px-3 py-2">
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-lg font-medium tabular-nums">{Math.round(Number(value))} g</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="text-xs text-muted-foreground">
-        Effective from{" "}
-        <time dateTime={target.effective_from}>
-          {new Date(`${target.effective_from}T00:00:00`).toLocaleDateString()}
-        </time>
-        .
-      </p>
+          <MacroBars totals={totals.data} />
+        </>
+      )}
+
+      {verdict.isSuccess && <VerdictLine verdict={verdict.data} />}
+
+      {weights.isSuccess && (
+        <WeightEntry
+          entries={weights.data}
+          unitSystem={unitSystem}
+          saving={saveWeight.isPending}
+          onSave={(weightKg) => saveWeight.mutate(weightKg)}
+        />
+      )}
+
+      {timeline.isSuccess && (
+        <MealTimeline
+          meals={timeline.data}
+          timeZone={timeZone}
+          busyId={busyMealId}
+          onDelete={(meal) => remove.mutate(meal)}
+        />
+      )}
     </div>
   );
 }

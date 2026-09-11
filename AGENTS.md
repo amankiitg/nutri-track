@@ -80,6 +80,13 @@ npm test
   which moves a meal total by 150+ kcal. The same relative error on a salad moves it by ~35.
   The review screen is the mitigation: that is what it is for. Do not tune the prompt to a
   single photo.
+- **A deleted meal keeps its photos, indefinitely.** The timeline's delete is a soft delete
+  (`meals.deleted_at`), because the undo has to be able to put the meal back, so the row
+  keeps naming its photos and the sweeper therefore never touches them. Delete then delete
+  again is the only way to lose them. Accepted knowingly: the alternative is an undo that
+  cannot work, or a retention rule that hard-deletes soft-deleted meals after N days. If
+  photo storage ever becomes a problem, that retention rule is the fix, not a change to
+  what the sweeper protects.
 
 ## Layout and conventions
 
@@ -88,6 +95,14 @@ npm test
   nesting under `auth.tsx`, which would otherwise need to render an `<Outlet />`).
 - `src/lib/targets.ts` — all BMR/TDEE/macro maths. Pure functions, unit-tested against a
   worked example. Do not reimplement this maths anywhere else.
+- `src/lib/dashboard.ts` — the Today dashboard's RPC calls and the pure presentation logic
+  behind the ring, the macro bars and the verdict sentence. It sums nothing: every total,
+  average and count comes from a Postgres function over `daily_summaries`, because a day is
+  a day in the profile's timezone and a trailing window has to include the days with no
+  meals. Those functions are in `20260911160000_today_dashboard_functions.sql` and
+  `20260911161000_dashboard_verdict_and_empty_days.sql`. `daily_totals` and `trailing_days`
+  return a null `status` for a day with nothing logged: an unlogged day is unknown, not
+  "under".
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
 - `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's

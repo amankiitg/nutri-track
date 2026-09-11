@@ -10,6 +10,7 @@
  * it came from, because the service wants to know whether the words were spoken.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Camera, ImagePlus, Loader2, Mic, Keyboard, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -102,6 +103,7 @@ export function CaptureSheet({
   const [tab, setTab] = useState("photo");
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [text, setText] = useState("");
+  const queryClient = useQueryClient();
   // "text" is the service's name for typed input; "type" is only this tab's id.
   const [textOrigin, setTextOrigin] = useState<"voice" | "text">("text");
   const [notes, setNotes] = useState("");
@@ -463,6 +465,11 @@ export function CaptureSheet({
     unsavedUploads.current = { paths: [], hashes: [], fingerprint: null };
     reset();
     onOpenChange(false);
+    // The sheet is on every authenticated screen, so the data it just changed could be
+    // on screen behind it: today's totals, the timeline, the week's verdict. Everything
+    // is invalidated rather than naming keys, because the sheet does not know which
+    // screen it was opened from and a stale ring is worse than one extra request.
+    void queryClient.invalidateQueries();
   }
 
   const canSubmit = photos.length > 0 || text.trim() !== "";
