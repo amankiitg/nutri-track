@@ -199,19 +199,44 @@ function deepestIssue(issue: z.ZodIssue): { path: string; message: string } {
 
 /** Parses the raw model text. Never throws: the caller decides whether to retry. */
 export function parseModelResponse(raw: string): ParseModelResult {
+  const result = classifyModelResponse(raw);
+  return result.ok ? result : { ok: false, error: result.error };
+}
+
+export type ParseFailureReason =
+  /** The reply was not JSON at all — often prose, or a markdown code fence. */
+  | "not_json"
+  /** It was JSON, but not the shape the contract promised. */
+  | "schema";
+
+export type ClassifiedModelResult =
+  { ok: true; items: MealItemDraft[] } | { ok: false; reason: ParseFailureReason; error: string };
+
+/**
+ * As `parseModelResponse`, but says *how* it failed. The service needs that: the
+ * retry it sends depends on whether the model failed to produce JSON or produced
+ * JSON of the wrong shape, and the two are worth separating in `llm_calls`.
+ */
+export function classifyModelResponse(raw: string): ClassifiedModelResult {
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    return { ok: false, error: "response was not valid JSON" };
+    return { ok: false, reason: "not_json", error: "response was not valid JSON" };
   }
 
   const parsed = modelResponseSchema.safeParse(json);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    if (first === undefined) return { ok: false, error: "response did not match the schema" };
+    if (first === undefined) {
+      return { ok: false, reason: "schema", error: "response did not match the schema" };
+    }
     const issue = deepestIssue(first);
-    return { ok: false, error: `${issue.path === "" ? "response" : issue.path}: ${issue.message}` };
+    return {
+      ok: false,
+      reason: "schema",
+      error: `${issue.path === "" ? "response" : issue.path}: ${issue.message}`,
+    };
   }
 
   return { ok: true, items: normalizeItems(parsed.data.items) };

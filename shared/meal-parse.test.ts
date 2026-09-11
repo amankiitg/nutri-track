@@ -2,6 +2,7 @@
 // Node, not jsdom: `crypto.subtle` is needed for the hashing tests.
 import { describe, expect, it } from "vitest";
 import {
+  classifyModelResponse,
   confidenceBand,
   guessMealType,
   macroCalories,
@@ -194,6 +195,43 @@ describe("normalizeItem sanity checks", () => {
     expect(item.carbs_g).toBe(7.3);
     expect(item.fat_g).toBe(3.3);
     expect(item.confidence).toBe(0.78);
+  });
+});
+
+describe("classifyModelResponse", () => {
+  it("separates prose from JSON of the wrong shape", () => {
+    // The service sends a different retry for each, so the distinction matters.
+    expect(classifyModelResponse("Sure! Here you go:")).toMatchObject({
+      ok: false,
+      reason: "not_json",
+    });
+    expect(classifyModelResponse(JSON.stringify({ items: [{ calories: 1 }] }))).toMatchObject({
+      ok: false,
+      reason: "schema",
+    });
+  });
+
+  it("keeps the error text parseModelResponse reports", () => {
+    const raw = "I think it was toast.";
+    const classified = classifyModelResponse(raw);
+    const parsed = parseModelResponse(raw);
+    expect(parsed.ok).toBe(false);
+    expect(classified.ok).toBe(false);
+    if (classified.ok || parsed.ok) throw new Error("expected both to fail");
+    expect(classified.error).toBe(parsed.error);
+  });
+
+  it("returns exactly what parseModelResponse returns when it succeeds", () => {
+    const raw = JSON.stringify({ items: [FULL_ITEM] });
+    const classified = classifyModelResponse(raw);
+    const parsed = parseModelResponse(raw);
+    expect(classified).toEqual(parsed);
+    expect(classified.ok).toBe(true);
+  });
+
+  it("does not carry a reason when it succeeds", () => {
+    const classified = classifyModelResponse(JSON.stringify({ items: [] }));
+    expect(classified).toEqual({ ok: true, items: [] });
   });
 });
 
