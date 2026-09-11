@@ -10,7 +10,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { modelContractSchema, parseModelResponse } from "../../shared/meal-parse";
-import { UnsupportedZodTypeError, zodToResponseSchema, type ResponseSchema } from "../src/response-schema";
+import {
+  UnsupportedZodTypeError,
+  zodToResponseSchema,
+  type ResponseSchema,
+} from "../src/response-schema";
 
 describe("zodToResponseSchema", () => {
   const schema = zodToResponseSchema(modelContractSchema);
