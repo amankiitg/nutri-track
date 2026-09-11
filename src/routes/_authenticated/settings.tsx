@@ -15,10 +15,11 @@ function SettingsPage() {
   const { profile } = parentApi.useRouteContext();
   const queryClient = useQueryClient();
   const userId = profile?.user_id ?? "";
+  const timeZone = profile?.timezone ?? "UTC";
 
   const target = useQuery<Target | null>({
-    queryKey: ["current-target", userId],
-    queryFn: () => fetchCurrentTarget(userId),
+    queryKey: ["current-target", userId, timeZone],
+    queryFn: () => fetchCurrentTarget(userId, timeZone),
     enabled: userId !== "",
   });
 
@@ -73,7 +74,7 @@ function SettingsPage() {
       <ProfileForm
         profile={profile}
         onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: ["current-target", userId] });
+          void queryClient.invalidateQueries({ queryKey: ["current-target"] });
           toast.success("Profile saved. Your new targets start today.");
         }}
       />

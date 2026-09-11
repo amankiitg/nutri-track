@@ -28,12 +28,20 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data;
 }
 
-export async function fetchCurrentTarget(userId: string): Promise<Target | null> {
+/**
+ * The target in force for `timeZone` on the current day.
+ *
+ * The zone must be the profile's, not the device's: `daily_summaries` resolves
+ * each day in the profile's zone and `saveProfileWithTargets` writes
+ * `effective_from` in it, so reading with a different zone can pick the wrong
+ * row just after local midnight.
+ */
+export async function fetchCurrentTarget(userId: string, timeZone: string): Promise<Target | null> {
   const { data, error } = await supabase
     .from("targets")
     .select("*")
     .eq("user_id", userId)
-    .lte("effective_from", localDateString())
+    .lte("effective_from", localDateString(timeZone))
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle();

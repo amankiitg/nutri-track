@@ -14,10 +14,11 @@ export const Route = createFileRoute("/_authenticated/today")({
 function TodayPage() {
   const { profile } = parentApi.useRouteContext();
   const userId = profile?.user_id ?? "";
+  const timeZone = profile?.timezone ?? "UTC";
 
   const target = useQuery<Target | null>({
-    queryKey: ["current-target", userId],
-    queryFn: () => fetchCurrentTarget(userId),
+    queryKey: ["current-target", userId, timeZone],
+    queryFn: () => fetchCurrentTarget(userId, timeZone),
     enabled: userId !== "",
   });
 
