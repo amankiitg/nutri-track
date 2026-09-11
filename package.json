@@ -7,6 +7,9 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:cloudflare": "VITE_PARSE_MEAL_URL=https://nutritrack-parse-meal.onrender.com/parse-meal vite build",
+    "deploy": "npm run build:cloudflare && wrangler deploy",
+    "preview:cloudflare": "wrangler dev",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts",
@@ -98,6 +101,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.1"
   }
 }

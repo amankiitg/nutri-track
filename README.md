@@ -107,18 +107,21 @@ Every table must have Row Level Security enabled and a policy of the form
 
 ## Everyday commands
 
-| Command               | What it does                                         |
-| --------------------- | ---------------------------------------------------- |
-| `npm run dev`         | Dev server on <http://localhost:8080>                |
-| `npm run build`       | Production build (client + SSR bundle via Nitro)     |
-| `npm run typecheck`   | `tsc --noEmit` — TypeScript strict mode              |
-| `npm test`            | Vitest (unit + component tests, jsdom)               |
-| `npm run test:server` | Vitest (node) for the `server/` service              |
-| `npm run smoke`       | One real Gemini call on a real image (spends tokens) |
-| `npm run sweep`       | Orphan-photo sweeper, dry run                        |
-| `npm run sweep:live`  | Orphan-photo sweeper, actually deleting              |
-| `npm run lint`        | ESLint                                               |
-| `npm run format`      | Prettier across the repo                             |
+| Command                      | What it does                                         |
+| ---------------------------- | ---------------------------------------------------- |
+| `npm run dev`                | Dev server on <http://localhost:8080>                |
+| `npm run build`              | Production build (client + SSR bundle via Nitro)     |
+| `npm run build:cloudflare`   | Production build with the deployed parse-meal URL    |
+| `npm run deploy`             | Build for production, then `wrangler deploy`         |
+| `npm run preview:cloudflare` | Serve the built Worker locally under workerd         |
+| `npm run typecheck`          | `tsc --noEmit` — TypeScript strict mode              |
+| `npm test`                   | Vitest (unit + component tests, jsdom)               |
+| `npm run test:server`        | Vitest (node) for the `server/` service              |
+| `npm run smoke`              | One real Gemini call on a real image (spends tokens) |
+| `npm run sweep`              | Orphan-photo sweeper, dry run                        |
+| `npm run sweep:live`         | Orphan-photo sweeper, actually deleting              |
+| `npm run lint`               | ESLint                                               |
+| `npm run format`             | Prettier across the repo                             |
 
 The build targets **Cloudflare Workers** by default (Nitro's `cloudflare-module` preset,
 configured in `vite.config.ts`). To self-host the SSR bundle instead, change the preset to
@@ -274,7 +277,7 @@ APIs & Services → Credentials → your OAuth 2.0 Client:
 A missing origin here fails as `origin_mismatch` or `redirect_uri_mismatch` from Google,
 not as an app error.
 
-#### 4. The frontend
+#### 4. The frontend — Cloudflare Workers
 
 The build already targets **Cloudflare Workers** (Nitro's `cloudflare-module` preset in
 `vite.config.ts`), so Cloudflare is the path of least resistance: no build changes, a
@@ -283,8 +286,28 @@ works too but needs the preset changed, either to `node-server` (which serves th
 bundle as a Node service) or to `static` — which would make `src/server.ts`, the SSR
 error wrapper, dead code.
 
-**The `VITE_*` values are inlined at build time.** Vite bakes them into the bundle, so
-the frontend host needs all three in its build environment, not just at runtime:
+**You do not hand-write a wrangler config.** The preset generates one on every build, at
+`.output/server/wrangler.json`, containing `main`, `assets` (bound as `ASSETS`),
+`compatibility_flags: ["nodejs_compat"]`, `no_bundle` and the ESM rules the Nitro output
+needs. It also writes `.wrangler/deploy/config.json`, a pointer that makes a bare
+`wrangler deploy` from the repository root use that generated file — which is why the
+command below has no `--config` or `--cwd`. Adding a root `wrangler.toml` would be a
+second copy of generated truth, and Nitro _ignores_ any `main` or `assets` set by hand
+(with a warning), so the only field worth stating is the Worker name, which
+`vite.config.ts` pins to `nutritrack`. Unpinned, Nitro derives it from the git remote,
+and that name determines the origin Supabase and Google are pinned to.
+
+```sh
+wrangler login
+npm run deploy          # builds for production, then wrangler deploy
+npm run preview:cloudflare   # runs the built Worker locally under workerd
+```
+
+`.output` and `.wrangler` are both gitignored: they are build products, regenerated
+every time.
+
+**The `VITE_*` values are inlined at build time**, so they must be right _when the build
+runs_, not when the Worker serves.
 
 | Key                             | Value                                                   |
 | ------------------------------- | ------------------------------------------------------- |
@@ -292,10 +315,24 @@ the frontend host needs all three in its build environment, not just at runtime:
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value                            |
 | `VITE_PARSE_MEAL_URL`           | `https://nutritrack-parse-meal.onrender.com/parse-meal` |
 
-A missing or stale `VITE_PARSE_MEAL_URL` is the one way a `localhost` value can reach
-production: the bundle would post to a port on the phone. Nothing else can — `.env` is
-gitignored, only `server/` is uploaded to Render, and `loadRootEnvFile()` returns null
-there, so the dashboard's variables are authoritative.
+`npm run build:cloudflare` supplies the production `VITE_PARSE_MEAL_URL` inline, so the
+repository's `.env` can keep pointing at `http://localhost:8787/parse-meal` for local
+development. That is the whole reason the two are separate commands: one `.env` cannot
+serve both, and Vite's `process.env` wins over `.env`, so the inline value takes effect
+without editing the file. (A host that builds from git would instead need the three values
+in its own build environment.)
+
+`vite.config.ts` **refuses to build for production** with a missing, `localhost`, or
+non-`https` parse-meal URL. Nothing downstream could catch that afterwards — the request
+fails identically to the service being down — so the build is the last point at which it
+is still visible. `npm run build` with `.env` as shipped therefore fails on purpose, and
+says which command to use instead.
+
+Finally, once the frontend has an origin, **add it to `ALLOWED_ORIGINS` on the Render
+service**. Verified behaviour: a request from an origin not on that list is refused with
+`403` and no `Access-Control-Allow-Origin` header, so every parse request from the
+deployed app fails until this is done — and it looks like the service being down rather
+than like a CORS policy.
 
 A custom domain is worth the five minutes: a stable origin is what Supabase's Site URL
 and Google's authorized origins are pinned to, and a `*.workers.dev` subdomain is a

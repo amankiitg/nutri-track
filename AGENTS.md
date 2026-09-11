@@ -138,9 +138,18 @@ npm test
   installs in this repo (root for `shared/`, `server/` for the service) are different copies
   and `instanceof` is false across them.
 - Aggregations belong in Postgres, not in the browser.
+- The Cloudflare build is Nitro's `cloudflare-module` preset. **Do not hand-write a
+  wrangler config**: the preset generates `.output/server/wrangler.json` (`main`, the
+  `ASSETS` binding, `nodejs_compat`, `no_bundle`, ESM rules) plus
+  `.wrangler/deploy/config.json`, which is what makes a bare `wrangler deploy` from the
+  root work. Nitro ignores a hand-set `main` or `assets` with a warning, so the only
+  field worth configuring is the Worker name, pinned in `vite.config.ts` — unpinned it is
+  derived from the git remote, and that name sets the origin Supabase and Google pin to.
+- `VITE_*` values are inlined at build time, so `npm run build:cloudflare` supplies the
+  production `VITE_PARSE_MEAL_URL` inline and `.env` keeps the localhost one for dev.
+  `vite.config.ts` fails a production build with a missing, localhost or non-https
+  parse-meal URL: nothing downstream can detect that afterwards.
 - Deployment is documented in README.md, "Deploying to production": two Render services
-  from `render.yaml` and one frontend host. The `VITE_*` values are inlined at build time,
-  so the frontend host needs them in its _build_ environment — a stale
-  `VITE_PARSE_MEAL_URL` there is the only way a localhost value can reach production.
+  from `render.yaml` and a Cloudflare Worker for the frontend.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.
