@@ -1,7 +1,7 @@
 /**
  * The HTTP contract, exercised end to end through Express with every collaborator
- * faked. No Supabase project, no DeepSeek, and — asserted explicitly — no network
- * at all, so the suite cannot spend a token even by accident.
+ * faked. No Supabase project, no model provider, and — asserted explicitly — no
+ * network at all, so the suite cannot spend a token even by accident.
  */
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

@@ -2,7 +2,7 @@
   "name": "nutritrack-parse-meal",
   "private": true,
   "version": "1.0.0",
-  "description": "parse-meal: turns photos, a transcript or typed text into structured meal items via DeepSeek.",
+  "description": "parse-meal: turns photos, a transcript or typed text into structured meal items via Google Gemini.",
   "type": "module",
   "engines": {
     "node": ">=22"

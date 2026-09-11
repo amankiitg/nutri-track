@@ -2,7 +2,7 @@
  * Structured logs to stdout, which is what Render collects. One JSON object per
  * line so a query in the dashboard is a filter rather than a regex.
  *
- * Never log a bearer token, the DeepSeek key or a Supabase key. Log identifiers
+ * Never log a bearer token, the Gemini key or a Supabase key. Log identifiers
  * and counts instead.
  */
 type Level = "info" | "warn" | "error";
