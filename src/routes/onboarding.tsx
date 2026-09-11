@@ -29,7 +29,8 @@ function OnboardingPage() {
         <BrandMark size={32} className="mb-6" />
         <OnboardingWizard
           userId={user.id}
-          onConfirm={saveProfileWithTargets}
+          // Onboarding is the one save that seeds the starting weight on purpose.
+          onConfirm={(profile) => saveProfileWithTargets(profile, { seedWeight: true })}
           onSaved={() => {
             navigate({ to: "/today", replace: true });
           }}

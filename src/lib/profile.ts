@@ -91,13 +91,37 @@ export function targetsFromProfile(p: TargetSource): TargetResult {
   });
 }
 
+async function fetchStoredWeightKg(userId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("weight_kg")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? Number(data.weight_kg) : null;
+}
+
+export interface SaveProfileOptions {
+  /**
+   * Onboarding seeds the starting weight even when the stored value happens to
+   * match. Every other save only touches the weight log when the weight changed.
+   */
+  seedWeight?: boolean;
+}
+
 /**
  * Writes the profile and a fresh targets row (effective today in the user's zone).
  * A second save on the same day updates that day's row instead of duplicating it:
  * the upsert relies on the `(user_id, effective_from)` unique constraint added in
  * `20260911120000_targets_unique_effective_from.sql`.
  */
-export async function saveProfileWithTargets(profile: ProfileInsert) {
+export async function saveProfileWithTargets(
+  profile: ProfileInsert,
+  options: SaveProfileOptions = {},
+) {
+  // Read the stored weight before writing, so we can tell whether it changed.
+  const previousWeightKg = await fetchStoredWeightKg(profile.user_id);
+
   const { data: saved, error: profileError } = await supabase
     .from("profiles")
     .upsert(profile, { onConflict: "user_id" })
@@ -123,16 +147,24 @@ export async function saveProfileWithTargets(profile: ProfileInsert) {
     .single();
   if (targetError) throw targetError;
 
-  // Seed the weight log with the starting weight (does not overwrite an existing entry).
-  await supabase.from("weight_log").upsert(
-    {
-      user_id: saved.user_id,
-      logged_on: effectiveFrom,
-      weight_kg: saved.weight_kg,
-      source: "manual",
-    },
-    { onConflict: "user_id,logged_on", ignoreDuplicates: true },
-  );
+  // Only touch weight_log when the weight actually changed, or on the first
+  // onboarding save. A settings visit that leaves weight alone must not append a
+  // phantom entry to the weight history. Existing entries for the day are never
+  // overwritten.
+  const weightChanged =
+    previousWeightKg === null || Number(previousWeightKg) !== Number(saved.weight_kg);
+  if (options.seedWeight === true || weightChanged) {
+    const { error: weightError } = await supabase.from("weight_log").upsert(
+      {
+        user_id: saved.user_id,
+        logged_on: effectiveFrom,
+        weight_kg: saved.weight_kg,
+        source: "manual",
+      },
+      { onConflict: "user_id,logged_on", ignoreDuplicates: true },
+    );
+    if (weightError) throw weightError;
+  }
 
   return { profile: saved, target, computed: t };
 }
