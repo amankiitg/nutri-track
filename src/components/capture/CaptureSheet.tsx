@@ -32,8 +32,10 @@ import {
 import {
   buildParseRequest,
   deleteMealPhotos,
+  isSupportedPhotoType,
   preparePhoto,
   requestParseMeal,
+  undecodablePhotoMessage,
   uploadMealPhoto,
   type PreparedPhoto,
 } from "@/lib/capture";
@@ -225,13 +227,29 @@ export function CaptureSheet({
 
   function addPhotos(files: FileList | null): void {
     if (!files) return;
+    const incoming = [...files];
+
+    // Rejected when chosen rather than when submitted. A HEIC that got into the
+    // selection would fail every attempt to analyse the meal, and the user would have
+    // to work out that the fix is to remove one particular thumbnail. `file.type` is
+    // empty on some platforms for a file the browser can still decode, so those are
+    // kept and left to the decoder to refuse with the same message.
+    const unreadable = incoming.find(
+      (file) => file.type !== "" && !isSupportedPhotoType(file.type),
+    );
+    const usable = incoming.filter((file) => file.type === "" || isSupportedPhotoType(file.type));
+
     const room = MAX_PHOTOS - photos.length;
-    const accepted = [...files].slice(0, Math.max(0, room));
-    if (accepted.length < files.length) {
+    const accepted = usable.slice(0, Math.max(0, room));
+
+    if (unreadable) {
+      setError(undecodablePhotoMessage(unreadable.name));
+    } else if (accepted.length < usable.length) {
       setError(`Up to ${MAX_PHOTOS} photos per meal. Extra ones were ignored.`);
     } else {
       setError(null);
     }
+
     setPhotos((current) => [
       ...current,
       ...accepted.map((file) => ({

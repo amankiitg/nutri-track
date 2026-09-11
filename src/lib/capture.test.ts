@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isSupportedPhotoType, undecodablePhotoMessage } from "./capture";
 import { MAX_EDGE } from "./capture";
 import { buildParseRequest, fitWithin, messageFromErrorBody, parseResponseSchema } from "./capture";
 
@@ -112,6 +113,37 @@ describe("parseResponseSchema", () => {
   it("rejects a reply whose item is missing needs_review", () => {
     const { needs_review: _dropped, ...item } = valid.items[0]!;
     expect(parseResponseSchema.safeParse({ ...valid, items: [item] }).success).toBe(false);
+  });
+});
+
+describe("photo types the browser and the bucket both accept", () => {
+  it("accepts what the bucket allows", () => {
+    for (const type of ["image/jpeg", "image/png", "image/webp"]) {
+      expect(isSupportedPhotoType(type)).toBe(true);
+    }
+  });
+
+  it("rejects HEIC, which iPhones shoot and browsers cannot read", () => {
+    expect(isSupportedPhotoType("image/heic")).toBe(false);
+    expect(isSupportedPhotoType("image/heif")).toBe(false);
+  });
+
+  it("is tolerant of casing and padding, because browsers vary", () => {
+    expect(isSupportedPhotoType("  IMAGE/JPEG ")).toBe(true);
+  });
+
+  it("names HEIC as HEIC and says what to do about it", () => {
+    const message = undecodablePhotoMessage("IMG_6114.HEIC");
+    expect(message).toContain("HEIC");
+    expect(message).toContain("JPEG");
+    // It has to point somewhere, or the user is simply stuck.
+    expect(message).toContain("Type tab");
+  });
+
+  it("gives a different message for a file that is simply not a photo", () => {
+    const message = undecodablePhotoMessage("notes.pdf");
+    expect(message).not.toContain("HEIC");
+    expect(message).toContain("JPEG, PNG or WebP");
   });
 });
 

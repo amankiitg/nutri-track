@@ -21,6 +21,39 @@ export const MAX_EDGE = 1024;
 /** JPEG quality for the same. 0.8 is the point where food still reads clearly. */
 export const JPEG_QUALITY = 0.8;
 
+/**
+ * The types the browser can decode and the bucket accepts.
+ *
+ * The two lists agree by design: `meal-photos` allows jpeg, png and webp, so an image
+ * the browser cannot decode is one the bucket would refuse anyway. Failing here gives
+ * a message a person can act on instead of a storage error code.
+ *
+ * HEIC is the case that matters. iPhones shoot in it, browsers cannot decode it, and
+ * the bucket does not accept it — so an iPhone user who picks a photo from Files rather
+ * than taking one can hit this with nothing to go on.
+ */
+const SUPPORTED_PHOTO_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+
+/** Thrown when a photo cannot be read, with a message worth showing the user. */
+export class UndecodablePhotoError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UndecodablePhotoError";
+  }
+}
+
+export function isSupportedPhotoType(type: string): boolean {
+  return SUPPORTED_PHOTO_TYPES.has(type.trim().toLowerCase());
+}
+
+/** Names the file and says what to do about it, rather than reporting a decoder. */
+export function undecodablePhotoMessage(fileName: string): string {
+  if (/\.(heic|heif)$/i.test(fileName)) {
+    return `${fileName} is a HEIC photo. Browsers cannot open those and the photo bucket does not accept them, so it cannot be analysed. On an iPhone, share the photo as a JPEG instead — or tap Take a photo, which converts automatically. You can also describe the meal in the Type tab.`;
+  }
+  return `${fileName} is not a photo this browser can read. Use a JPEG, PNG or WebP, or describe the meal in the Type tab.`;
+}
+
 export interface Dimensions {
   width: number;
   height: number;
@@ -64,7 +97,22 @@ export interface PreparedPhoto {
  * taken in portrait is not sent sideways.
  */
 export async function preparePhoto(file: File | Blob, maxEdge = MAX_EDGE): Promise<PreparedPhoto> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const fileName = file instanceof File ? file.name : "that photo";
+
+  // Checked before decoding, because the decoder's own message says nothing useful.
+  if (file.type !== "" && !isSupportedPhotoType(file.type)) {
+    throw new UndecodablePhotoError(undecodablePhotoMessage(fileName));
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    // A file whose type looked fine but which the browser still cannot read — a HEIC
+    // served as application/octet-stream, a truncated download, a RAW file.
+    throw new UndecodablePhotoError(undecodablePhotoMessage(fileName));
+  }
+
   try {
     const target = fitWithin({ width: bitmap.width, height: bitmap.height }, maxEdge);
     const canvas = document.createElement("canvas");
