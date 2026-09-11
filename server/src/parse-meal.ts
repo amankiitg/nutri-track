@@ -9,8 +9,7 @@
 import {
   classifyModelResponse,
   guessMealType,
-  RESPONSE_CONTRACT,
-  RESPONSE_EXAMPLE,
+  modelContractSchema,
   SYSTEM_PROMPT,
   type MealItemDraft,
   type MealSource,
@@ -18,9 +17,10 @@ import {
 } from "../../shared/meal-parse";
 import type { CallerStore, Photo } from "./caller-store";
 import type { Config } from "./config";
-import type { ChatImagePart, ChatMessage, ChatTextPart, Completion, LlmClient } from "./deepseek";
+import type { ChatImagePart, ChatMessage, ChatTextPart, Completion, LlmClient } from "./llm";
 import { ApiError } from "./errors";
 import { log } from "./log";
+import { zodToResponseSchema } from "./response-schema";
 import type { ParseMealRequest } from "./schemas";
 import { secondsUntilNextLocalMidnight, startOfLocalDay } from "./time";
 
@@ -60,17 +60,17 @@ export interface ParseMealDeps {
   now?: () => Date;
 }
 
+/**
+ * The response schema is derived from the Zod contract in `shared/`, once, at module
+ * load. Deriving it here rather than storing a hand-written copy is what keeps the
+ * prompt, the model's contract and the validator from drifting apart.
+ */
+export const RESPONSE_SCHEMA = zodToResponseSchema(modelContractSchema);
+
 function buildSystemMessage(): ChatMessage {
-  return {
-    role: "system",
-    content: [
-      SYSTEM_PROMPT,
-      "Respond with exactly this shape, and nothing else:",
-      RESPONSE_CONTRACT,
-      "For example:",
-      RESPONSE_EXAMPLE,
-    ].join("\n\n"),
-  };
+  // The shape is not described here: the provider enforces it. Repeating the field
+  // list in the prompt would be a second copy free to disagree with the schema.
+  return { role: "system", content: SYSTEM_PROMPT };
 }
 
 /** The user turn: what was said or typed, any hint, and the photos if there are any. */
@@ -84,12 +84,10 @@ function buildUserMessage(input: ParseMealRequest, photos: readonly Photo[]): Ch
   const text = lines.join("\n\n");
   if (photos.length === 0) return { role: "user", content: text };
 
+  // Raw bytes, not a data URL: the provider decides how they go on the wire.
   const parts: Array<ChatTextPart | ChatImagePart> = [{ type: "text", text }];
   for (const photo of photos) {
-    parts.push({
-      type: "image_url",
-      image_url: { url: `data:${photo.mimeType};base64,${photo.base64}` },
-    });
+    parts.push({ type: "image", base64: photo.base64, mimeType: photo.mimeType });
   }
   return { role: "user", content: parts };
 }
@@ -132,8 +130,9 @@ export async function parseMeal(
   }
 
   const photos = input.photoPaths.length > 0 ? await deps.store.loadPhotos(input.photoPaths) : [];
-  const model =
-    photos.length > 0 ? deps.config.DEEPSEEK_VISION_MODEL : deps.config.DEEPSEEK_TEXT_MODEL;
+  // One multimodal model for photos and text alike: Gemini Flash reads both, so
+  // there is no second id to keep in step.
+  const model = deps.config.GEMINI_VISION_MODEL;
   const messages: ChatMessage[] = [buildSystemMessage(), buildUserMessage(input, photos)];
 
   /** One model call, logged whether or not it parses. */
@@ -144,6 +143,7 @@ export async function parseMeal(
         model,
         messages: attemptMessages,
         maxTokens: MAX_OUTPUT_TOKENS,
+        responseSchema: RESPONSE_SCHEMA,
       });
     } catch (error) {
       await record(deps.store, {
@@ -162,8 +162,24 @@ export async function parseMeal(
       promptTokens: completion.promptTokens,
       completionTokens: completion.completionTokens,
       latencyMs: completion.latencyMs,
+      // The finish reason rides along on a not-JSON failure because that is the only
+      // place it explains anything: an empty reply is a refusal or a truncation, and
+      // the two are indistinguishable without it.
       status: result.ok ? "ok" : result.reason === "not_json" ? "invalid_json" : "invalid_schema",
     });
+
+    if (!result.ok) {
+      // finishReason belongs in the log rather than in `status`, which stays a small
+      // set of values worth filtering on.
+      log("warn", "the model's reply did not match the contract", {
+        userId,
+        model: completion.model,
+        reason: result.reason,
+        detail: result.error,
+        finishReason: completion.finishReason,
+      });
+    }
+
     return { completion, result };
   };
 

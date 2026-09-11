@@ -94,6 +94,57 @@ export const modelResponseSchema = z.union([
   z.array(modelItemSchema).transform((items) => ({ items })),
 ]);
 
+/**
+ * What the model is *told* to return, as opposed to what we tolerate.
+ *
+ * This is the single description of the response shape. It is converted into the
+ * provider's response schema by `server/src/gemini-schema.ts` and sent with the
+ * request, so the prompt, the validator and the model's contract all come from
+ * here. The descriptions become the `description` fields the model reads, which is
+ * why they are written as instructions rather than as documentation.
+ *
+ * It is plain Zod with no transforms, because a JSON Schema has no way to express
+ * "coerce a string to a number". `modelItemSchema` above stays in place as the
+ * tolerant validator on top of it: a schema-constrained model is a strong
+ * guarantee, not a proof, and the tolerant layer is what makes a near-miss
+ * recoverable rather than a wasted retry.
+ */
+export const modelItemContractSchema = z.object({
+  name: z
+    .string()
+    .describe("Name of the food item, as a person would say it, e.g. 'Sourdough toast'"),
+  quantity: z
+    .number()
+    .nullable()
+    .describe("How many of `unit`, e.g. 2 for two slices. Null when the count is not meaningful"),
+  unit: z
+    .string()
+    .nullable()
+    .describe("The unit the quantity counts, e.g. 'slice', 'cup', 'g'. Null if unknown"),
+  grams: z.number().nullable().describe("Estimated total weight of this item in grams"),
+  calories: z.number().describe("Energy in kcal for the whole item, not per 100 g"),
+  protein_g: z.number().describe("Protein in grams for the whole item"),
+  carbs_g: z.number().describe("Carbohydrate in grams for the whole item"),
+  fat_g: z.number().describe("Fat in grams for the whole item"),
+  fiber_g: z.number().nullable().describe("Dietary fibre in grams, or null if unknown"),
+  sugar_g: z.number().nullable().describe("Sugar in grams, or null if unknown"),
+  sodium_mg: z.number().nullable().describe("Sodium in milligrams, or null if unknown"),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe(
+      "How sure you are: 0.95 for a read nutrition label, 0.7 for a clear look, 0.4 for a guess",
+    ),
+});
+
+export const modelContractSchema = z.object({
+  items: z.array(modelItemContractSchema).describe("One entry per distinct food item in the input"),
+});
+
+export type ModelItemContract = z.infer<typeof modelItemContractSchema>;
+export type ModelContract = z.infer<typeof modelContractSchema>;
+
 /** The strict, editable shape the UI works with. */
 export interface MealItemDraft {
   name: string;
@@ -323,51 +374,16 @@ export function mealPhotoPath(userId: string, captureId: string, index: number):
   return `${userId}/${captureId}/${index}.jpg`;
 }
 
-/** The prompt sent to DeepSeek, kept next to the schema it promises. */
+/**
+ * The prompt. It describes the job, not the shape: the shape is enforced by the
+ * provider's structured-output mode, from `modelContractSchema` below. Repeating the
+ * field list here would be a second copy free to drift from the first.
+ */
 export const SYSTEM_PROMPT = [
   "You are a nutrition estimator. Identify each distinct food item in the input.",
-  "For each item return name, estimated quantity, unit, grams, calories, protein_g,",
-  "carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, and a confidence between 0 and 1.",
   "Use USDA-style typical values. If a nutrition label is visible, read it and set",
   "confidence 0.95. If a portion is ambiguous, pick the most common serving and lower",
-  "confidence. Respond with only a JSON object matching this schema, no prose, no markdown.",
+  "confidence accordingly.",
+  "List every distinct item separately, including drinks and condiments that carry",
+  "meaningful calories. Do not invent items you cannot see or read.",
 ].join(" ");
-
-/** Appended to the prompt so the model has the exact shape plus a worked example. */
-export const RESPONSE_CONTRACT = JSON.stringify({
-  items: [
-    {
-      name: "string",
-      quantity: "number | null",
-      unit: "string | null",
-      grams: "number | null",
-      calories: "number",
-      protein_g: "number",
-      carbs_g: "number",
-      fat_g: "number",
-      fiber_g: "number | null",
-      sugar_g: "number | null",
-      sodium_mg: "number | null",
-      confidence: "number between 0 and 1",
-    },
-  ],
-});
-
-export const RESPONSE_EXAMPLE = JSON.stringify({
-  items: [
-    {
-      name: "Sourdough toast",
-      quantity: 1,
-      unit: "slice",
-      grams: 45,
-      calories: 120,
-      protein_g: 4,
-      carbs_g: 22,
-      fat_g: 1,
-      fiber_g: 1.2,
-      sugar_g: 1,
-      sodium_mg: 210,
-      confidence: 0.75,
-    },
-  ],
-});

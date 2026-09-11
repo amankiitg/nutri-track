@@ -6,9 +6,8 @@ const VALID: Record<string, string> = {
   PORT: "9999",
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
-  DEEPSEEK_API_KEY: "sk-example",
-  DEEPSEEK_VISION_MODEL: "vision-model",
-  DEEPSEEK_TEXT_MODEL: "text-model",
+  GEMINI_API_KEY: "gemini-example",
+  GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
   ALLOWED_ORIGINS: "http://localhost:8080, https://nutritrack.example.com",
 };
 
@@ -26,9 +25,8 @@ describe("loadConfig", () => {
       PORT: 9999,
       SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
-      DEEPSEEK_API_KEY: "sk-example",
-      DEEPSEEK_VISION_MODEL: "vision-model",
-      DEEPSEEK_TEXT_MODEL: "text-model",
+      GEMINI_API_KEY: "gemini-example",
+      GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
       ALLOWED_ORIGINS: ["http://localhost:8080", "https://nutritrack.example.com"],
     });
   });
@@ -45,9 +43,8 @@ describe("loadConfig", () => {
   it.each([
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
-    "DEEPSEEK_API_KEY",
-    "DEEPSEEK_VISION_MODEL",
-    "DEEPSEEK_TEXT_MODEL",
+    "GEMINI_API_KEY",
+    "GEMINI_VISION_MODEL",
     "ALLOWED_ORIGINS",
   ])("refuses to boot without %s, and says which one", (name) => {
     expect(() => loadConfig(without(name))).toThrow(new RegExp(`- ${name}:`));
@@ -63,9 +60,8 @@ describe("loadConfig", () => {
     for (const name of [
       "SUPABASE_URL",
       "SUPABASE_PUBLISHABLE_KEY",
-      "DEEPSEEK_API_KEY",
-      "DEEPSEEK_VISION_MODEL",
-      "DEEPSEEK_TEXT_MODEL",
+      "GEMINI_API_KEY",
+      "GEMINI_VISION_MODEL",
       "ALLOWED_ORIGINS",
     ]) {
       expect(message).toContain(name);

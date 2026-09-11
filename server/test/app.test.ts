@@ -9,8 +9,8 @@ import { createApp } from "../src/app";
 import type { VerifiedUser } from "../src/auth";
 import type { CallerStore, LlmCallRecord } from "../src/caller-store";
 import type { Config } from "../src/config";
-import type { CompletionRequest, LlmClient } from "../src/deepseek";
 import { ApiError } from "../src/errors";
+import type { CompletionRequest, LlmClient } from "../src/llm";
 import { MAX_LLM_CALLS_PER_DAY, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
 
 const USER: VerifiedUser = { id: "user-1", email: "aman@example.com" };
@@ -23,9 +23,8 @@ const CONFIG: Config = {
   PORT: 8787,
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
-  DEEPSEEK_API_KEY: "sk-example",
-  DEEPSEEK_VISION_MODEL: "vision-model",
-  DEEPSEEK_TEXT_MODEL: "text-model",
+  GEMINI_API_KEY: "gemini-example",
+  GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
   ALLOWED_ORIGINS: ["http://localhost:8080"],
 };
 
@@ -73,7 +72,7 @@ function buildHarness(options: HarnessOptions = {}) {
     async complete(completionRequest) {
       completions.push(completionRequest);
       if (options.llmThrows) {
-        throw new ApiError(502, "upstream_error", "DeepSeek is unreachable");
+        throw new ApiError(502, "upstream_error", "Gemini is unreachable");
       }
       const reply = replies[Math.min(replyIndex, replies.length - 1)] ?? "";
       replyIndex += 1;
@@ -83,6 +82,7 @@ function buildHarness(options: HarnessOptions = {}) {
         promptTokens: 11,
         completionTokens: 22,
         latencyMs: 3,
+        finishReason: reply === "" ? "SAFETY" : "STOP",
       };
     },
   };
@@ -302,7 +302,7 @@ describe("a successful parse", () => {
     expect(response.body.attempts).toBe(1);
     expect(response.body.meal_type).toBe("lunch");
     expect(response.body.source).toBe("text");
-    expect(response.body.model).toBe("text-model");
+    expect(response.body.model).toBe("gemini-3.1-flash-lite");
     expect(response.body.items).toHaveLength(1);
     expect(response.body.items[0]).toMatchObject({
       name: "Oatmeal with banana",
@@ -318,13 +318,21 @@ describe("a successful parse", () => {
     expect(response.body.meal_type).toBe("breakfast");
   });
 
-  it("sends the contract, the user's words and the hint to the model", async () => {
+  it("describes the job in the prompt and the shape in the response schema", async () => {
     const { app, completions } = buildHarness();
     await post(app, { ...TYPED_MEAL, hint: "it was a small bowl" });
 
     const messages = completions[0]?.messages ?? [];
     expect(messages[0]?.role).toBe("system");
-    expect(String(messages[0]?.content)).toContain("JSON");
+    expect(String(messages[0]?.content)).toContain("nutrition estimator");
+    // The field list lives in the response schema, not in the prompt, so there is no
+    // second copy of the contract to drift from the first.
+    expect(String(messages[0]?.content)).not.toContain("protein_g");
+    expect(completions[0]?.responseSchema).toMatchObject({
+      type: "object",
+      required: ["items"],
+    });
+
     const userMessage = messages[1];
     expect(userMessage?.role).toBe("user");
     expect(String(userMessage?.content)).toContain("oatmeal with a banana");
@@ -336,7 +344,13 @@ describe("a successful parse", () => {
     await post(app, TYPED_MEAL);
     expect(completions).toHaveLength(1);
     expect(recorded).toEqual([
-      { model: "text-model", promptTokens: 11, completionTokens: 22, latencyMs: 3, status: "ok" },
+      {
+        model: "gemini-3.1-flash-lite",
+        promptTokens: 11,
+        completionTokens: 22,
+        latencyMs: 3,
+        status: "ok",
+      },
     ]);
   });
 
@@ -359,20 +373,24 @@ describe("a successful parse", () => {
 });
 
 describe("photos", () => {
-  it("uses the vision model and sends the images", async () => {
+  it("sends the images as raw bytes, which the provider encodes", async () => {
     const { app, completions, loadedPaths } = buildHarness();
     const response = await post(app, PHOTO_MEAL);
 
     expect(response.status).toBe(200);
-    expect(response.body.model).toBe("vision-model");
     expect(loadedPaths).toEqual([[`${USER.id}/capture-1/0.jpg`]]);
 
     const content = completions[0]?.messages[1]?.content;
     expect(Array.isArray(content)).toBe(true);
-    expect(content).toContainEqual({
-      type: "image_url",
-      image_url: { url: "data:image/jpeg;base64,QUJD" },
-    });
+    // Not a data URL: the provider decides the wire encoding, so nothing above this
+    // layer has to know that Gemini wants inline_data.
+    expect(content).toContainEqual({ type: "image", base64: "QUJD", mimeType: "image/jpeg" });
+  });
+
+  it("uses the same multimodal model as a text-only meal", async () => {
+    const { app } = buildHarness();
+    const response = await post(app, PHOTO_MEAL);
+    expect(response.body.model).toBe("gemini-3.1-flash-lite");
   });
 
   it("sends a caption alongside the photos when there is one", async () => {

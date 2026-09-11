@@ -12,7 +12,7 @@ import { z } from "zod";
 import { bearerToken, type TokenVerifier, type VerifiedUser } from "./auth";
 import type { CallerStore } from "./caller-store";
 import type { Config } from "./config";
-import type { LlmClient } from "./deepseek";
+import type { LlmClient } from "./llm";
 import { ApiError, isApiError } from "./errors";
 import { log } from "./log";
 import { parseMeal } from "./parse-meal";

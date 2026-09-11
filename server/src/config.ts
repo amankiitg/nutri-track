@@ -46,10 +46,12 @@ export const envSchema = z.object({
   /** Public by design — the same value the browser bundle carries. */
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1, "required"),
 
-  DEEPSEEK_API_KEY: z.string().min(1, "required"),
-  DEEPSEEK_VISION_MODEL: z.string().min(1, "required"),
-  DEEPSEEK_TEXT_MODEL: z.string().min(1, "required"),
-
+  GEMINI_API_KEY: z.string().min(1, "required"),
+  /**
+   * One model, not two. Gemini Flash is multimodal, so the same id reads a photo
+   * and a typed description; there is no separate text model to keep in sync.
+   */
+  GEMINI_VISION_MODEL: z.string().min(1, "required"),
   /** Comma-separated. Anything absent from this list is refused by CORS. */
   ALLOWED_ORIGINS: commaSeparated,
 });
@@ -59,9 +61,8 @@ export type Config = z.infer<typeof envSchema>;
 const EXPECTED = [
   "SUPABASE_URL",
   "SUPABASE_PUBLISHABLE_KEY",
-  "DEEPSEEK_API_KEY",
-  "DEEPSEEK_VISION_MODEL",
-  "DEEPSEEK_TEXT_MODEL",
+  "GEMINI_API_KEY",
+  "GEMINI_VISION_MODEL",
   "ALLOWED_ORIGINS",
   "PORT (optional, defaults to 8787)",
 ];

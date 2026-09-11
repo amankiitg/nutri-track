@@ -1,17 +1,17 @@
 /**
  * Wires the real implementations together. The only module that knows about both
- * Supabase and DeepSeek.
+ * Supabase and the model provider.
  */
 import type { AppDeps } from "./app";
 import { createTokenVerifier } from "./auth";
 import { createCallerStore } from "./caller-store";
 import type { Config } from "./config";
-import { createDeepSeekClient } from "./deepseek";
+import { createGeminiClient } from "./gemini";
 import { createAuthClient, createCallerClient } from "./supabase";
 
 export function createProductionDeps(config: Config): AppDeps {
   const authClient = createAuthClient(config);
-  const llm = createDeepSeekClient({ apiKey: config.DEEPSEEK_API_KEY });
+  const llm = createGeminiClient({ apiKey: config.GEMINI_API_KEY });
 
   return {
     config,

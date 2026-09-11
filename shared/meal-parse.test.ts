@@ -11,10 +11,12 @@ import {
   MAX_PHOTOS,
   mealFingerprint,
   mealPhotoPath,
+  modelContractSchema,
   parseModelResponse,
   REVIEW_REASONS,
   roundToTenMinutes,
   sha256Hex,
+  SYSTEM_PROMPT,
   type MealItemDraft,
   type ParseModelResult,
 } from "./meal-parse";
@@ -195,6 +197,74 @@ describe("normalizeItem sanity checks", () => {
     expect(item.carbs_g).toBe(7.3);
     expect(item.fat_g).toBe(3.3);
     expect(item.confidence).toBe(0.78);
+  });
+});
+
+describe("the prompt and the contract", () => {
+  const conforming = {
+    items: [
+      {
+        name: "Sourdough toast",
+        quantity: 1,
+        unit: "slice",
+        grams: 45,
+        calories: 120,
+        protein_g: 4,
+        carbs_g: 22,
+        fat_g: 1,
+        fiber_g: 1.2,
+        sugar_g: 1,
+        sodium_mg: 210,
+        confidence: 0.75,
+      },
+    ],
+  };
+
+  it("accepts a payload of the shape it describes", () => {
+    expect(modelContractSchema.safeParse(conforming).success).toBe(true);
+  });
+
+  it("insists on every field, so a missing one is a contract breach and not a zero", () => {
+    const { name: _omitted, ...withoutName } = conforming.items[0]!;
+    expect(modelContractSchema.safeParse({ items: [withoutName] }).success).toBe(false);
+  });
+
+  it("holds confidence to its bounds", () => {
+    const tooSure = { items: [{ ...conforming.items[0], confidence: 1.4 }] };
+    expect(modelContractSchema.safeParse(tooSure).success).toBe(false);
+  });
+
+  it("accepts null for every field the model is allowed to not know", () => {
+    const unknown = {
+      items: [
+        {
+          name: "Black coffee",
+          quantity: null,
+          unit: null,
+          grams: null,
+          calories: 2,
+          protein_g: 0,
+          carbs_g: 0,
+          fat_g: 0,
+          fiber_g: null,
+          sugar_g: null,
+          sodium_mg: null,
+          confidence: 0.9,
+        },
+      ],
+    };
+    expect(modelContractSchema.safeParse(unknown).success).toBe(true);
+  });
+
+  it("does not enumerate the fields in the prompt, so there is no second copy to drift", () => {
+    // The shape is sent as the provider's response schema. Repeating the field names
+    // in the prompt is how the two used to disagree. "confidence" is not in this list
+    // on purpose: the prompt talks about how confident to be, which is a concept, not
+    // a field list.
+    for (const field of ["protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"]) {
+      expect(SYSTEM_PROMPT).not.toContain(field);
+    }
+    expect(SYSTEM_PROMPT).toContain("nutrition estimator");
   });
 });
 
