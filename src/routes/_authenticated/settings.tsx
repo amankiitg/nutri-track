@@ -2,6 +2,7 @@ import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchCurrentTarget, type Target } from "@/lib/profile";
+import { countsNote, fetchCallBudget, presentBudget } from "@/lib/calls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm } from "@/components/onboarding/ProfileForm";
 
@@ -23,7 +24,20 @@ function SettingsPage() {
     enabled: userId !== "",
   });
 
+  /**
+   * The analysis budget. Refreshed whenever anything is logged, because the sheet
+   * invalidates every query on save and this is one of them — a count that only moved
+   * on a page reload would be wrong exactly when the user came here to check it.
+   */
+  const budget = useQuery({
+    queryKey: ["call-budget", userId],
+    queryFn: fetchCallBudget,
+    enabled: userId !== "",
+  });
+
   if (!profile) return null;
+
+  const shown = budget.isSuccess ? presentBudget(budget.data, timeZone) : null;
 
   return (
     <div className="app-shell space-y-6 py-8">
@@ -33,6 +47,41 @@ function SettingsPage() {
           Edit your profile. Saving recomputes your targets.
         </p>
       </header>
+
+      <Card className="card-soft">
+        <CardHeader>
+          <CardTitle className="text-base">Analyses today</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {budget.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {budget.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              Could not read today's analyses. It only affects this count — logging a meal still
+              works.
+            </p>
+          )}
+          {shown !== null && (
+            <>
+              <p className="text-3xl font-semibold tabular-nums">
+                {shown.remaining}
+                <span className="ml-2 text-base font-normal text-muted-foreground">
+                  {shown.scale}
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{shown.reset}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{countsNote}</p>
+              {shown.exhausted !== null && (
+                <p
+                  role="status"
+                  className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                >
+                  {shown.exhausted}
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="card-soft">
         <CardHeader>

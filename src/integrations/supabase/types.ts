@@ -403,6 +403,13 @@ export type Database = {
       };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
+      llm_call_budget: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          resets_at: string;
+          used: number;
+        }[];
+      };
       meals_for_day: { Args: { p_date: string }; Returns: Json };
       save_meal: { Args: { _items: Json; _meal: Json }; Returns: Json };
       target_on: {
