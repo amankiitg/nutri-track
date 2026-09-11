@@ -6,7 +6,12 @@
 import { createApp } from "./app";
 import { loadConfig, type Config } from "./config";
 import { createProductionDeps } from "./deps";
+import { loadRootEnvFile } from "./env-file";
 import { log } from "./log";
+
+// Before the config is read, so `npm run dev` sees the same .env the frontend does.
+// On Render there is no file and the panel's variables are already in the environment.
+const envFile = loadRootEnvFile();
 
 function loadConfigOrExit(): Config {
   try {
@@ -26,6 +31,7 @@ const server = app.listen(config.PORT, () => {
     port: config.PORT,
     env: config.NODE_ENV,
     allowedOrigins: config.ALLOWED_ORIGINS.join(","),
+    envFile: envFile ?? "(none; using the ambient environment)",
   });
 });
 

@@ -14,25 +14,14 @@
  * that is reported plainly rather than falling back to prompt-only JSON.
  */
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { classifyModelResponse, modelContractSchema, SYSTEM_PROMPT } from "../../shared/meal-parse";
 import { loadConfig } from "../src/config";
+import { loadRootEnvFile } from "../src/env-file";
 import { createGeminiClient } from "../src/gemini";
 import { ApiError } from "../src/errors";
 import { zodToResponseSchema } from "../src/response-schema";
 
 const MAX_OUTPUT_TOKENS = 2048;
-
-/** `.env` is the single source of truth for the key and the model id. */
-function loadEnvFile(): void {
-  const path = fileURLToPath(new URL("../../.env", import.meta.url));
-  try {
-    // Node's own reader, so this script needs no dotenv dependency.
-    process.loadEnvFile(path);
-  } catch {
-    console.warn(`could not read ${path}; falling back to the ambient environment`);
-  }
-}
 
 function mimeTypeOf(path: string): string {
   const lower = path.toLowerCase();
@@ -58,7 +47,11 @@ function describeSchema(schema: ReturnType<typeof zodToResponseSchema>): string 
 }
 
 async function main(): Promise<void> {
-  loadEnvFile();
+  // .env is the single source of truth for the key and the model id.
+  const envFile = loadRootEnvFile();
+  if (envFile === null) {
+    console.warn("no .env found at the repository root; using the ambient environment");
+  }
 
   const imagePath = process.argv[2];
   if (imagePath === undefined) {
@@ -75,7 +68,9 @@ async function main(): Promise<void> {
   console.log(`  model:  ${config.GEMINI_VISION_MODEL}`);
   console.log(`  image:  ${imagePath} (${mimeType}, ${(bytes.length / 1024).toFixed(1)} kB)`);
   console.log(`  prompt: ${SYSTEM_PROMPT.length} chars`);
-  console.log(`  structured output requested, response schema:\n  ${describeSchema(responseSchema)}`);
+  console.log(
+    `  structured output requested, response schema:\n  ${describeSchema(responseSchema)}`,
+  );
   console.log("");
 
   const client = createGeminiClient({ apiKey: config.GEMINI_API_KEY });
