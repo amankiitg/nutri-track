@@ -1,8 +1,6 @@
 import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
 import { fetchCurrentTarget, type Target } from "@/lib/profile";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const parentApi = getRouteApi("/_authenticated");
@@ -51,21 +49,12 @@ function TodayPage() {
         </CardContent>
       </Card>
 
-      <div className="animate-rise">
-        <Button
-          type="button"
-          size="lg"
-          className="h-12 w-full rounded-full text-base"
-          disabled
-          title="Meal capture arrives in the next step"
-        >
-          <Plus className="size-5" aria-hidden="true" />
-          Log a meal
-        </Button>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          Photo, voice and text capture lands in the next step.
-        </p>
-      </div>
+      {/* The capture button is in the shell, so it is on this screen and every other
+          authenticated one. Meal summaries belong here once the review screen lands. */}
+      <p className="animate-rise rounded-2xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+        Tap <span className="font-semibold text-foreground">+</span> to log a meal by photo,
+        voice or text.
+      </p>
     </div>
   );
 }

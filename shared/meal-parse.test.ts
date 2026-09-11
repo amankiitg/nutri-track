@@ -395,12 +395,18 @@ describe("confidenceBand", () => {
 
 describe("mealPhotoPath", () => {
   it("puts the user id first, which is what the bucket policies check", () => {
-    expect(mealPhotoPath("user-1", "capture-9", 2)).toBe("user-1/capture-9/2.jpg");
+    expect(mealPhotoPath("user-1", "6f1c2f9e-0000-4000-8000-000000000001")).toBe(
+      "user-1/6f1c2f9e-0000-4000-8000-000000000001.jpg",
+    );
   });
 
-  it("allows exactly the number of photos the column accepts", () => {
+  it("is two segments, which is what the service's ownership check expects", () => {
+    expect(mealPhotoPath("user-1", "abc").split("/")).toEqual(["user-1", "abc.jpg"]);
+  });
+
+  it("gives every photo its own path, so one upload cannot overwrite another", () => {
     const paths = Array.from({ length: MAX_PHOTOS }, (_, index) =>
-      mealPhotoPath("user-1", "capture-9", index),
+      mealPhotoPath("user-1", `photo-${index}`),
     );
     expect(new Set(paths).size).toBe(MAX_PHOTOS);
   });

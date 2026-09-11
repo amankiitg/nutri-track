@@ -367,12 +367,17 @@ export function confidenceBand(confidence: number): ConfidenceBand {
 }
 
 /**
- * Storage path for one photo. The first segment must be the owner's user id —
- * the bucket policies pin access to it.
+ * Storage path for one photo: `<user id>/<uuid>.jpg`. The first segment must be the
+ * owner's user id — the bucket policies pin access to it, and the service checks it
+ * again before reading. One uuid per photo, so a photo's path never changes and
+ * re-uploading the second of three photos cannot overwrite the first.
  */
-export function mealPhotoPath(userId: string, captureId: string, index: number): string {
-  return `${userId}/${captureId}/${index}.jpg`;
+export function mealPhotoPath(userId: string, photoId: string): string {
+  return `${userId}/${photoId}.jpg`;
 }
+
+/** The private bucket the capture sheet uploads to and the service reads from. */
+export const MEAL_PHOTO_BUCKET = "meal-photos";
 
 /**
  * The prompt. It describes the job, not the shape: the shape is enforced by the

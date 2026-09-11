@@ -8,6 +8,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { MEAL_PHOTO_BUCKET } from "../../shared/meal-parse";
 import { ApiError } from "./errors";
 import { safeTimeZone } from "./time";
 
@@ -34,9 +35,6 @@ export interface CallerStore {
   /** Reads photos the caller owns. Storage policies enforce the ownership. */
   loadPhotos(paths: readonly string[]): Promise<Photo[]>;
 }
-
-/** The bucket the capture sheet uploads to. */
-export const MEAL_PHOTO_BUCKET = "meal-photos";
 
 const timeZoneRow = z.object({ timezone: z.string().nullable() });
 
@@ -73,7 +71,9 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
       const { data, error } = await client
         .from("profiles")
         .select("timezone")
-        .eq("id", userId)
+        // profiles is keyed by user_id, not id. RLS would scope this anyway, but the
+        // filter is explicit so a wider grant could not silently widen the read.
+        .eq("user_id", userId)
         .maybeSingle();
       if (error) fail("profiles select", error);
       // A missing profile is not worth failing the request over; UTC is the

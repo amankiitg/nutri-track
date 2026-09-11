@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchProfile, isEmailAllowed } from "@/lib/profile";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
+import { CaptureDock } from "@/components/capture/CaptureDock";
 import { TabBar } from "@/components/app/TabBar";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -26,8 +27,7 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  const { allowed, user } = Route.useRouteContext();
-
+  const { allowed, user, profile } = Route.useRouteContext();
   if (!allowed) {
     return (
       <main className="paper-grain min-h-dvh">
@@ -58,6 +58,9 @@ function AuthenticatedLayout() {
       <main className="flex-1 pb-20">
         <Outlet />
       </main>
+      {/* Available on every authenticated screen, not just Today: a meal gets eaten
+          wherever you happen to be in the app. */}
+      <CaptureDock userId={user.id} timeZone={profile?.timezone ?? "UTC"} />
       <TabBar />
     </div>
   );
