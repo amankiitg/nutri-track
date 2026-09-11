@@ -206,45 +206,107 @@ An unrecognised `SWEEP_DRY_RUN` value (a typo, say) stops the job with a non-zer
 than guessing. That direction is deliberate: guessing "true" leaves a few wasted megabytes,
 guessing "false" deletes photos.
 
-### Deploying to Render
+### Deploying to production
 
-`render.yaml` is a Render Blueprint describing the whole service. In the dashboard choose
-**New → Blueprint**, pick this repository, and Render reads these settings from the file:
+`render.yaml` declares two services, both building from `server/`:
 
-| Setting           | Value                     |
-| ----------------- | ------------------------- |
-| Root directory    | `server`                  |
-| Build command     | `npm ci && npm run build` |
-| Start command     | `npm start`               |
-| Health check path | `/health`                 |
+| Service                          | Type   | Plan      | What it runs                             |
+| -------------------------------- | ------ | --------- | ---------------------------------------- |
+| `nutritrack-parse-meal`          | `web`  | `starter` | `npm start` — the parse-meal API         |
+| `nutritrack-sweep-orphan-photos` | `cron` | `free`    | `node dist/sweep.js`, daily at 04:00 UTC |
 
-On the first deploy Render prompts for every variable marked `sync: false` — copy the
-server-only block out of `.env.example` (or `.env`) into the panel. Set `ALLOWED_ORIGINS`
-to the origin the frontend is actually served from, and point `VITE_PARSE_MEAL_URL` at the
-deployed service URL.
+The web service is **not** on the free plan on purpose. A free instance sleeps after
+about fifteen minutes idle and the next request pays a cold start of tens of seconds,
+which is the wrong thing to meet while standing at a dinner table waiting to log a meal.
+The cron job is fine on free — a job that runs once a day has no cold-start problem.
 
-Only `server/` is uploaded: `shared/meal-parse.ts` is compiled into the bundle at build
-time, so nothing outside `rootDir` is needed at runtime. Anything outside `ALLOWED_ORIGINS`
-is refused by CORS before a handler runs.
+#### 1. Render environment variables
 
-`render.yaml` also declares the sweeper as a second service, which is **not** a web service:
+Render prompts for these on the first Blueprint deploy (`sync: false` means the value
+lives in the dashboard and never in the file).
 
-| Setting        | Value                     |
-| -------------- | ------------------------- |
-| Type           | `cron`                    |
-| Root directory | `server`                  |
-| Build command  | `npm ci && npm run build` |
-| Command        | `node dist/sweep.js`      |
-| Schedule       | `0 4 * * *` (04:00 UTC)   |
+**Web service — `nutritrack-parse-meal`**
 
-It shares the build with the web service — `npm run build` emits both `dist/index.js` and
-`dist/sweep.js` — so the two cannot drift apart, and a broken build fails both. The schedule is
-in UTC and nothing depends on the hour: the grace period, not the timing, is what protects a
-capture in progress. It needs `SUPABASE_SERVICE_ROLE_KEY` and `SWEEP_DRY_RUN`; the web service
-must never be given the former. See [Going live with the sweeper](#going-live-with-the-sweeper).
+| Key                        | Value                                      | Differs from local `.env`?                |
+| -------------------------- | ------------------------------------------ | ----------------------------------------- |
+| `SUPABASE_URL`             | `https://luxomuhczhtczfxwornl.supabase.co` | No                                        |
+| `SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value               | No — public by design                     |
+| `GEMINI_API_KEY`           | your AI Studio key                         | No                                        |
+| `GEMINI_VISION_MODEL`      | `gemini-3.8-flash`                         | No                                        |
+| `ALLOWED_ORIGINS`          | **the deployed frontend origin**           | **Yes** — locally `http://localhost:8080` |
 
-Gemini is configured entirely through these two names, so swapping models never needs a
-code change:
+**Cron job — `nutritrack-sweep-orphan-photos`**
+
+| Key                         | Value                                              | Differs from local `.env`?                                                  |
+| --------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `SUPABASE_URL`              | as above                                           | No                                                                          |
+| `SUPABASE_PUBLISHABLE_KEY`  | as above                                           | No                                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` | **Yes** — not filled in locally, and must never be given to the web service |
+
+Two things **not** to set: `PORT` (Render injects it) and `NODE_VERSION` /
+`SWEEP_DRY_RUN` (already literal in the file). `SWEEP_DRY_RUN` stays `true` until a dry
+run looks right — see [Going live with the sweeper](#going-live-with-the-sweeper).
+
+#### 2. Supabase dashboard
+
+Authentication → **URL Configuration**:
+
+- **Site URL**: the deployed frontend origin.
+- **Redirect URLs**: add `https://<frontend-origin>/auth/callback`. Keep
+  `http://localhost:8080/auth/callback` for local development.
+
+#### 3. Google Cloud
+
+APIs & Services → Credentials → your OAuth 2.0 Client:
+
+- **Authorized JavaScript origins**: add the deployed frontend origin.
+- **Authorized redirect URIs**: unchanged. With Supabase as the OAuth broker, Google
+  redirects to `https://<project-ref>.supabase.co/auth/v1/callback`, and Supabase
+  forwards to the app. Google never sees the app's own callback URL.
+
+A missing origin here fails as `origin_mismatch` or `redirect_uri_mismatch` from Google,
+not as an app error.
+
+#### 4. The frontend
+
+The build already targets **Cloudflare Workers** (Nitro's `cloudflare-module` preset in
+`vite.config.ts`), so Cloudflare is the path of least resistance: no build changes, a
+generous free tier, and a global CDN. A static host such as Render, Netlify or Vercel
+works too but needs the preset changed, either to `node-server` (which serves the SSR
+bundle as a Node service) or to `static` — which would make `src/server.ts`, the SSR
+error wrapper, dead code.
+
+**The `VITE_*` values are inlined at build time.** Vite bakes them into the bundle, so
+the frontend host needs all three in its build environment, not just at runtime:
+
+| Key                             | Value                                                   |
+| ------------------------------- | ------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | `https://luxomuhczhtczfxwornl.supabase.co`              |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value                            |
+| `VITE_PARSE_MEAL_URL`           | `https://nutritrack-parse-meal.onrender.com/parse-meal` |
+
+A missing or stale `VITE_PARSE_MEAL_URL` is the one way a `localhost` value can reach
+production: the bundle would post to a port on the phone. Nothing else can — `.env` is
+gitignored, only `server/` is uploaded to Render, and `loadRootEnvFile()` returns null
+there, so the dashboard's variables are authoritative.
+
+A custom domain is worth the five minutes: a stable origin is what Supabase's Site URL
+and Google's authorized origins are pinned to, and a `*.workers.dev` subdomain is a
+thing that can change.
+
+`render.yaml` is a Render Blueprint describing the whole stack. In the dashboard choose
+**New → Blueprint**, pick this repository, and Render reads the service definitions from
+the file. Only `server/` is uploaded: `shared/meal-parse.ts` is compiled into the bundle
+at build time, so nothing outside `rootDir` is needed at runtime, and anything outside
+`ALLOWED_ORIGINS` is refused by CORS before a handler runs.
+
+The sweeper and the web service share one build — `npm run build` emits both
+`dist/index.js` and `dist/sweep.js` — so they cannot drift apart, and a broken build fails
+both. The sweeper's schedule is in UTC and nothing depends on the hour: the grace period,
+not the timing, is what protects a capture in progress. It is the only service that reads
+`SUPABASE_SERVICE_ROLE_KEY`, and the web service must never be given it.
+
+Gemini is configured through two names, so swapping models never needs a code change:
 
 | Variable              | Purpose                                                                                                                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -295,7 +357,7 @@ server/                        The parse-meal service (Express 5, deployed to Re
 supabase/migrations/           Postgres schema, RLS, views and the dashboard functions
 ```
 
-### The Today dashboard
+## The Today dashboard
 
 A calorie ring, macro bars, a trailing-7-day verdict and the day's meal timeline with
 swipe-to-delete and undo, plus a quick weight entry.
@@ -347,7 +409,7 @@ canonically, so switching between metric and imperial reinterprets nothing. Veri
 a round trip through both settings, `height_cm`, `weight_kg`, `target_weight_kg`,
 `pace_kg_per_week` and the computed `targets` row were all bit-identical.
 
-### The Trends screen
+## The Trends screen
 
 A Week / Month / Year segmented control, a date navigator, daily calorie bars with the
 target drawn across them, a macro donut and a stacked macro bar over time, a weight line

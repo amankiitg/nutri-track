@@ -138,5 +138,9 @@ npm test
   installs in this repo (root for `shared/`, `server/` for the service) are different copies
   and `instanceof` is false across them.
 - Aggregations belong in Postgres, not in the browser.
+- Deployment is documented in README.md, "Deploying to production": two Render services
+  from `render.yaml` and one frontend host. The `VITE_*` values are inlined at build time,
+  so the frontend host needs them in its _build_ environment — a stale
+  `VITE_PARSE_MEAL_URL` there is the only way a localhost value can reach production.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.

@@ -1,13 +1,13 @@
-# Render Blueprint for the parse-meal service.
+# Render Blueprint for the parse-meal service and the orphan-photo sweeper.
 #
 # Deploy: Render dashboard -> New -> Blueprint -> pick this repository. Render reads
 # this file and builds only server/, which is why server/ is a standalone npm
 # package with its own lockfile.
 #
-# Every value below is marked `sync: false`, so Render asks for it on the first
-# deploy instead of storing it here. Copy them out of .env (or .env.example) into
-# the dashboard once. Nothing in this file is a secret and nothing should become
-# one.
+# Secrets are never written here. Every value that matters is marked `sync: false`, so
+# Render asks for it on the first deploy and holds it in the dashboard — this file
+# commits key names and nothing else. The only literal values below are NODE_VERSION
+# and SWEEP_DRY_RUN, neither of which is a secret.
 #
 # The frontend is not described here: it is a static build served elsewhere
 # (Cloudflare Workers via Nitro, or any static host), and it only needs
@@ -17,7 +17,11 @@ services:
   - type: web
     name: nutritrack-parse-meal
     runtime: node
-    plan: free
+    # NOT free. A free instance sleeps after ~15 minutes idle, and the next request
+    # pays a cold start of tens of seconds — which is precisely the wrong thing to
+    # meet at a dinner table, holding a phone, waiting to log a meal. The whole point
+    # of this service is a fast answer to an occasional request.
+    plan: starter
 
     # Build and run from server/. The relative import of ../../shared/meal-parse is
     # inlined into the bundle by esbuild, so the deployed artifact does not reach
@@ -52,8 +56,11 @@ services:
         sync: false
 
       # --- CORS ---------------------------------------------------------------
-      # Comma-separated. In production this must include the origin the frontend is
-      # served from, not localhost.
+      # Comma-separated. Must list the origin the frontend is actually served from.
+      # Locally that is http://localhost:8080; in production it is the deployed
+      # frontend's origin and nothing else. A request from an origin not listed here
+      # is refused before a handler runs, so getting this wrong looks like the service
+      # being down.
       - key: ALLOWED_ORIGINS
         sync: false
 
