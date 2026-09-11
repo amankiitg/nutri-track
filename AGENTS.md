@@ -33,6 +33,15 @@ npm run lint
 npm run format
 ```
 
+## Known issues
+
+- **`/auth` hydration mismatch (dev only).** Arriving at `/auth` via the redirect from a
+  guarded route (`/onboarding`, `/today`, `/settings`, `/trends` while signed out) logs
+  `Hydration failed because the server rendered HTML didn't match the client` — the server
+  emitted the Suspense fallback where the client emitted the page. React recovers, the page
+  renders correctly, and a direct load of `/auth` is clean. Revisit when the Wrangler
+  preview is set up, to confirm whether it also occurs in a production build.
+
 ## Layout and conventions
 
 - `src/routes/` — TanStack Router file-based routes. `_authenticated/` is the session-gated

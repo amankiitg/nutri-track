@@ -61,16 +61,32 @@ function AuthPage() {
   const google = async () => {
     setBusy("google");
     setError(null);
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        // Take the URL back rather than letting supabase-js navigate, so any error it
+        // returns lands in the error state below.
+        //
+        // Caveat: supabase-js builds the `/authorize` URL client-side and reports no
+        // error when a provider is not enabled on the project, so a misconfigured
+        // provider still shows the auth server's own response. Catching that here
+        // would mean calling `/authorize` ourselves, which mints the OAuth flow state
+        // we would then have to complete by hand.
+        skipBrowserRedirect: true,
+      },
     });
     if (oauthError) {
       setError(oauthError.message);
       setBusy(null);
       return;
     }
-    // On success the browser is already leaving for Google.
+    if (data.url) {
+      window.location.assign(data.url);
+      return;
+    }
+    setError("Could not start Google sign-in. Please try again.");
+    setBusy(null);
   };
 
   const signIn = async (e: FormEvent) => {
