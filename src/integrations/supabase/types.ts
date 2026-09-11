@@ -173,11 +173,12 @@ export type Database = {
           deleted_at: string | null;
           eaten_at: string;
           id: string;
+          idempotency_key: string | null;
           input_fingerprint: string;
           meal_type: Database["public"]["Enums"]["meal_type"];
           notes: string | null;
-          photo_hash: string | null;
-          photo_path: string | null;
+          photo_hashes: string[];
+          photo_paths: string[];
           source: Database["public"]["Enums"]["meal_source"];
           user_id: string;
         };
@@ -186,11 +187,12 @@ export type Database = {
           deleted_at?: string | null;
           eaten_at?: string;
           id?: string;
+          idempotency_key?: string | null;
           input_fingerprint: string;
           meal_type: Database["public"]["Enums"]["meal_type"];
           notes?: string | null;
-          photo_hash?: string | null;
-          photo_path?: string | null;
+          photo_hashes?: string[];
+          photo_paths?: string[];
           source: Database["public"]["Enums"]["meal_source"];
           user_id: string;
         };
@@ -199,11 +201,12 @@ export type Database = {
           deleted_at?: string | null;
           eaten_at?: string;
           id?: string;
+          idempotency_key?: string | null;
           input_fingerprint?: string;
           meal_type?: Database["public"]["Enums"]["meal_type"];
           notes?: string | null;
-          photo_hash?: string | null;
-          photo_path?: string | null;
+          photo_hashes?: string[];
+          photo_paths?: string[];
           source?: Database["public"]["Enums"]["meal_source"];
           user_id?: string;
         };
@@ -357,6 +360,7 @@ export type Database = {
       check_email_allowed: { Args: { _email: string }; Returns: boolean };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
+      save_meal: { Args: { _items: Json; _meal: Json }; Returns: Json };
     };
     Enums: {
       activity_level:
