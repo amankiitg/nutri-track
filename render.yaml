@@ -44,12 +44,11 @@ services:
       - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
 
-      # --- DeepSeek -----------------------------------------------------------
-      - key: DEEPSEEK_API_KEY
+      # --- Google Gemini ------------------------------------------------------
+      - key: GEMINI_API_KEY
         sync: false
-      - key: DEEPSEEK_VISION_MODEL
-        sync: false
-      - key: DEEPSEEK_TEXT_MODEL
+      # The stable model id from AI Studio, e.g. gemini-3.1-flash-lite.
+      - key: GEMINI_VISION_MODEL
         sync: false
 
       # --- CORS ---------------------------------------------------------------

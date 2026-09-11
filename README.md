@@ -8,8 +8,8 @@ vision/text LLM parses the input into structured food items, and you always revi
 edit before anything is saved.
 
 **Stack:** React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui, TanStack Start/Router,
-Supabase (auth, Postgres, storage), Recharts, and a small Express service for meal
-parsing deployed to Render.
+Supabase (auth, Postgres, storage), Recharts, and a small Express service on Render that
+parses meals with Google Gemini's structured output.
 
 ---
 
@@ -18,7 +18,7 @@ parsing deployed to Render.
 - **Node.js 20+** and npm (npm is this repo's only package manager — there is no `bun.lock`)
 - A **Supabase project** (for auth, database and storage)
 - A **Google Cloud OAuth client** if you want Google sign-in
-- A **DeepSeek API key** if you want meal parsing (Step 2, see below)
+- A **Google AI Studio API key** if you want meal parsing (see below)
 
 ## Setup
 
@@ -56,9 +56,11 @@ Server-only. Copy exactly these into Render's environment panel:
   `apikey` header; it grants nothing on its own, since every request the service makes
   also carries the caller's own token
 - `SUPABASE_PROJECT_ID` — the project ref. Not read by any code
-- `DEEPSEEK_API_KEY` — **the only genuine secret in the file**
-- `DEEPSEEK_VISION_MODEL`, `DEEPSEEK_TEXT_MODEL` — the model ids, so a model change never
-  needs a code change
+- `GEMINI_API_KEY` — **the only genuine secret in the file**
+- `GEMINI_VISION_MODEL` — the stable model id from AI Studio, e.g. `gemini-3.1-flash-lite`.
+  One id serves photos and text alike, because Flash is multimodal, so there is no
+  separate text model to keep in step. Pin a stable version rather than a `-latest`
+  alias, which gets hot-swapped underneath you
 - `PORT` — local development only. Render injects its own; the default is 8787
 - `ALLOWED_ORIGINS` — a comma-separated CORS allow-list. Locally `http://localhost:8080`
 
@@ -122,19 +124,26 @@ configured in `vite.config.ts`). To self-host the SSR bundle instead, change the
 ## The parse-meal service
 
 `server/` is a small Express service that turns photos, a transcript or typed text into
-structured meal items via DeepSeek. It is a **separate npm package** with its own lockfile
+structured meal items via Google Gemini. It is a **separate npm package** with its own lockfile
 and its own test suite, because Render builds it alone with `rootDir: server`.
 
 It owns no data of its own. It verifies the Supabase access token the browser sends as a
 bearer header, derives the user id from the _verified_ token — never from the request body —
 and then uses that same token for every database and storage call. RLS is the only thing
 authorising anything, and the service holds no key that could bypass it.
+Meal parsing uses Gemini's **native structured output**. The response schema is derived
+from the Zod contract in `shared/meal-parse.ts` rather than written out a second time, so
+the prompt, the model's contract and the validator are one description. The reply is
+validated against that contract anyway and the sanity checks (Atwater, calorie and gram
+bounds) still run: a schema-constrained model is a strong guarantee, not a proof. The
+single retry is kept for the cases where the model returns nothing at all — a safety
+refusal or a truncated reply — which is why that branch is live rather than dead code.
 
 ```sh
 cd server
 npm install
 npm run dev        # http://localhost:8787
-npm test           # DeepSeek is mocked, so the suite cannot spend a token
+npm test           # the model is mocked, so the suite cannot spend a token
 npm run typecheck
 npm run build      # bundles to dist/index.js with the shared contract inlined
 npm start          # runs the built bundle
@@ -163,16 +172,15 @@ Only `server/` is uploaded: `shared/meal-parse.ts` is compiled into the bundle a
 time, so nothing outside `rootDir` is needed at runtime. Anything outside `ALLOWED_ORIGINS`
 is refused by CORS before a handler runs.
 
-DeepSeek is configured entirely through these three names, so swapping models never needs a
+Gemini is configured entirely through these two names, so swapping models never needs a
 code change:
 
-| Variable                | Purpose                                                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEEPSEEK_API_KEY`      | DeepSeek API key. Must never appear under `src/` or `shared/`                                                                                                                   |
-| `DEEPSEEK_VISION_MODEL` | Vision model id used for photo parsing. Currently `deepseek-v4-flash-vision-exp`; keep it configurable rather than hardcoded, as a newer model may be available on your account |
-| `DEEPSEEK_TEXT_MODEL`   | Text model id, currently `deepseek-chat`                                                                                                                                        |
+| Variable              | Purpose                                                                                                                                                          |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`      | Google AI Studio API key. Must never appear under `src/` or `shared/`                                                                                            |
+| `GEMINI_VISION_MODEL` | Stable model id from AI Studio, e.g. `gemini-3.1-flash-lite`. Multimodal, so it serves photos and text alike; pin a stable version rather than a `-latest` alias |
 
-All DeepSeek traffic goes through the service. The key must never reach the browser, and
+All model traffic goes through the service. The key must never reach the browser, and
 never appears under `src/` or `shared/`.
 
 ## Project layout
@@ -202,7 +210,9 @@ server/                        The parse-meal service (Express 5, deployed to Re
   src/config.ts                Zod-validated process.env, checked at boot
   src/app.ts                   Routes, CORS, error handling
   src/parse-meal.ts            Rate limit, prompt assembly, the single retry
-  src/deepseek.ts              The model client, with thinking mode disabled
+  src/llm.ts                   The provider-neutral model interface
+  src/gemini.ts                The Gemini client: structured output, inline images
+  src/response-schema.ts       Derives the response schema from the Zod contract
   src/caller-store.ts          Every Supabase read and write, scoped to the caller
 
 supabase/migrations/           Postgres schema, RLS and views

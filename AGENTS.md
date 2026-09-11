@@ -12,7 +12,7 @@ Supabase, Recharts.
    `fix(dedupe): ...`. Keep the branch in a working state: build, typecheck and tests green.
 3. **Schema changes are always a new timestamped migration** under `supabase/migrations/`.
    Never edit an application migration.
-4. **Secrets stay server-side.** The DeepSeek key must never appear in any file under
+4. **Secrets stay server-side.** The Gemini key must never appear in any file under
    `src/` or `shared/`. If you find it there, that is a P0 bug — flag it and fix it first.
    Nothing secret may carry a `VITE_` prefix; Vite inlines those into the browser bundle.
    Server-only names live in `.env` locally and in Render's environment panel in
@@ -71,7 +71,15 @@ npm test
 - `server/` — the `parse-meal` Node service (Express 5) deployed to Render. A separate npm
   package with its own lockfile, because Render builds it alone with `rootDir: server`.
   It owns no data of its own: it verifies the caller's Supabase JWT and then talks to
-  Supabase and DeepSeek with that same token, so RLS does the authorising.
+  Supabase and Gemini with that same token, so RLS does the authorising.
+- The model call sits behind `server/src/llm.ts`, with Gemini as the only implementation.
+  The image travels as raw bytes, not as a data URL, so the provider — not the caller —
+  decides the wire encoding. Gemini's response schema is derived from the Zod contract by
+  `server/src/response-schema.ts`; never hand-write a second copy of the field list, in the
+  prompt or anywhere else.
+- That converter identifies Zod types by `_def.typeName`, not `instanceof`: the two zod
+  installs in this repo (root for `shared/`, `server/` for the service) are different copies
+  and `instanceof` is false across them.
 - Aggregations belong in Postgres, not in the browser.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.
