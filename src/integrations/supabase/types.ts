@@ -283,6 +283,7 @@ export type Database = {
           id: string;
           protein_g: number;
           user_id: string;
+          weight_kg: number | null;
         };
         Insert: {
           calories: number;
@@ -294,6 +295,7 @@ export type Database = {
           id?: string;
           protein_g: number;
           user_id: string;
+          weight_kg?: number | null;
         };
         Update: {
           calories?: number;
@@ -305,6 +307,7 @@ export type Database = {
           id?: string;
           protein_g?: number;
           user_id?: string;
+          weight_kg?: number | null;
         };
         Relationships: [];
       };
@@ -383,10 +386,12 @@ export type Database = {
           target_protein_g: number;
         }[];
       };
-      get_period_summary: {
-        Args: { p_end: string; p_start: string };
-        Returns: Json;
-      };
+      get_period_summary:
+        | { Args: { p_end: string; p_start: string }; Returns: Json }
+        | {
+            Args: { p_bucket?: string; p_end: string; p_start: string };
+            Returns: Json;
+          };
       get_weight_series: {
         Args: { p_end: string; p_start: string };
         Returns: {
@@ -412,6 +417,7 @@ export type Database = {
           id: string;
           protein_g: number;
           user_id: string;
+          weight_kg: number | null;
         };
         SetofOptions: {
           from: "*";
@@ -419,6 +425,18 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      target_refresh_needed: {
+        Args: { p_days?: number; p_threshold_kg?: number; p_today: string };
+        Returns: {
+          average_kg: number;
+          basis_effective_from: string;
+          basis_kg: number;
+          difference_kg: number;
+          needed: boolean;
+          next_effective_from: string;
+          readings: number;
+        }[];
       };
       trailing_days: {
         Args: { p_days?: number; p_end_date: string };

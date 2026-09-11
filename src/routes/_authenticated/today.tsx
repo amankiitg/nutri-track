@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import { CalorieRing } from "@/components/dashboard/CalorieRing";
 import { MacroBars, VerdictLine } from "@/components/dashboard/MacroBars";
 import { MealTimeline } from "@/components/dashboard/MealTimeline";
 import { WeightEntry } from "@/components/dashboard/WeightEntry";
-import { localDateString } from "@/lib/profile";
+import { localDateString, refreshTargetIfStale } from "@/lib/profile";
 import {
   VERDICT_DAYS,
   deleteMeal,
@@ -116,6 +116,34 @@ function TodayPage() {
       toast.error(error instanceof Error ? error.message : "Could not save that weight.");
     },
   });
+
+  // The one place the app writes something the user did not ask for on the spot.
+  //
+  // A target is only recomputed when the weight behind it has drifted, and the new row
+  // takes effect tomorrow, so this can never move the numbers on screen. The guard is
+  // belt and braces: `refreshTargetIfStale` is idempotent, because today's effective
+  // target keeps its old basis until tomorrow's row is in force.
+  const refreshAttempted = useRef(false);
+  useEffect(() => {
+    if (!profile || refreshAttempted.current) return;
+    refreshAttempted.current = true;
+
+    void refreshTargetIfStale(profile)
+      .then((result) => {
+        if (!result.refreshed) return;
+        // Said out loud rather than done silently: the target is about to change and the
+        // user should know why, and from when.
+        toast.info("Your target has been refreshed", {
+          description: `You have been averaging ${result.weightKg} kg, so tomorrow starts on a new target. Today is unchanged.`,
+          duration: 12000,
+        });
+        void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
+      })
+      .catch(() => {
+        // A refresh that fails must not interrupt the dashboard. Today's numbers are
+        // still correct; tomorrow's will be recomputed on the next load.
+      });
+  }, [profile, queryClient]);
 
   return (
     <div className="app-shell space-y-6 py-8">

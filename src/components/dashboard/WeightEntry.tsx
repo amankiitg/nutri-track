@@ -178,11 +178,13 @@ export function WeightEntry({
           </Button>
         </div>
 
-        {/* Said out loud because it is a decision, not an accident: recording a weight
-            does not rewrite the day's calorie target. */}
+        {/* Said out loud because it is a policy, not an accident. Recording a weight does
+            not touch today's target, but it is the input a later refresh reads: once the
+            trailing 7-day average is 1.5 kg from the weight the current target was built
+            from, tomorrow starts on a new one. */}
         <p className="text-[11px] text-muted-foreground">
-          Recorded against today. This does not change today's calorie target — update it in
-          Settings.
+          Recorded against today. Today's calorie target is unchanged — once your recent weight has
+          moved enough, tomorrow starts on a target recomputed from it.
         </p>
       </CardContent>
     </Card>
