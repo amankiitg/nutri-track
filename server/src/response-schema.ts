@@ -3,16 +3,22 @@
  * prompt, the validator and what the model is told to produce are one description
  * rather than three that agree by luck.
  *
- * The vocabulary is the JSON Schema subset that Gemini's structured-output mode
- * accepts, taken from its documentation:
+ * The vocabulary is Gemini's `generationConfig.responseSchema`:
  *
- *   - `type` is one of string, number, integer, boolean, object, array, null
- *   - a nullable field is a type *array*, e.g. ["string", "null"], not a union of
- *     two schemas
- *   - `description` and `title` are how the model is told what a field means, which
- *     is why the descriptions live on the Zod schema
- *   - `enum`, `minimum`, `maximum`, `items`, `minItems`, `maxItems`, `properties`,
- *     `required` and `additionalProperties` are supported
+ *   - `type` is a single value: string, number, integer, boolean, object or array
+ *   - a nullable field is `nullable: true`, **not** `type: ["string", "null"]`.
+ *     This field is a Proto `Schema`, where `type` is a single enum rather than a
+ *     list; a list is rejected with "Proto field is not repeating, cannot start
+ *     list". The type-array form in Google's docs belongs to the JSON-Schema-based
+ *     API, not this one. A real call is what settled it — see `scripts/smoke-gemini.ts`.
+ *   - `description` is how the model is told what a field means, which is why the
+ *     descriptions live on the Zod schema
+ *   - `enum`, `minimum`, `maximum`, `items`, `minItems`, `maxItems`, `properties`
+ *     and `required` are supported
+ *   - `additionalProperties` is **not**. The Proto has no such field, and sending it
+ *     fails the whole request with "Cannot find field" — also settled by a real call.
+ *     Extras are not a concern anyway: the contract lists every field and Zod strips
+ *     unknown keys from the reply.
  *   - anything else — unions of different types, transforms, refinements, records,
  *     recursive types — is not, and is reported as unsupported rather than silently
  *     dropped, because a silently dropped constraint is a constraint the model does
@@ -26,10 +32,12 @@
 import { z } from "zod";
 
 export interface ResponseSchema {
-  type?: string | string[];
+  type?: string;
   description?: string;
-  title?: string;
-  enum?: Array<string | number>;
+  /** Proto `Schema.nullable`. A type array is rejected by this API. */
+  nullable?: boolean;
+  /** The Proto's `enum` is a list of strings, so only string enums can be sent. */
+  enum?: string[];
   format?: string;
   minimum?: number;
   maximum?: number;
@@ -38,7 +46,6 @@ export interface ResponseSchema {
   items?: ResponseSchema;
   properties?: Record<string, ResponseSchema>;
   required?: string[];
-  additionalProperties?: boolean;
 }
 
 export class UnsupportedZodTypeError extends Error {
@@ -112,12 +119,10 @@ function objectSchema(source: z.ZodObject<z.ZodRawShape>): ResponseSchema {
   const shape = source.shape as Record<string, z.ZodTypeAny>;
 
   for (const [key, fieldSchema] of Object.entries(shape)) {
-    const { inner, nullable, optional } = unwrap(fieldSchema);
-    const converted = convertInner(inner);
-    properties[key] = nullable ? { ...converted, type: withNull(converted.type) } : converted;
+    properties[key] = convert(fieldSchema);
     // A nullable field is still required: null is how the model says "I do not know",
     // and omitting the key is not the same thing.
-    if (!optional) required.push(key);
+    if (!unwrap(fieldSchema).optional) required.push(key);
   }
 
   return { type: "object", properties, required, ...describe(source) };
@@ -177,7 +182,8 @@ function convertInner(source: z.ZodTypeAny): ResponseSchema {
     case "ZodLiteral": {
       const value = (source as unknown as { value: unknown }).value;
       if (typeof value === "string") return { type: "string", enum: [value] };
-      if (typeof value === "number") return { type: "number", enum: [value] };
+      // The Proto's `enum` holds strings only, so a numeric literal cannot be pinned
+      // down without silently losing the constraint.
       throw new UnsupportedZodTypeError(`a literal of type ${typeof value} cannot be expressed`);
     }
     case "ZodUnion": {
@@ -199,27 +205,21 @@ function convertInner(source: z.ZodTypeAny): ResponseSchema {
   }
 }
 
-function withNull(type: ResponseSchema["type"]): string | string[] {
-  if (type === undefined) return ["null"];
-  return Array.isArray(type) ? [...type, "null"] : [type, "null"];
+function withNullability(converted: ResponseSchema, nullable: boolean): ResponseSchema {
+  return nullable ? { ...converted, nullable: true } : converted;
 }
 
-/** Converts one schema, keeping the null-ness of the field it came from. */
+/** Converts one schema, recording whether the field it came from may be null. */
 function convert(source: z.ZodTypeAny): ResponseSchema {
   const { inner, nullable } = unwrap(source);
-  const converted = convertInner(inner);
-  if (!nullable) return converted;
-  return { ...converted, type: withNull(converted.type) };
+  return withNullability(convertInner(inner), nullable);
 }
 
 /**
- * The response schema to send with the request. `additionalProperties: false` is
- * what makes the model stick to the listed fields instead of inventing its own.
+ * The response schema to send with the request. Gemini enforces the field list as
+ * given, so there is nothing to switch off for extra properties — and no
+ * `additionalProperties` field to say it with, even if there were.
  */
 export function zodToResponseSchema(schema: z.ZodTypeAny): ResponseSchema {
-  const converted = convert(schema);
-  if (converted.type === "object") {
-    return { ...converted, additionalProperties: false };
-  }
-  return converted;
+  return convert(schema);
 }

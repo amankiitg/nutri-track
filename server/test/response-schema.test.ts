@@ -10,15 +10,18 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { modelContractSchema, parseModelResponse } from "../../shared/meal-parse";
-import { UnsupportedZodTypeError, zodToResponseSchema } from "../src/response-schema";
+import { UnsupportedZodTypeError, zodToResponseSchema, type ResponseSchema } from "../src/response-schema";
 
 describe("zodToResponseSchema", () => {
   const schema = zodToResponseSchema(modelContractSchema);
 
-  it("describes the top level as an object that admits no extra fields", () => {
+  it("describes the top level as the object the model must return", () => {
     expect(schema.type).toBe("object");
-    expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toEqual(["items"]);
+    // Not additionalProperties: the Proto has no such field and rejects the whole
+    // request if it is sent. Checked on the serialised form, because the type no
+    // longer declares the property to assert on.
+    expect(Object.keys(schema)).not.toContain("additionalProperties");
   });
 
   it("carries the Zod descriptions through as the model's instructions", () => {
@@ -28,16 +31,37 @@ describe("zodToResponseSchema", () => {
     expect(item?.properties?.["calories"]?.description).toContain("not per 100 g");
   });
 
-  it("expresses a nullable field as a type array, not a union", () => {
+  it("marks a nullable field with the Proto nullable flag, not a type array", () => {
     const item = schema.properties?.["items"]?.items;
-    expect(item?.properties?.["grams"]?.type).toEqual(["number", "null"]);
-    expect(item?.properties?.["sugar_g"]?.type).toEqual(["number", "null"]);
+    // generationConfig.responseSchema is a Proto Schema, in which `type` is a single
+    // enum. A type array is rejected outright with "Proto field is not repeating,
+    // cannot start list" — which is how a real call found this.
+    expect(item?.properties?.["grams"]?.type).toBe("number");
+    expect(item?.properties?.["grams"]?.nullable).toBe(true);
+    expect(item?.properties?.["sugar_g"]?.nullable).toBe(true);
+    expect(item?.properties?.["unit"]?.nullable).toBe(true);
   });
 
-  it("leaves a non-nullable field as a single type", () => {
+  it("leaves a non-nullable field as a single type with no nullable flag", () => {
     const item = schema.properties?.["items"]?.items;
     expect(item?.properties?.["calories"]?.type).toBe("number");
     expect(item?.properties?.["name"]?.type).toBe("string");
+    expect(item?.properties?.["calories"]?.nullable).toBeUndefined();
+    expect(item?.properties?.["confidence"]?.nullable).toBeUndefined();
+  });
+
+  it("never emits a type array anywhere, at any depth", () => {
+    // The whole schema is rejected if one field uses the documented-but-wrong form,
+    // so this walks the tree rather than trusting the fields we happen to assert on.
+    const walk = (node: ResponseSchema | undefined, path: string): void => {
+      if (node === undefined) return;
+      expect({ path, type: Array.isArray(node.type) }).toEqual({ path, type: false });
+      for (const [key, child] of Object.entries(node.properties ?? {})) {
+        walk(child, `${path}.${key}`);
+      }
+      walk(node.items, `${path}[]`);
+    };
+    walk(schema, "response");
   });
 
   it("keeps every field required, so null is how the model says 'unknown'", () => {
