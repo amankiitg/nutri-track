@@ -12,6 +12,8 @@
     "test": "vitest run --config vitest.config.ts",
     "test:server": "npm test --prefix server",
     "smoke": "npm run smoke --prefix server --",
+    "sweep": "npm run sweep --prefix server --",
+    "sweep:live": "npm run sweep:live --prefix server --",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write ."
   },

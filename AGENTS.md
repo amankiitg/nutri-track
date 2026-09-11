@@ -17,7 +17,11 @@ Supabase, Recharts.
    Nothing secret may carry a `VITE_` prefix; Vite inlines those into the browser bundle.
    Server-only names live in `.env` locally and in Render's environment panel in
    production — one file, one place to look. `SUPABASE_SERVICE_ROLE_KEY` is not read by the
-   parse-meal service at all; it forwards the caller's JWT instead.
+   parse-meal service at all; it forwards the caller's JWT instead. Exactly one thing reads
+   it: the orphan-photo sweeper (`server/src/sweep.ts`, scheduled by the `type: cron`
+   service in `render.yaml`), which needs it because it must see every user's meals to know
+   which photos are still referenced. It reads it from `server/src/sweep-config.ts`, which
+   the web service never loads. Never add that key to `server/src/config.ts`.
 5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
    RLS is a bug.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
@@ -32,9 +36,16 @@ npm run build        # client + SSR bundle
 npm run typecheck    # tsc --noEmit
 npm test             # vitest (jsdom) — frontend and the shared module
 npm run test:server  # vitest (node) — the parse-meal service
+npm run smoke        # one real Gemini call on a real image; spends tokens, run by hand
+npm run sweep        # orphan-photo sweeper, dry run — deletes nothing
+npm run sweep:live   # the same, actually deleting
 npm run lint
 npm run format
 ```
+
+`server/scripts/smoke-gemini.ts` spends real tokens and `server/src/sweep.ts` deletes real
+photos. Neither is ever collected by a test suite. Keep it that way: the model in the suite is
+a fake, and the sweeper's tests run against a fake store.
 
 The service in `server/` is its own package, so run its scripts from there:
 
@@ -55,6 +66,21 @@ npm test
   renders correctly, and a direct load of `/auth` is clean. Revisit when the Wrangler
   preview is set up, to confirm whether it also occurs in a production build.
 
+## Known characteristics (not bugs, do not "fix" without evidence)
+
+- **Item granularity varies between runs on identical input.** The model runs at
+  temperature 0.2, not 0, so the same photo can come back as five items one time and six the
+  next — a salad split into "cucumber and tomato salad" plus "fresh arugula", say. Totals stay
+  sane; the item _boundaries_ move. This is why day-over-day comparisons can look noisier than
+  the underlying numbers. Left as is deliberately: it is a consequence of wanting a model that
+  reads a plate rather than a lookup table. Do not chase it with prompt changes.
+- **Portion estimates for calorie-dense components are the weakest part of a parse.**
+  Identification is consistently good; grams are guesses from a photo. Hummus is the worst
+  case found so far — a dip-sized ~50 g estimate on a bowl that plausibly holds 2–3× that,
+  which moves a meal total by 150+ kcal. The same relative error on a salad moves it by ~35.
+  The review screen is the mitigation: that is what it is for. Do not tune the prompt to a
+  single photo.
+
 ## Layout and conventions
 
 - `src/routes/` — TanStack Router file-based routes. `_authenticated/` is the session-gated
@@ -72,6 +98,13 @@ npm test
   package with its own lockfile, because Render builds it alone with `rootDir: server`.
   It owns no data of its own: it verifies the caller's Supabase JWT and then talks to
   Supabase and Gemini with that same token, so RLS does the authorising.
+- `server/src/sweep.ts` — the orphan-photo sweeper, and the only reader of
+  `SUPABASE_SERVICE_ROLE_KEY`. Two rules, both in the pure `planSweep`: a referenced photo is
+  never deleted, and an unreferenced one is deleted only when it is provably older than the
+  24-hour grace period. An unknown age counts as unknown, never as old. It deletes through the
+  Storage API because `protect_delete` blocks direct SQL deletes. It ships in dry-run mode;
+  `SWEEP_DRY_RUN=false` is the single switch, and a typo in that value stops the job rather
+  than guessing.
 - The model call sits behind `server/src/llm.ts`, with Gemini as the only implementation.
   The image travels as raw bytes, not as a data URL, so the provider — not the caller —
   decides the wire encoding. Gemini's response schema is derived from the Zod contract by

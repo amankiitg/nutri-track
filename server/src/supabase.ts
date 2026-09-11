@@ -6,8 +6,10 @@
  * the sense that matters: it identifies the project, and authorisation comes from
  * the caller's own JWT, which the caller client sends as `Authorization`.
  *
- * This is why SUPABASE_SERVICE_ROLE_KEY is not in the configuration. Nothing here
- * ever needs to bypass RLS.
+ * This is why SUPABASE_SERVICE_ROLE_KEY is absent from the service's own config.
+ * Nothing on the request path ever needs to bypass RLS. The one exception in this
+ * repository is the orphan-photo sweeper, which is a separate job with a separate
+ * config (`sweep-config.ts`) precisely so that the key cannot reach the service.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Config } from "./config";
@@ -58,4 +60,23 @@ export function createCallerClient(config: Config, accessToken: string): Supabas
     config.SUPABASE_PUBLISHABLE_KEY,
     baseOptions(config.SUPABASE_PUBLISHABLE_KEY, `Bearer ${accessToken}`),
   );
+}
+
+/**
+ * The service role client, used by the orphan-photo sweeper and by nothing else.
+ *
+ * RLS does not apply to it, which is the whole point: the sweeper has to read every
+ * meal in the database to know which photos are still referenced. The publishable key
+ * still goes in `apikey` because Storage rejects a request without one; the service
+ * role key is what carries the authority.
+ *
+ * Do not reach for this from the request path. A query made with it is unscoped, and
+ * the reason the parse-meal service is safe is that it never has one of these.
+ */
+export function createServiceClient(
+  url: string,
+  publishableKey: string,
+  serviceRoleKey: string,
+): SupabaseClient {
+  return createClient(url, publishableKey, baseOptions(publishableKey, `Bearer ${serviceRoleKey}`));
 }

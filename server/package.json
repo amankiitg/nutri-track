@@ -9,8 +9,12 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --packages=external",
+    "build": "npm run build:service && npm run build:sweep",
+    "build:service": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --packages=external",
+    "build:sweep": "esbuild scripts/sweep-orphan-photos.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/sweep.js --packages=external",
     "start": "node dist/index.js",
+    "sweep": "tsx scripts/sweep-orphan-photos.ts",
+    "sweep:live": "tsx scripts/sweep-orphan-photos.ts --live",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke": "tsx scripts/smoke-gemini.ts"

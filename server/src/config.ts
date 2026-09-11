@@ -13,8 +13,8 @@
  */
 import { z } from "zod";
 
-/** An origin or URL we can hand to `cors` and `fetch`. */
-const httpUrl = z
+/** An origin or URL we can hand to `cors` and `fetch`. Shared with the sweeper's config. */
+export const httpUrl = z
   .string()
   .min(1, "required")
   .refine((value) => {

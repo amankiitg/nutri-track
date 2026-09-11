@@ -56,3 +56,52 @@ services:
       # served from, not localhost.
       - key: ALLOWED_ORIGINS
         sync: false
+
+  # ---------------------------------------------------------------------------
+  # The orphan-photo sweeper (server/scripts/sweep-orphan-photos.ts).
+  #
+  # A cron job rather than anything inside the web service: it is the only thing in
+  # this repository that reads SUPABASE_SERVICE_ROLE_KEY, and keeping it in its own
+  # service is what stops that key from reaching the request path.
+  #
+  # It shares the build with the web service — `npm run build` emits both dist/index.js
+  # and dist/sweep.js — so a failed build fails both and they cannot drift apart.
+  #
+  # Schedule is cron in UTC. 04:00 UTC is early morning in Europe and late evening in
+  # the Americas, which is when the fewest captures are in flight. Nothing depends on
+  # the hour: the grace period, not the schedule, is what protects a capture in progress.
+  #
+  # THE FIRST DEPLOYS ARE DRY RUNS. `command` has no --live and SWEEP_DRY_RUN defaults
+  # to true, so this deletes nothing until you say so. To go live, set SWEEP_DRY_RUN to
+  # false on this service in Render's dashboard; no commit and no redeploy are needed.
+  # See README.md, "Going live with the sweeper".
+  # ---------------------------------------------------------------------------
+  - type: cron
+    name: nutritrack-sweep-orphan-photos
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    schedule: "0 4 * * *"
+    # The built bundle, not `npm run sweep`. The cron run should execute exactly what
+    # the build produced, so a passing build is the whole guarantee — no dependency on
+    # devDependencies being installed at run time.
+    command: node dist/sweep.js
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      - key: SUPABASE_URL
+        sync: false
+      # Same public value the web service has. Storage rejects a request with no
+      # `apikey` header, so even the service role needs it present.
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # The one secret that bypasses RLS. This service and no other. It is optional to
+      # the parse-meal web service, which must never have it.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Dry run unless this is explicitly "false". Anything unrecognised stops the job
+      # rather than being guessed at. Set to "false" once a dry run looks right.
+      - key: SWEEP_DRY_RUN
+        value: "true"
