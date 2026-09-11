@@ -51,6 +51,10 @@ npm run format
   worked example. Do not reimplement this maths anywhere else.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
+- `supabase/functions/_shared/` — code the browser and the Edge Functions both import,
+  reachable as `@shared/*`. Bare imports such as `zod` resolve from `node_modules` in Vite
+  and from the import map in `supabase/functions/deno.json` in Deno; that mapping is
+  required for `functions deploy`, so keep the versions in step.
 - Aggregations belong in Postgres, not in the browser.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.
