@@ -12,10 +12,12 @@ Supabase, Recharts.
    `fix(dedupe): ...`. Keep the branch in a working state: build, typecheck and tests green.
 3. **Schema changes are always a new timestamped migration** under `supabase/migrations/`.
    Never edit an application migration.
-4. **Secrets stay server-side** in Supabase Edge Function secrets: `DEEPSEEK_API_KEY`,
-   `DEEPSEEK_VISION_MODEL`, `DEEPSEEK_TEXT_MODEL`. The DeepSeek key must never appear in any
-   file under `src/`. If you find it there, that is a P0 bug — flag it and fix it first.
+4. **Secrets stay server-side.** The DeepSeek key must never appear in any file under
+   `src/` or `shared/`. If you find it there, that is a P0 bug — flag it and fix it first.
    Nothing secret may carry a `VITE_` prefix; Vite inlines those into the browser bundle.
+   Server-only names live in `.env` locally and in Render's environment panel in
+   production — one file, one place to look. `SUPABASE_SERVICE_ROLE_KEY` is not read by the
+   parse-meal service at all; it forwards the caller's JWT instead.
 5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
    RLS is a bug.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
@@ -25,12 +27,23 @@ Supabase, Recharts.
 ## Commands
 
 ```sh
-npm run dev        # http://localhost:8080
-npm run build      # client + SSR bundle
-npm run typecheck  # tsc --noEmit
-npm test           # vitest (jsdom)
+npm run dev          # frontend on http://localhost:8080
+npm run build        # client + SSR bundle
+npm run typecheck    # tsc --noEmit
+npm test             # vitest (jsdom) — frontend and the shared module
+npm run test:server  # vitest (node) — the parse-meal service
 npm run lint
 npm run format
+```
+
+The service in `server/` is its own package, so run its scripts from there:
+
+```sh
+cd server
+npm run dev    # service on http://localhost:8787
+npm run build  # bundle to dist/index.js
+npm start      # run the built bundle
+npm test
 ```
 
 ## Known issues
@@ -51,10 +64,14 @@ npm run format
   worked example. Do not reimplement this maths anywhere else.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
-- `supabase/functions/_shared/` — code the browser and the Edge Functions both import,
-  reachable as `@shared/*`. Bare imports such as `zod` resolve from `node_modules` in Vite
-  and from the import map in `supabase/functions/deno.json` in Deno; that mapping is
-  required for `functions deploy`, so keep the versions in step.
+- `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's
+  reply is validated against, the sanity checks and the meal fingerprint. Imported by the
+  browser as `@shared/*` and by the service as `../../shared/meal-parse`. It must stay free
+  of browser and Node-only APIs, because both runtimes execute it.
+- `server/` — the `parse-meal` Node service (Express 5) deployed to Render. A separate npm
+  package with its own lockfile, because Render builds it alone with `rootDir: server`.
+  It owns no data of its own: it verifies the caller's Supabase JWT and then talks to
+  Supabase and DeepSeek with that same token, so RLS does the authorising.
 - Aggregations belong in Postgres, not in the browser.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.

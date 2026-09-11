@@ -2,7 +2,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "supabase/functions/**/*.ts",
+    "shared/**/*.ts",
     "vite.config.ts",
     "eslint.config.js"
   ],
@@ -31,8 +31,8 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": ["./src/*"],
-      // Code shared with the parse-meal Edge Function. See `supabase/functions/_shared`.
-      "@shared/*": ["./supabase/functions/_shared/*"]
+      // The parse-meal contract, shared with the server/ service.
+      "@shared/*": ["./shared/*"]
     }
   }
 }
