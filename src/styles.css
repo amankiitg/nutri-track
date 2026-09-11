@@ -202,7 +202,9 @@
   h3,
   .font-display {
     font-family: var(--font-display);
-    font-variation-settings: "opsz" 72, "SOFT" 30;
+    font-variation-settings:
+      "opsz" 72,
+      "SOFT" 30;
     letter-spacing: -0.01em;
   }
 

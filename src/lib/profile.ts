@@ -120,17 +120,15 @@ export async function saveProfileWithTargets(profile: ProfileInsert) {
   if (targetError) throw targetError;
 
   // Seed the weight log with the starting weight (does not overwrite an existing entry).
-  await supabase
-    .from("weight_log")
-    .upsert(
-      {
-        user_id: saved.user_id,
-        logged_on: effectiveFrom,
-        weight_kg: saved.weight_kg,
-        source: "manual",
-      },
-      { onConflict: "user_id,logged_on", ignoreDuplicates: true },
-    );
+  await supabase.from("weight_log").upsert(
+    {
+      user_id: saved.user_id,
+      logged_on: effectiveFrom,
+      weight_kg: saved.weight_kg,
+      source: "manual",
+    },
+    { onConflict: "user_id,logged_on", ignoreDuplicates: true },
+  );
 
   return { profile: saved, target, computed: t };
 }

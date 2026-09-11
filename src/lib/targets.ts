@@ -88,8 +88,7 @@ export function computeTargets(input: TargetInput): TargetResult {
   const maintenance = tdee(basal, input.activityLevel);
   const requestedPace = input.goal === "maintain" ? 0 : (input.paceKgPerWeek ?? 0);
   const dailyDelta = (requestedPace * KCAL_PER_KG) / 7;
-  const adjustment =
-    input.goal === "lose" ? -dailyDelta : input.goal === "gain" ? dailyDelta : 0;
+  const adjustment = input.goal === "lose" ? -dailyDelta : input.goal === "gain" ? dailyDelta : 0;
 
   const floor = CALORIE_FLOOR[input.sex];
   let rawCalories = maintenance + adjustment;
