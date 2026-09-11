@@ -25,6 +25,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Supabase CLI working files. After `supabase link` this directory holds
+# pooler-url, which contains the database password in plain text.
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
