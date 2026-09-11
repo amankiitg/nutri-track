@@ -49,6 +49,11 @@ const goodReply = JSON.stringify({ items: [GOOD_ITEM] });
 interface HarnessOptions {
   /** Model replies, consumed in order; the last one repeats. */
   replies?: string[];
+  /**
+   * Finish reasons, consumed in order alongside `replies`. Defaults to SAFETY for an
+   * empty reply and STOP otherwise, which is what the real client does.
+   */
+  finishReasons?: string[];
   usedToday?: number;
   timeZone?: string;
   /** null makes the verifier reject the token. */
@@ -75,6 +80,8 @@ function buildHarness(options: HarnessOptions = {}) {
         throw new ApiError(502, "upstream_error", "Gemini is unreachable");
       }
       const reply = replies[Math.min(replyIndex, replies.length - 1)] ?? "";
+      const reason =
+        options.finishReasons?.[Math.min(replyIndex, options.finishReasons.length - 1)];
       replyIndex += 1;
       return {
         content: reply,
@@ -82,7 +89,7 @@ function buildHarness(options: HarnessOptions = {}) {
         promptTokens: 11,
         completionTokens: 22,
         latencyMs: 3,
-        finishReason: reply === "" ? "SAFETY" : "STOP",
+        finishReason: reason ?? (reply === "" ? "SAFETY" : "STOP"),
       };
     },
   };
@@ -496,6 +503,70 @@ describe("the single retry", () => {
     // One attempt, not two: retrying a dead socket just doubles the wait.
     expect(completions).toHaveLength(1);
     expect(recorded.map((row) => row.status)).toEqual(["error"]);
+  });
+});
+
+describe("a model that declines", () => {
+  /** SAFETY with no content: Gemini refused and returned no candidates. */
+  const declined = [""];
+
+  it("does not spend a second call on a refusal", async () => {
+    const { app, completions, recorded } = buildHarness({ replies: declined });
+    const response = await post(app, TYPED_MEAL);
+
+    // One attempt. The old behaviour retried, which cost the user a second call out
+    // of their sixty and could not have produced a different answer.
+    expect(completions).toHaveLength(1);
+    expect(recorded).toHaveLength(1);
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe("unparseable_response");
+    expect(response.body.error.details.reason).toBe("refusal");
+    expect(response.body.error.details.finishReason).toBe("SAFETY");
+  });
+
+  it("says the reader declined, and does not advise a note that would also be refused", async () => {
+    const { app } = buildHarness({ replies: declined });
+    const response = await post(app, TYPED_MEAL);
+    const message: string = response.body.error.message;
+
+    expect(message).toContain("declined");
+    expect(message).toContain("type what you ate");
+    // The old wording sent the user round a loop that cannot terminate: the note would
+    // be refused for the same reason the photo was.
+    expect(message).not.toContain("short note");
+  });
+
+  it("still retries an empty reply that was truncated rather than refused", async () => {
+    // MAX_TOKENS is a bad answer, not a refusal, and a second attempt is worth trying.
+    const { app, completions } = buildHarness({
+      replies: ["", goodReply],
+      finishReasons: ["MAX_TOKENS", "STOP"],
+    });
+    const response = await post(app, TYPED_MEAL);
+
+    expect(response.status).toBe(200);
+    expect(completions).toHaveLength(2);
+  });
+
+  it("prefers the refusal wording when it is the retry that is refused", async () => {
+    const { app, completions } = buildHarness({
+      replies: ["not json", ""],
+      finishReasons: ["STOP", "SAFETY"],
+    });
+    const response = await post(app, TYPED_MEAL);
+
+    expect(completions).toHaveLength(2);
+    expect(response.body.error.details.reason).toBe("refusal");
+    expect(response.body.error.message).toContain("declined");
+    expect(response.body.error.message).not.toContain("short note");
+  });
+
+  it("still offers the ordinary advice when a retry simply produced junk", async () => {
+    const { app } = buildHarness({ replies: ["not json", "still not json"] });
+    const response = await post(app, TYPED_MEAL);
+
+    expect(response.body.error.message).toContain("short note");
+    expect(response.body.error.message).not.toContain("declined");
   });
 });
 

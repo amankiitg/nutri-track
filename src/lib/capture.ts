@@ -155,7 +155,15 @@ export async function uploadMealPhoto(
     contentType: "image/jpeg",
     upsert: false,
   });
-  if (error) throw new Error(`Could not upload the photo: ${error.message}`);
+  if (error) {
+    // Storage's own words are about buckets and policies, which is not a thing anyone
+    // can act on from a dinner table. They go to the console, where a person debugging
+    // will look, and the screen gets the one sentence that helps.
+    console.error("meal photo upload failed", { path, message: error.message });
+    throw new Error(
+      "Could not upload the photo, so nothing was logged. Check your connection and try again.",
+    );
+  }
   return { path, sha256: photo.sha256 };
 }
 
@@ -224,58 +232,275 @@ export function parseMealUrl(): string {
 }
 
 /**
+ * How long the browser waits before deciding the service is not coming back.
+ *
+ * This is a ceiling on a hang, not a deadline for a normal parse, so it sits above
+ * the service's own worst case rather than near the typical one. The service allows
+ * each model call 60 s and runs a second attempt when the first reply is unusable,
+ * so a genuinely slow meal can legitimately take 120 s. Timing out below that would
+ * abort requests that were about to succeed, and each abort costs the user two of
+ * their sixty daily calls when they retry. 150 s leaves room for the photo download
+ * and the upload either side of the model and still ends in a message rather than an
+ * indefinite spinner.
+ */
+export const PARSE_TIMEOUT_MS = 150_000;
+
+/**
+ * Why a parse did not produce items.
+ *
+ * The distinction is what makes an honest message possible. "The service is down",
+ * "your phone has no signal" and "the service said no" all look the same from a
+ * `catch` block — one string from a thrown `TypeError` — but they call for different
+ * sentences and a different next move from the user.
+ */
+export type ParseFailureKind =
+  /** The request never reached an answer: no signal, DNS, or a refused origin. */
+  | "unreachable"
+  /** We gave up waiting. */
+  | "timeout"
+  /** The user pressed Cancel. */
+  | "cancelled"
+  /** The service answered, and the answer was an error. */
+  | "service";
+
+export interface ParseFailureOptions {
+  code?: string | null;
+  status?: number | null;
+  retryAfterSeconds?: number | null;
+  details?: unknown;
+}
+
+/**
+ * A parse that failed, carrying enough for the UI to say something true about it.
+ *
+ * `details` is kept rather than discarded because it is where the service puts the
+ * machine-readable half of its refusals — the daily limit and how many were used, for
+ * instance — and the Settings screen is built on exactly that.
+ */
+export class ParseFailure extends Error {
+  readonly kind: ParseFailureKind;
+  readonly code: string | null;
+  readonly status: number | null;
+  readonly retryAfterSeconds: number | null;
+  readonly details: unknown;
+
+  constructor(kind: ParseFailureKind, message: string, options: ParseFailureOptions = {}) {
+    super(message);
+    this.name = "ParseFailure";
+    this.kind = kind;
+    this.code = options.code ?? null;
+    this.status = options.status ?? null;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+    this.details = options.details ?? null;
+  }
+}
+
+/** The error envelope the service returns, or null when the body is not one. */
+export function parseApiError(
+  text: string,
+): { code: string; message: string; details: unknown } | null {
+  try {
+    const parsed = z
+      .object({
+        error: z.object({
+          code: z.string().optional(),
+          message: z.string(),
+          details: z.unknown().optional(),
+        }),
+      })
+      .safeParse(JSON.parse(text));
+    if (!parsed.success) return null;
+    return {
+      code: parsed.data.error.code ?? "unknown",
+      message: parsed.data.error.message,
+      details: parsed.data.error.details ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Digs the human-readable message out of the service's error envelope. */
+export function messageFromErrorBody(text: string): string | null {
+  return parseApiError(text)?.message ?? null;
+}
+
+/**
+ * Rounds a wait to something a person would say out loud.
+ *
+ * Deliberately coarse. "in about 7 hours" is a decision; "in 6 hours 47 minutes" is
+ * a number pretending to be one, and it is wrong by the time the screen has rendered.
+ */
+export function describeWait(seconds: number): string {
+  if (seconds <= 90) return "in a minute";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `in about ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours === 1) return "in about an hour";
+  if (hours < 20) return `in about ${hours} hours`;
+  return "tomorrow";
+}
+
+/**
+ * What to say about a failed parse, from the phone's point of view.
+ *
+ * The service's own message is used whenever there is one, because it knows things
+ * this file cannot: that the model declined, that the photos could not be read. Only
+ * the cases the service cannot describe — it never heard the request — are written
+ * here. The one exception is the daily limit, where the service supplies the reset
+ * time in `details` and the sentence is better for using it.
+ */
+export function describeParseFailure(failure: ParseFailure): string {
+  switch (failure.kind) {
+    case "unreachable":
+      return "Could not reach the meal service. Check your connection — the meal has not been logged.";
+    case "timeout":
+      return `The meal service did not answer within ${Math.round(PARSE_TIMEOUT_MS / 1000)} seconds, so this was given up on. Nothing was logged. Try again, or type what you ate instead.`;
+    case "cancelled":
+      return "Analysis cancelled. Nothing was logged.";
+    case "service":
+      if (failure.code === "rate_limited") {
+        const when =
+          failure.retryAfterSeconds === null ? "tomorrow" : describeWait(failure.retryAfterSeconds);
+        return `${failure.message} They come back ${when}. You can still type a meal — it is only the reading of photos that is limited.`;
+      }
+      return failure.message;
+  }
+}
+
+/**
+ * Turns anything thrown by a capture into a failure the UI can report.
+ *
+ * A plain `Error` keeps its own message, because by the time one reaches here it is
+ * already written for a person: an expired session, a photo that would not upload.
+ * Only the fetch path needs a kind, and it sets its own.
+ */
+export function toParseFailure(caught: unknown): ParseFailure {
+  if (caught instanceof ParseFailure) return caught;
+  return new ParseFailure(
+    "service",
+    caught instanceof Error ? caught.message : "Something went wrong.",
+  );
+}
+
+export interface ParseRequestOptions {
+  fetchImpl?: typeof fetch;
+  /** Aborts the request, so Cancel can abandon a parse that is still running. */
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * Whichever of the given signals aborts first.
+ *
+ * Hand-rolled rather than `AbortSignal.any`, which is newer than the browsers this
+ * has to run in: an iPhone on iOS 17.3 would throw a TypeError from inside the fetch
+ * path, and a missing method there would be reported as a network failure. Ten lines
+ * is a cheaper price than a support-call-shaped bug.
+ */
+export function firstAbortOf(signals: readonly AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return controller.signal;
+}
+
+/**
  * Posts the meal and returns the validated reply.
  *
  * The caller's Supabase access token goes in the bearer header, and the service uses
  * that same token for its own calls, so RLS is what authorises everything.
+ *
+ * Every way this can fail is turned into a `ParseFailure` with a kind, because the
+ * alternative is what used to happen: the browser's own words reached the screen, and
+ * a phone with no signal, a service that was down and a misconfigured origin all said
+ * "Failed to fetch".
  */
 export async function requestParseMeal(
   accessToken: string,
   body: Record<string, unknown>,
-  fetchImpl: typeof fetch = fetch,
+  options: ParseRequestOptions = {},
 ): Promise<ParseResponse> {
-  const response = await fetchImpl(parseMealUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const doFetch = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? PARSE_TIMEOUT_MS;
 
-  const text = await response.text();
+  // Two reasons to stop: our own ceiling, and the user pressing Cancel. The timer
+  // covers the whole exchange, body included — a server that sends headers and then
+  // stalls is exactly the hang this exists to end.
+  const timer = new AbortController();
+  const deadline = setTimeout(() => timer.abort(), timeoutMs);
+  const signal =
+    options.signal === undefined ? timer.signal : firstAbortOf([timer.signal, options.signal]);
+
+  let response: Response;
+  let text: string;
+  try {
+    response = await doFetch(parseMealUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+    text = await response.text();
+  } catch (caught) {
+    // The user's own abort is checked first: when both fire, "you cancelled it" is
+    // more use than a timeout they did not cause.
+    if (options.signal?.aborted === true) {
+      throw new ParseFailure("cancelled", "Analysis cancelled.", {});
+    }
+    if (timer.signal.aborted) {
+      throw new ParseFailure("timeout", "The meal service did not answer in time.", {});
+    }
+    // Everything else here is the request never arriving. A cross-origin request that
+    // CORS refused is indistinguishable from one that never left the phone, which is
+    // why `ALLOWED_ORIGINS` on the service is worth checking first when this appears.
+    throw new ParseFailure("unreachable", "Could not reach the meal service.", {});
+  } finally {
+    clearTimeout(deadline);
+  }
+
   if (!response.ok) {
-    const message = messageFromErrorBody(text) ?? `The service returned HTTP ${response.status}.`;
-    throw new Error(message);
+    const envelope = parseApiError(text);
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    throw new ParseFailure(
+      "service",
+      envelope?.message ?? `The meal service returned HTTP ${response.status}.`,
+      {
+        code: envelope?.code ?? null,
+        status: response.status,
+        retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+        details: envelope?.details ?? null,
+      },
+    );
   }
 
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    throw new Error("The service returned a body that is not JSON.");
+    throw new ParseFailure("service", "The meal service returned a reply that is not JSON.", {
+      status: response.status,
+    });
   }
 
   const parsed = parseResponseSchema.safeParse(json);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    throw new Error(
-      `The service's reply did not match the expected shape (${issue?.path.join(".") ?? "unknown"}).`,
+    throw new ParseFailure(
+      "service",
+      `The meal service's reply did not match the expected shape (${issue?.path.join(".") ?? "unknown"}).`,
+      { status: response.status },
     );
   }
   return parsed.data;
-}
-
-/** Digs the human-readable message out of the service's error envelope. */
-export function messageFromErrorBody(text: string): string | null {
-  try {
-    const parsed = z
-      .object({ error: z.object({ message: z.string() }) })
-      .safeParse(JSON.parse(text));
-    return parsed.success ? parsed.data.error.message : null;
-  } catch {
-    return null;
-  }
 }
 
 /**

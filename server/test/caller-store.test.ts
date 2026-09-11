@@ -6,10 +6,28 @@
  * by `user_id`. It returned a 502 the first time a real request went through. These
  * tests assert the queries themselves, against the shape the migrations create.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MEAL_PHOTO_BUCKET } from "../../shared/meal-parse";
 import { createCallerStore } from "../src/caller-store";
+import { ApiError } from "../src/errors";
+
+/**
+ * Captures what `log` writes, so a test can assert the detail went to the log rather
+ * than to the response. `log` is one `console.error` per line, which is the contract
+ * the fake store here is checking against rather than a hook into the logger.
+ */
+function spyOnConsoleError() {
+  const lines: string[] = [];
+  const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  });
+  return { lines, restore: () => spy.mockRestore() };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 interface Recorded {
   table: string | null;
@@ -113,11 +131,24 @@ describe("countCallsSince", () => {
   });
 
   it("surfaces a query failure instead of silently allowing the call", async () => {
-    const store = createCallerStore(
-      fakeClient(newRecording(), { error: { message: "permission denied" } }),
-      "u",
-    );
-    await expect(store.countCallsSince(new Date())).rejects.toThrow(/permission denied/);
+    const logged = spyOnConsoleError();
+    try {
+      const store = createCallerStore(
+        fakeClient(newRecording(), { error: { message: "permission denied" } }),
+        "u",
+      );
+      // Still lazy, so the request must still fail — but with something the user can
+      // act on, because a permission error is not one.
+      await expect(store.countCallsSince(new Date())).rejects.toThrow(/Could not read/);
+
+      const lines = logged.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(lines.find((line) => line["error"] === "permission denied")).toMatchObject({
+        level: "error",
+        operation: "llm_calls count",
+      });
+    } finally {
+      logged.restore();
+    }
   });
 });
 
@@ -193,6 +224,34 @@ describe("loadPhotos", () => {
       fakeClient(newRecording(), { error: { message: "Object not found" } }),
       "user-1",
     );
-    await expect(store.loadPhotos(["user-1/abc.jpg"])).rejects.toThrow(/Object not found/);
+    await expect(store.loadPhotos(["user-1/abc.jpg"])).rejects.toThrow(/Could not read/);
+  });
+
+  it("keeps storage's own words out of the response and in the log", async () => {
+    // The raw message is about buckets and policies. It is worth having, in the place
+    // someone debugging will look, and worth keeping off a phone screen.
+    const logged = spyOnConsoleError();
+    try {
+      const store = createCallerStore(
+        fakeClient(newRecording(), { error: { message: "Object not found" } }),
+        "user-1",
+      );
+      const error = await store.loadPhotos(["user-1/abc.jpg"]).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).not.toContain("Object not found");
+      expect((error as ApiError).message).toContain("capture the meal again");
+
+      const lines = logged.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const failure = lines.find((line) => line["message"] === "supabase call failed");
+      expect(failure).toMatchObject({
+        level: "error",
+        userId: "user-1",
+        error: "Object not found",
+      });
+      expect(String(failure?.["operation"])).toContain("abc.jpg");
+    } finally {
+      logged.restore();
+    }
   });
 });

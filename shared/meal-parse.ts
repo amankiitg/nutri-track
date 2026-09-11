@@ -13,6 +13,19 @@ import { z } from "zod";
 /** Photos per meal, and the matching bucket/constraint cap. */
 export const MAX_PHOTOS = 3;
 
+/**
+ * Model calls per user per local day.
+ *
+ * It lives here, in the shared contract, because three things need to agree on it:
+ * the service that enforces it, the `llm_call_budget()` function that reports what
+ * is left, and the Settings screen that displays the two together. A second copy
+ * anywhere would be the one that goes stale.
+ *
+ * Counting calls rather than requests is the conservative reading: a request that
+ * needed the retry costs the user two, which is what it costs us.
+ */
+export const MAX_LLM_CALLS_PER_DAY = 60;
+
 /** A single item over this many kcal, or with zero kcal, is flagged for review. */
 export const MAX_ITEM_KCAL = 2000;
 /** An item over this many grams is flagged for review. */

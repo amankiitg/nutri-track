@@ -26,6 +26,31 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 /** Keeps a pathological upstream body out of our logs. */
 const BODY_EXCERPT = 500;
 
+/**
+ * What went wrong upstream, said to the person holding the phone.
+ *
+ * These messages are shown verbatim in the capture sheet, so they are written for
+ * that reader and not for a log: no status codes, no host names, and one sentence
+ * saying whether trying again is worth anything. The status code and the upstream
+ * body still travel in `details`, where the logs can find them and the user cannot.
+ */
+const UPSTREAM_MESSAGES = {
+  /**
+   * Google's own quota, not the user's daily budget. It is transient — a per-minute
+   * window — so the advice is to wait, and `ApiError.headers` carries a Retry-After
+   * so the UI can be specific about how long.
+   */
+  busy: "The meal reader is busy at the moment. Nothing was logged — try again in a minute.",
+  /** A key problem or a 5xx. Neither is the user's fault and neither is worth retrying. */
+  broken:
+    "The meal reader is not available right now. Your photo is still here, so try again later.",
+  unreachable: "Could not reach the meal reader. Check your connection and try again.",
+} as const;
+
+/** The upstream statuses that mean "throttled", and how long to wait by default. */
+const RETRYABLE_STATUSES = new Set([429, 503]);
+const DEFAULT_RETRY_AFTER_SECONDS = 30;
+
 interface GeminiPart {
   text?: string;
   inline_data?: { mime_type: string; data: string };
@@ -148,31 +173,58 @@ export function createGeminiClient(options: GeminiOptions): LlmClient {
           },
         );
       } catch (error) {
-        const reason = error instanceof Error ? error.message : "network failure";
-        throw new ApiError(502, "upstream_error", `Could not reach Gemini: ${reason}`);
+        // A timeout is not a network failure and should not be described as one: the
+        // first means Google is slow, the second means the service cannot get there at
+        // all, and only the second is worth the user checking their connection over.
+        const timedOut = error instanceof Error && error.name === "TimeoutError";
+        throw new ApiError(
+          503,
+          "upstream_error",
+          timedOut ? UPSTREAM_MESSAGES.broken : UPSTREAM_MESSAGES.unreachable,
+          {
+            details: {
+              timedOut,
+              timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+              error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+            },
+          },
+        );
       }
 
       const body = await response.text();
       const latencyMs = Date.now() - startedAt;
 
       if (!response.ok) {
-        throw new ApiError(502, "upstream_error", `Gemini returned HTTP ${response.status}.`, {
-          details: { status: response.status, body: body.slice(0, BODY_EXCERPT) },
-        });
+        const retryable = RETRYABLE_STATUSES.has(response.status);
+        throw new ApiError(
+          retryable ? 503 : 502,
+          "upstream_error",
+          retryable ? UPSTREAM_MESSAGES.busy : UPSTREAM_MESSAGES.broken,
+          {
+            // On the response rather than only in the body, so a client that never
+            // reads the body still knows how long to wait.
+            ...(retryable
+              ? {
+                  headers: { "Retry-After": String(DEFAULT_RETRY_AFTER_SECONDS) },
+                }
+              : {}),
+            details: { status: response.status, body: body.slice(0, BODY_EXCERPT) },
+          },
+        );
       }
 
       let json: unknown;
       try {
         json = JSON.parse(body);
       } catch {
-        throw new ApiError(502, "upstream_error", "Gemini returned a body that is not JSON.", {
+        throw new ApiError(502, "upstream_error", UPSTREAM_MESSAGES.broken, {
           details: { body: body.slice(0, BODY_EXCERPT) },
         });
       }
 
       const parsed = geminiResponseSchema.safeParse(json);
       if (!parsed.success) {
-        throw new ApiError(502, "upstream_error", "Gemini returned an unexpected response shape.", {
+        throw new ApiError(502, "upstream_error", UPSTREAM_MESSAGES.broken, {
           details: { issue: parsed.error.issues[0]?.message ?? "unknown" },
         });
       }

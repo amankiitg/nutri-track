@@ -33,9 +33,11 @@ import {
 import {
   buildParseRequest,
   deleteMealPhotos,
+  describeParseFailure,
   isSupportedPhotoType,
   preparePhoto,
   requestParseMeal,
+  toParseFailure,
   undecodablePhotoMessage,
   uploadMealPhoto,
   type PreparedPhoto,
@@ -62,6 +64,16 @@ import {
 } from "@/lib/speech";
 import { supabase } from "@/integrations/supabase/client";
 import { ReviewScreen } from "@/components/review/ReviewScreen";
+
+/**
+ * How long a parse runs before the sheet admits it is taking a while.
+ *
+ * The service allows each model call 60 s and retries once, so a slow meal can run
+ * for two minutes and still be working. Without this the user sees an unchanging
+ * "Analysing…" for that whole time and cannot tell a working parse from a dead one,
+ * which is the same problem as a spinner that never stops.
+ */
+const SLOW_PARSE_MS = 8_000;
 
 /** One selected photo, previewed from the original before any work is done on it. */
 interface SelectedPhoto {
@@ -110,7 +122,15 @@ export function CaptureSheet({
   const [eatenAt, setEatenAt] = useState(() => toLocalInputValue(new Date()));
   const [mealType, setMealType] = useState<MealType | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [isSlow, setIsSlow] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Aborts the parse in flight, so Cancel can get the sheet back.
+   *
+   * Without it the only way out of a request that never answers was to close the
+   * sheet, which throws away the photos the user just took.
+   */
+  const inFlight = useRef<AbortController | null>(null);
   /**
    * The items being reviewed, and the id of that review session.
    *
@@ -147,11 +167,27 @@ export function CaptureSheet({
    * that nothing else will ever remove.
    */
   const discardUploads = useCallback(async () => {
-    const { paths } = unsavedUploads.current;
-    if (paths.length === 0) return;
-    unsavedUploads.current.paths = [];
-    await deleteMealPhotos(paths);
+    // `splice` rather than a reassignment: the upload loop pushes into this same array
+    // as each photo lands, so replacing it would strand whatever arrives next in an
+    // array nothing will ever clean up.
+    const going = unsavedUploads.current.paths.splice(0);
+    if (going.length === 0) return;
+    await deleteMealPhotos(going);
   }, []);
+
+  // A parse that is taking its time says so, rather than leaving the button unchanged
+  // for two minutes. Cleared by the promise that owns the request, so it cannot outlive
+  // one parse and describe the next.
+  useEffect(() => {
+    if (!isWorking) return;
+    const timer = setTimeout(() => setIsSlow(true), SLOW_PARSE_MS);
+    return () => clearTimeout(timer);
+  }, [isWorking]);
+
+  /** Reports a failure in the words the person holding the phone needs. */
+  function reportFailure(caught: unknown): void {
+    setError(describeParseFailure(toParseFailure(caught)));
+  }
 
   // Navigation away from the shell unmounts this component with no chance to ask, so
   // the same cleanup runs here.
@@ -201,6 +237,7 @@ export function CaptureSheet({
     setEatenAt(toLocalInputValue(new Date()));
     setMealType(null);
     setError(null);
+    setIsSlow(false);
     setReview(null);
     setDuplicate(null);
     setExistingItems(null);
@@ -214,6 +251,11 @@ export function CaptureSheet({
     reset();
   }
 
+  /** Abandons whatever is running. Not a failure: the user asked for it to stop. */
+  function cancelInFlight(): void {
+    inFlight.current?.abort();
+  }
+
   /** The review screen's Discard: the photos go, and the sheet closes. */
   function handleDiscard(): void {
     abandonCapture();
@@ -223,7 +265,12 @@ export function CaptureSheet({
   function handleOpenChange(next: boolean): void {
     // Closing on the way to a saved meal must not delete the meal's own photos, which
     // is why the paths are cleared the moment a save succeeds.
-    if (!next) abandonCapture();
+    if (!next) {
+      // A parse left running behind a closed sheet would resolve into a component the
+      // user is no longer looking at, and would still spend one of their sixty calls.
+      cancelInFlight();
+      abandonCapture();
+    }
     onOpenChange(next);
   }
 
@@ -306,6 +353,7 @@ export function CaptureSheet({
     hint: string | null,
     reviewId: string,
     distinct: string | null = null,
+    signal?: AbortSignal,
   ): Promise<void> {
     const source: MealSource = photos.length > 0 ? "photo" : textOrigin;
     const spokenOrTyped = text.trim() === "" ? null : text.trim();
@@ -322,7 +370,9 @@ export function CaptureSheet({
       hint,
     });
 
-    const parsed = await requestParseMeal(accessToken, body);
+    const parsed = await requestParseMeal(accessToken, body, {
+      ...(signal === undefined ? {} : { signal }),
+    });
     unsavedUploads.current = { ...uploaded, fingerprint };
     setReview({
       id: reviewId,
@@ -397,8 +447,12 @@ export function CaptureSheet({
 
   async function submit(options: { distinct?: string | null } = {}): Promise<void> {
     setIsWorking(true);
+    setIsSlow(false);
     setError(null);
     setDuplicate(null);
+
+    const controller = new AbortController();
+    inFlight.current = controller;
 
     try {
       const { data } = await supabase.auth.getSession();
@@ -407,16 +461,20 @@ export function CaptureSheet({
 
       // Resize and hash first, then upload: the hash is taken over the resized bytes
       // because those are the bytes that get sent.
-      const paths: string[] = [];
-      const hashes: string[] = [];
+      //
+      // The uploads are recorded in the ref as each one lands rather than after the
+      // loop. A photo that uploaded and then had a later one fail used to be invisible
+      // to `discardUploads`, so it stayed in the bucket until the sweeper noticed it a
+      // day later.
+      unsavedUploads.current = { paths: [], hashes: [], fingerprint: null };
       for (const photo of photos) {
         const prepared: PreparedPhoto = await preparePhoto(photo.file);
         const uploaded = await uploadMealPhoto(userId, prepared);
-        paths.push(uploaded.path);
-        hashes.push(uploaded.sha256);
+        unsavedUploads.current.paths.push(uploaded.path);
+        unsavedUploads.current.hashes.push(uploaded.sha256);
       }
-
-      unsavedUploads.current = { paths, hashes, fingerprint: null };
+      const paths = unsavedUploads.current.paths;
+      const hashes = unsavedUploads.current.hashes;
 
       // Checked before the model is called: a matching hash means the items are
       // already on record, so the whole round trip can be skipped.
@@ -425,20 +483,22 @@ export function CaptureSheet({
         const items = await fetchMealItems(known.id).catch(() => []);
         setExistingItems(items);
         setDuplicate({ meal: known, matchedItems: 0, reason: "photo" });
-        setIsWorking(false);
         return;
       }
 
       await parseInto(
         token,
-        { paths, hashes },
+        { paths: [...paths], hashes: [...hashes] },
         notes.trim() === "" ? null : notes.trim(),
         crypto.randomUUID(),
         options.distinct ?? null,
+        controller.signal,
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Something went wrong.");
+      reportFailure(caught);
     } finally {
+      inFlight.current = null;
+      setIsSlow(false);
       setIsWorking(false);
     }
   }
@@ -446,16 +506,31 @@ export function CaptureSheet({
   /** Re-runs the parse on the same photos with the user's hint, replacing the items. */
   async function reanalyze(hint: string): Promise<void> {
     setIsReanalyzing(true);
+    setIsSlow(false);
     setError(null);
+    const controller = new AbortController();
+    inFlight.current = controller;
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error("Your session has expired. Sign in again.");
       const { paths, hashes } = unsavedUploads.current;
-      await parseInto(token, { paths: [...paths], hashes: [...hashes] }, hint, crypto.randomUUID());
+      await parseInto(
+        token,
+        { paths: [...paths], hashes: [...hashes] },
+        hint,
+        crypto.randomUUID(),
+        null,
+        controller.signal,
+      );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not re-analyze the meal.");
+      // The hint was worth trying and it did not work; say why rather than reverting
+      // to a generic line, because the reason is what decides whether a second hint is
+      // worth the call.
+      reportFailure(caught);
     } finally {
+      inFlight.current = null;
+      setIsSlow(false);
       setIsReanalyzing(false);
     }
   }
@@ -705,24 +780,47 @@ export function CaptureSheet({
                 {isWorking ? (
                   <>
                     <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
-                    Analysing…
+                    {isSlow ? "Still analysing…" : "Analysing…"}
                   </>
                 ) : (
                   "Analyse meal"
                 )}
               </Button>
-              {(photos.length > 0 || text !== "") && (
+              {isWorking ? (
+                // The way out of a request that never answers. Previously the only exit
+                // was closing the sheet, which threw away the photo just taken.
                 <Button
                   type="button"
                   variant="ghost"
                   className="rounded-full"
-                  onClick={() => abandonCapture()}
+                  onClick={cancelInFlight}
                 >
-                  <RotateCcw className="mr-1.5 size-4" aria-hidden="true" />
-                  Start over
+                  Cancel
                 </Button>
+              ) : (
+                (photos.length > 0 || text !== "") && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="rounded-full"
+                    onClick={() => abandonCapture()}
+                  >
+                    <RotateCcw className="mr-1.5 size-4" aria-hidden="true" />
+                    Start over
+                  </Button>
+                )
               )}
             </div>
+
+            {isWorking && isSlow && (
+              // Said only once it is actually slow, so it is information rather than
+              // reassurance: a photo usually comes back in a few seconds, and a meal
+              // that needs the retry can take up to two minutes.
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Taking longer than usual. A photo can take up to two minutes — keep this open, or
+                tap Cancel and type what you ate instead.
+              </p>
+            )}
           </>
         )}
       </SheetContent>

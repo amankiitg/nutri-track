@@ -9,6 +9,7 @@
 import {
   classifyModelResponse,
   guessMealType,
+  MAX_LLM_CALLS_PER_DAY,
   modelContractSchema,
   SYSTEM_PROMPT,
   type MealItemDraft,
@@ -25,14 +26,44 @@ import type { ParseMealRequest } from "./schemas";
 import { secondsUntilNextLocalMidnight, startOfLocalDay } from "./time";
 
 /**
- * Model calls per user per local day. Counting calls rather than requests is the
- * conservative reading: a request that needed the retry costs the user two, which
- * is what it costs us.
+ * Re-exported so the service's own tests keep importing it from the module that
+ * enforces it. The value is defined once, in the shared contract.
  */
-export const MAX_LLM_CALLS_PER_DAY = 60;
+export { MAX_LLM_CALLS_PER_DAY };
 
 /** A bounded output budget: the reply is a short JSON object, not an essay. */
 export const MAX_OUTPUT_TOKENS = 2048;
+
+/**
+ * The finish reasons that mean the model declined, rather than failed.
+ *
+ * The distinction earns its keep in two places. A refusal is deterministic — asking
+ * again, in the same words, produces the same refusal — so retrying it costs the user
+ * a second call out of their daily sixty to arrive at the same answer. And the advice
+ * is different: a truncated or malformed reply is worth another go, a refusal is not,
+ * and telling someone to "add a short note about what it was" when the note would also
+ * be refused sends them round a loop that cannot terminate.
+ */
+const REFUSAL_FINISH_REASONS = new Set([
+  "SAFETY",
+  "IMAGE_SAFETY",
+  "RECITATION",
+  "BLOCKLIST",
+  "PROHIBITED_CONTENT",
+  "SPII",
+]);
+
+export function isModelRefusal(finishReason: string | null | undefined): boolean {
+  return finishReason != null && REFUSAL_FINISH_REASONS.has(finishReason);
+}
+
+/** Said when the model would not answer. Points somewhere that will. */
+export const MODEL_DECLINED_MESSAGE =
+  "The meal reader declined to analyse this one. Try a different photo, or type what you ate — typing works without a picture.";
+
+/** Said when it did answer and the answer was unusable. */
+export const UNUSABLE_RESPONSE_MESSAGE =
+  "The meal reader could not make sense of this meal. Try adding a short note about what it was, or take the photo from further back.";
 
 /** The retry wording is fixed so a failing prompt is reproducible from the logs. */
 export const RETRY_INSTRUCTION_NOT_JSON =
@@ -119,14 +150,19 @@ export async function parseMeal(
   const usedToday = await deps.store.countCallsSince(startOfLocalDay(now, timeZone));
   if (usedToday >= MAX_LLM_CALLS_PER_DAY) {
     const retryAfterSeconds = secondsUntilNextLocalMidnight(now, timeZone);
-    throw new ApiError(429, "rate_limited", "You have reached today's limit for analysing meals.", {
-      headers: { "Retry-After": String(retryAfterSeconds) },
-      details: {
-        limit: MAX_LLM_CALLS_PER_DAY,
-        used: usedToday,
-        retry_after_seconds: retryAfterSeconds,
+    throw new ApiError(
+      429,
+      "rate_limited",
+      `You have used all ${MAX_LLM_CALLS_PER_DAY} meal analyses for today.`,
+      {
+        headers: { "Retry-After": String(retryAfterSeconds) },
+        details: {
+          limit: MAX_LLM_CALLS_PER_DAY,
+          used: usedToday,
+          retry_after_seconds: retryAfterSeconds,
+        },
       },
-    });
+    );
   }
 
   const photos = input.photoPaths.length > 0 ? await deps.store.loadPhotos(input.photoPaths) : [];
@@ -190,6 +226,16 @@ export async function parseMeal(
 
   if (first.result.ok) {
     items = first.result.items;
+  } else if (isModelRefusal(first.completion.finishReason)) {
+    // Not retried, and said plainly. See REFUSAL_FINISH_REASONS.
+    log("warn", "the model declined to answer", {
+      userId,
+      reason: first.result.reason,
+      finishReason: first.completion.finishReason,
+    });
+    throw new ApiError(422, "unparseable_response", MODEL_DECLINED_MESSAGE, {
+      details: { reason: "refusal", finishReason: first.completion.finishReason },
+    });
   } else {
     // Exactly one retry, told precisely what was wrong with the first reply, with
     // the bad reply echoed back so "your previous response" has a referent.
@@ -211,11 +257,19 @@ export async function parseMeal(
     modelThatAnswered = second.completion.model;
 
     if (!second.result.ok) {
+      // A retry that lands on a refusal is still a refusal, so the message follows the
+      // finish reason rather than assuming the second attempt failed the same way.
+      const declined = isModelRefusal(second.completion.finishReason);
       throw new ApiError(
         422,
         "unparseable_response",
-        "The model could not produce a usable answer for this meal. Try adding a short note about what it was.",
-        { details: { reason: second.result.error } },
+        declined ? MODEL_DECLINED_MESSAGE : UNUSABLE_RESPONSE_MESSAGE,
+        {
+          details: {
+            reason: declined ? "refusal" : second.result.error,
+            finishReason: second.completion.finishReason,
+          },
+        },
       );
     }
     items = second.result.items;

@@ -134,6 +134,19 @@ npm test
   decides the wire encoding. Gemini's response schema is derived from the Zod contract by
   `server/src/response-schema.ts`; never hand-write a second copy of the field list, in the
   prompt or anywhere else.
+- Everything the service says to the user is read on a phone, so
+  `ApiError.message` is written for that reader: no provider names, no status codes, no
+  Supabase internals. The technical detail belongs in `details` and in the logs, which is
+  what `UPSTREAM_MESSAGES` and `SUPABASE_FAILURE_MESSAGE` are for. The daily limit is
+  defined once, in `shared/meal-parse.ts`, because the service that enforces it, the
+  `llm_call_budget()` function that reports it and the Settings card that shows it all
+  need the same number.
+- **A model refusal is not retried, deliberately.** `finishReason` of SAFETY, RECITATION,
+  BLOCKLIST, PROHIBITED_CONTENT, SPII or IMAGE_SAFETY means the model declined, and
+  asking again produces the same refusal: retrying costs the user a second call out of
+  their sixty to reach the same place. It also gets its own message, because the ordinary
+  advice — "add a short note about what it was" — describes a note that would be refused
+  for exactly the same reason. Do not collapse the two back into one retry.
 - That converter identifies Zod types by `_def.typeName`, not `instanceof`: the two zod
   installs in this repo (root for `shared/`, `server/` for the service) are different copies
   and `instanceof` is false across them.

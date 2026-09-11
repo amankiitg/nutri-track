@@ -210,16 +210,54 @@ describe("createGeminiClient", () => {
     expect(calls[0]?.url).toBe("https://proxy.example.com/v1beta/models/m:generateContent");
   });
 
-  it("reports a non-2xx as a 502 with the upstream status, not as a 500", async () => {
+  it("treats a throttled upstream as transient and says when to retry", async () => {
     const { fetchImpl } = capture(jsonResponse({ error: { message: "quota exceeded" } }, 429));
     const error = await createGeminiClient({ apiKey: KEY, fetchImpl })
       .complete({ model: "m", messages: [], maxTokens: 10, responseSchema: SCHEMA })
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).status).toBe(502);
+    // 503, not 502: Google being busy is a wait-and-retry, not a broken service.
+    expect((error as ApiError).status).toBe(503);
     expect((error as ApiError).code).toBe("upstream_error");
+    expect((error as ApiError).headers["Retry-After"]).toBe("30");
     expect((error as ApiError).details).toMatchObject({ status: 429 });
+  });
+
+  it.each([429, 503])("offers a Retry-After for upstream status %i", async (status) => {
+    const { fetchImpl } = capture(jsonResponse({ error: { message: "slow down" } }, status));
+    const error = await createGeminiClient({ apiKey: KEY, fetchImpl })
+      .complete({ model: "m", messages: [], maxTokens: 10, responseSchema: SCHEMA })
+      .catch((caught: unknown) => caught);
+    expect((error as ApiError).headers["Retry-After"]).toBeDefined();
+  });
+
+  it("says something a person can act on, and names no provider and no status code", async () => {
+    // Every message from this file reaches a phone screen verbatim. `Gemini returned
+    // HTTP 429.` is true, and useless; worse, it invites a retry loop the user cannot
+    // win. The status and the body still travel in `details`, where the logs are.
+    const { fetchImpl } = capture(jsonResponse({ error: { message: "quota" } }, 429));
+    const error = await createGeminiClient({ apiKey: KEY, fetchImpl })
+      .complete({ model: "m", messages: [], maxTokens: 10, responseSchema: SCHEMA })
+      .catch((caught: unknown) => caught);
+
+    const message = (error as ApiError).message;
+    expect(message).not.toMatch(/gemini/i);
+    expect(message).not.toMatch(/\b\d{3}\b/);
+    expect(message).toContain("try again");
+    expect((error as ApiError).details).toMatchObject({ status: 429 });
+  });
+
+  it("calls an upstream key or server fault unavailable, not the user's fault", async () => {
+    const { fetchImpl } = capture(jsonResponse({ error: { message: "bad key" } }, 403));
+    const error = await createGeminiClient({ apiKey: KEY, fetchImpl })
+      .complete({ model: "m", messages: [], maxTokens: 10, responseSchema: SCHEMA })
+      .catch((caught: unknown) => caught);
+
+    expect((error as ApiError).status).toBe(502);
+    // No Retry-After: waiting a minute will not fix a key.
+    expect((error as ApiError).headers["Retry-After"]).toBeUndefined();
+    expect((error as ApiError).message).toContain("Your photo is still here");
   });
 
   it.each([
@@ -234,7 +272,7 @@ describe("createGeminiClient", () => {
     expect((error as ApiError).status).toBe(502);
   });
 
-  it("turns a transport failure into a 502 rather than letting it escape", async () => {
+  it("turns a transport failure into an upstream error rather than letting it escape", async () => {
     const failing = vi.fn(() => Promise.reject(new Error("socket hang up")));
     const error = await createGeminiClient({
       apiKey: KEY,
@@ -244,7 +282,30 @@ describe("createGeminiClient", () => {
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).message).toContain("Could not reach Gemini");
+    expect((error as ApiError).status).toBe(503);
+    // The distinction that matters to the reader: checking your connection is worth
+    // doing when the request never arrived, and not when Google was simply slow.
+    expect((error as ApiError).details).toMatchObject({ timedOut: false });
+    expect((error as ApiError).message).toContain("Check your connection");
+  });
+
+  it("describes its own timeout as slowness, not as the user's connection", async () => {
+    const timedOut = vi.fn(() => {
+      const error = new Error("The operation was aborted due to timeout");
+      error.name = "TimeoutError";
+      return Promise.reject(error);
+    });
+    const error = await createGeminiClient({
+      apiKey: KEY,
+      timeoutMs: 60_000,
+      fetchImpl: timedOut as unknown as typeof fetch,
+    })
+      .complete({ model: "m", messages: [], maxTokens: 10, responseSchema: SCHEMA })
+      .catch((caught: unknown) => caught);
+
+    expect((error as ApiError).status).toBe(503);
+    expect((error as ApiError).details).toMatchObject({ timedOut: true, timeoutMs: 60_000 });
+    expect((error as ApiError).message).not.toContain("Check your connection");
   });
 
   it("truncates a large upstream body instead of echoing it into a log", async () => {

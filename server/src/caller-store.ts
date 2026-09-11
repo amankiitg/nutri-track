@@ -10,7 +10,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { MEAL_PHOTO_BUCKET } from "../../shared/meal-parse";
 import { ApiError } from "./errors";
+import { log } from "./log";
 import { safeTimeZone } from "./time";
+
+/** One message, because the user's next move is the same for every cause. */
+export const SUPABASE_FAILURE_MESSAGE =
+  "Could not read this meal's photos. They may have been removed — capture the meal again, or type what you ate instead.";
 
 export interface LlmCallRecord {
   model: string;
@@ -41,8 +46,18 @@ const timeZoneRow = z.object({ timezone: z.string().nullable() });
 const toBase64 = (bytes: ArrayBuffer): string => Buffer.from(bytes).toString("base64");
 
 export function createCallerStore(client: SupabaseClient, userId: string): CallerStore {
+  /**
+   * A Supabase failure, said to the person holding the phone.
+   *
+   * The operation and the raw message go to the logs and nowhere else. They used to
+   * be the response body, which meant a storage hiccup was reported to the user as
+   * `Supabase storage download of ... failed: Object not found` — true, unhelpful,
+   * and something no one can act on. What a person can act on is whether the photo is
+   * gone and whether retrying will help.
+   */
   function fail(operation: string, error: { message: string }): never {
-    throw new ApiError(502, "upstream_error", `Supabase ${operation} failed: ${error.message}`);
+    log("error", "supabase call failed", { operation, userId, error: error.message });
+    throw new ApiError(502, "upstream_error", SUPABASE_FAILURE_MESSAGE);
   }
 
   return {

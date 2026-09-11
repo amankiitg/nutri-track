@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isSupportedPhotoType, undecodablePhotoMessage } from "./capture";
 import { MAX_EDGE } from "./capture";
 import { buildParseRequest, fitWithin, messageFromErrorBody, parseResponseSchema } from "./capture";
+import {
+  describeParseFailure,
+  describeWait,
+  firstAbortOf,
+  ParseFailure,
+  parseApiError,
+  requestParseMeal,
+  toParseFailure,
+} from "./capture";
 
 describe("fitWithin", () => {
   it("leaves an image that is already small enough alone", () => {
@@ -156,5 +165,242 @@ describe("messageFromErrorBody", () => {
   it("returns null for a body that is not the envelope, so the caller can fall back", () => {
     expect(messageFromErrorBody("<html>502</html>")).toBeNull();
     expect(messageFromErrorBody(JSON.stringify({ nope: true }))).toBeNull();
+  });
+});
+
+describe("parseApiError", () => {
+  it("keeps the code and the details, which the envelope carries and the UI needs", () => {
+    const body = JSON.stringify({
+      error: {
+        code: "rate_limited",
+        message: "You have used all 60 meal analyses for today.",
+        details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+      },
+    });
+    expect(parseApiError(body)).toEqual({
+      code: "rate_limited",
+      message: "You have used all 60 meal analyses for today.",
+      details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+    });
+  });
+
+  it("survives an envelope with no code or details", () => {
+    const body = JSON.stringify({ error: { message: "No such route." } });
+    expect(parseApiError(body)).toEqual({
+      code: "unknown",
+      message: "No such route.",
+      details: null,
+    });
+  });
+});
+
+describe("describeWait", () => {
+  it.each([
+    [5, "in a minute"],
+    [90, "in a minute"],
+    [600, "in about 10 minutes"],
+    [3_600, "in about an hour"],
+    [25_200, "in about 7 hours"],
+    [90_000, "tomorrow"],
+  ])("says %i seconds as %s", (seconds, expected) => {
+    expect(describeWait(seconds)).toBe(expected);
+  });
+});
+
+describe("firstAbortOf", () => {
+  it("aborts when any one of its signals does", () => {
+    const first = new AbortController();
+    const second = new AbortController();
+    const combined = firstAbortOf([first.signal, second.signal]);
+
+    expect(combined.aborted).toBe(false);
+    second.abort();
+    expect(combined.aborted).toBe(true);
+  });
+
+  it("is already aborted when a signal it was given already was", () => {
+    const gone = new AbortController();
+    gone.abort();
+    expect(firstAbortOf([gone.signal]).aborted).toBe(true);
+  });
+});
+
+describe("requestParseMeal: what the phone is told when it fails", () => {
+  beforeEach(() => {
+    // Stubbed rather than read from .env: that file is gitignored, so a test that
+    // depended on it would pass here and fail anywhere else.
+    vi.stubEnv("VITE_PARSE_MEAL_URL", "https://meals.example.com/parse-meal");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const GOOD_BODY = {
+    items: [],
+    meal_type: "lunch",
+    source: "text",
+    model: "gemini-test",
+    attempts: 1,
+  };
+
+  function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json", ...headers },
+    });
+  }
+
+  /** A fetch that never settles until its signal is aborted. */
+  const hanging = (_input: unknown, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () =>
+        reject(new DOMException("The operation was aborted.", "AbortError")),
+      );
+    });
+
+  it("returns the validated reply when the service answers well", async () => {
+    const result = await requestParseMeal(
+      "token",
+      {},
+      { fetchImpl: async () => jsonResponse(GOOD_BODY) },
+    );
+    expect(result.model).toBe("gemini-test");
+    expect(result.items).toEqual([]);
+  });
+
+  it("calls a request that never arrived unreachable, in words that are not the browser's", async () => {
+    // This is the case that used to reach the screen as "Failed to fetch": a phone with
+    // no signal, a service that is down, and a refused origin are indistinguishable
+    // from inside a catch block, and none of the three is named by that message.
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: () => Promise.reject(new TypeError("Failed to fetch")),
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ParseFailure);
+    expect((error as ParseFailure).kind).toBe("unreachable");
+    const shown = describeParseFailure(error as ParseFailure);
+    expect(shown).toContain("Could not reach the meal service");
+    expect(shown).not.toContain("Failed to fetch");
+  });
+
+  it("ends a request that never answers, instead of spinning forever", async () => {
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: hanging as unknown as typeof fetch,
+        timeoutMs: 20,
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect((error as ParseFailure).kind).toBe("timeout");
+    expect(describeParseFailure(error as ParseFailure)).toContain("Nothing was logged");
+  });
+
+  it("reports the user's own cancel as a cancel, not as a failure of the service", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 10);
+
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: hanging as unknown as typeof fetch,
+        signal: controller.signal,
+        timeoutMs: 5_000,
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect((error as ParseFailure).kind).toBe("cancelled");
+    expect(describeParseFailure(error as ParseFailure)).toContain("cancelled");
+  });
+
+  it("carries the daily limit's reset time out of the envelope and into the sentence", async () => {
+    const body = {
+      error: {
+        code: "rate_limited",
+        message: "You have used all 60 meal analyses for today.",
+        details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+      },
+    };
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: async () => jsonResponse(body, 429, { "Retry-After": "25200" }),
+      },
+    ).catch((caught: unknown) => caught);
+
+    const failure = error as ParseFailure;
+    expect(failure.kind).toBe("service");
+    expect(failure.code).toBe("rate_limited");
+    expect(failure.status).toBe(429);
+    // Read from the header, which is what a browser can always see, rather than from
+    // the body, which a CORS refusal would have hidden.
+    expect(failure.retryAfterSeconds).toBe(25_200);
+
+    const shown = describeParseFailure(failure);
+    expect(shown).toContain("You have used all 60 meal analyses for today.");
+    expect(shown).toContain("in about 7 hours");
+    expect(shown).toContain("type a meal");
+  });
+
+  it("shows the service's own message for an ordinary failure, since it knows more", async () => {
+    const body = {
+      error: { code: "upstream_error", message: "The meal reader is busy at the moment." },
+    };
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: async () => jsonResponse(body, 503),
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect(describeParseFailure(error as ParseFailure)).toBe(
+      "The meal reader is busy at the moment.",
+    );
+  });
+
+  it.each([
+    ["a body that is not JSON", new Response("<html>502</html>", { status: 200 })],
+    ["a reply of the wrong shape", jsonResponse({ items: "not an array" })],
+  ])("reports %s as a service failure rather than crashing", async (_label, response) => {
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: async () => response,
+      },
+    ).catch((caught: unknown) => caught);
+    expect((error as ParseFailure).kind).toBe("service");
+  });
+
+  it("still falls back to the status code when the service says nothing useful", async () => {
+    const error = await requestParseMeal(
+      "token",
+      {},
+      {
+        fetchImpl: async () => new Response("<html>502</html>", { status: 502 }),
+      },
+    ).catch((caught: unknown) => caught);
+    expect((error as ParseFailure).message).toContain("502");
+  });
+});
+
+describe("toParseFailure", () => {
+  it("keeps a plain error's message, which is already written for a person", () => {
+    const failure = toParseFailure(new Error("Your session has expired. Sign in again."));
+    expect(describeParseFailure(failure)).toBe("Your session has expired. Sign in again.");
+  });
+
+  it("passes a ParseFailure through untouched", () => {
+    const original = new ParseFailure("timeout", "too slow");
+    expect(toParseFailure(original)).toBe(original);
   });
 });
