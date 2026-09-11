@@ -9,33 +9,30 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { PeriodDay } from "@/lib/trends";
-
-/** Short day label for the axis: "11". */
-function dayTick(localDate: string): string {
-  return localDate.slice(8);
-}
+import type { Bucket, PeriodBucket } from "@/lib/trends";
+import { bucketTick } from "@/lib/trends";
 
 /**
- * Daily calories as bars, with the target drawn across them.
+ * Daily (or weekly) calories as bars, with the target drawn across them.
  *
- * The target is a per-day line rather than a single horizontal reference line. A target
- * only changes when the profile is saved, so for most periods the two are identical — but
- * when it does change, one flat line would assert a target that was never in force, and
- * the days on one side of the change would look wrong when they were not.
+ * The target is a per-bucket line rather than a single horizontal reference line. A
+ * target only changes when the profile is saved or a weight refresh lands, so for most
+ * periods the two are identical — but when it does change, one flat line would assert a
+ * target that was never in force, and the days on one side of the change would look
+ * wrong when they were not.
  *
- * Bars are coloured by their own status: over-target days are the ones worth seeing at a
- * glance, and the colour comes from the database's own verdict rather than from the
+ * Bars are coloured by their own status: over-target buckets are the ones worth seeing at
+ * a glance, and the colour comes from the database's own verdict rather than from the
  * chart re-deriving it.
  */
-export function CalorieBars({ days }: { days: PeriodDay[] }) {
-  const chartData = days.map((day) => ({
-    localDate: day.local_date,
-    tick: dayTick(day.local_date),
-    calories: Math.round(day.calories),
-    target: day.target_calories === null ? null : Math.round(day.target_calories),
-    status: day.status,
-    logged: day.meal_count > 0,
+export function CalorieBars({ buckets, bucket }: { buckets: PeriodBucket[]; bucket: Bucket }) {
+  const chartData = buckets.map((entry) => ({
+    bucketStart: entry.bucket_start,
+    tick: bucketTick(entry.bucket_start, bucket),
+    calories: Math.round(entry.calories),
+    target: entry.target_calories === null ? null : Math.round(entry.target_calories),
+    status: entry.status,
+    logged: entry.meal_count > 0,
   }));
 
   return (
@@ -67,7 +64,7 @@ export function CalorieBars({ days }: { days: PeriodDay[] }) {
               borderRadius: "0.75rem",
               fontSize: "0.75rem",
             }}
-            labelFormatter={(label) => `Day ${String(label)}`}
+            labelFormatter={(label) => String(label)}
             formatter={(value, name) => [
               value === null ? "not logged" : `${Number(value).toLocaleString()} kcal`,
               name === "calories" ? "Eaten" : "Target",
@@ -76,9 +73,9 @@ export function CalorieBars({ days }: { days: PeriodDay[] }) {
           <Bar dataKey="calories" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {chartData.map((entry) => (
               <Cell
-                key={entry.localDate}
+                key={entry.bucketStart}
                 fill={entry.status === "over" ? "var(--destructive)" : "var(--chart-1)"}
-                // A day nobody logged is drawn in the grid colour rather than at zero
+                // A bucket nobody logged is drawn in the grid colour rather than at zero
                 // height, so "nothing eaten" and "ate nothing" do not look identical.
                 opacity={entry.logged ? 1 : 0.25}
               />

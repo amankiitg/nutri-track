@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  bucketFor,
+  bucketTick,
   clampEnd,
   containsToday,
   isEmptyPeriod,
@@ -152,42 +154,74 @@ describe("isEmptyPeriod", () => {
     ...over,
   });
 
-  const day = (mealCount: number) => ({
-    local_date: "2026-09-11",
+  const bucket = (mealCount: number) => ({
+    bucket_start: "2026-09-11",
+    bucket_end: "2026-09-11",
+    bucket_days: 1,
+    days_logged: mealCount > 0 ? 1 : 0,
     meal_count: mealCount,
     calories: 0,
-    protein_g: 0,
-    carbs_g: 0,
-    fat_g: 0,
     protein_kcal: 0,
     carbs_kcal: 0,
     fat_kcal: 0,
     target_calories: null,
+    avg_calories: null,
+    avg_target_calories: null,
+    avg_protein_g: null,
+    avg_carbs_g: null,
+    avg_fat_g: null,
     status: null,
   });
 
-  it("is empty with no meals anywhere in the period", () => {
-    expect(
-      isEmptyPeriod({
-        start: "2026-09-01",
-        end: "2026-09-11",
-        window_days: 11,
-        days: [day(0)],
-        totals: totals(),
-      }),
-    ).toBe(true);
+  const emptyPeriod = (over: Partial<Parameters<typeof isEmptyPeriod>[0]> = {}) => ({
+    start: "2026-09-01",
+    end: "2026-09-11",
+    bucket: "day",
+    window_days: 11,
+    buckets: [bucket(0)],
+    totals: totals(),
+    ...over,
   });
 
-  it("is not empty once a single day has a meal", () => {
+  it("is empty with no meals anywhere in the period", () => {
+    expect(isEmptyPeriod(emptyPeriod())).toBe(true);
+  });
+
+  it("is not empty once a single bucket has a meal", () => {
     expect(
-      isEmptyPeriod({
-        start: "2026-09-01",
-        end: "2026-09-11",
-        window_days: 11,
-        days: [day(0), day(1)],
-        totals: totals({ days_logged: 1, total_meals: 1 }),
-      }),
+      isEmptyPeriod(
+        emptyPeriod({
+          buckets: [bucket(0), bucket(1)],
+          totals: totals({ days_logged: 1, total_meals: 1 }),
+        }),
+      ),
     ).toBe(false);
+  });
+});
+
+describe("bucketFor", () => {
+  it("buckets a year by week and the shorter views by day", () => {
+    // A year of daily bars is 254 of them; a year of weekly bars is ~37.
+    expect(bucketFor("year")).toBe("week");
+    expect(bucketFor("month")).toBe("day");
+    expect(bucketFor("week")).toBe("day");
+  });
+});
+
+describe("bucketTick", () => {
+  it("uses a bare day number for a day bucket", () => {
+    expect(bucketTick("2026-09-11", "day")).toBe("11");
+  });
+
+  it("carries the month for a week bucket", () => {
+    // Weekly ticks reading "07", "14", "21" repeat and say nothing about which month
+    // they belong to, which is the problem the bucketing exists to solve.
+    expect(bucketTick("2026-09-07", "week")).toBe("7 Sept");
+    expect(bucketTick("2026-10-05", "week")).toBe("5 Oct");
+  });
+
+  it("returns the input unchanged if it is not a date", () => {
+    expect(bucketTick("nonsense", "week")).toBe("nonsense");
   });
 });
 

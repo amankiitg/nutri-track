@@ -169,22 +169,40 @@ const numericOrNull = z
   .union([z.number(), z.string(), z.null()])
   .transform((value) => (value === null ? null : Number(value)));
 
-const periodDay = z.object({
-  local_date: z.string(),
+/**
+ * An entry in the chart series. A day for the week and month views, a week for the year.
+ *
+ * A year of daily bars is 254 of them, and its axis reads "12, 01, 21, 13, 02, 23" — a
+ * chart that conveys the presence of data and nothing else. Weekly buckets make the year
+ * legible while the shorter views, where every day is already readable, stay daily.
+ *
+ * `calories` is the bucket's total (what the bar shows) and `avg_calories` is the
+ * per-logged-day average (what the status is computed from). Those differ on purpose: a
+ * week with three logged days and four empty ones is not "under", it is partly
+ * unrecorded, and comparing its sum against a seven-day allowance would say the opposite.
+ */
+const periodBucket = z.object({
+  bucket_start: z.string(),
+  bucket_end: z.string(),
+  /** Days the bucket covers: 7 for a full week, 1 for a day, fewer at a range's edge. */
+  bucket_days: numeric,
+  days_logged: numeric,
   meal_count: numeric,
   calories: numeric,
-  protein_g: numeric,
-  carbs_g: numeric,
-  fat_g: numeric,
-  /** The macro split by energy, converted in Postgres so every chart uses one basis. */
   protein_kcal: numeric,
   carbs_kcal: numeric,
   fat_kcal: numeric,
+  /** The bucket's allowance: the per-day target in force, times `bucket_days`. */
   target_calories: numericOrNull,
+  avg_calories: numericOrNull,
+  avg_target_calories: numericOrNull,
+  avg_protein_g: numericOrNull,
+  avg_carbs_g: numericOrNull,
+  avg_fat_g: numericOrNull,
   status: z.string().nullable(),
 });
 
-export type PeriodDay = z.infer<typeof periodDay>;
+export type PeriodBucket = z.infer<typeof periodBucket>;
 
 const periodTotals = z.object({
   days_logged: numeric,
@@ -208,8 +226,9 @@ export type PeriodTotals = z.infer<typeof periodTotals>;
 const periodSummary = z.object({
   start: z.string(),
   end: z.string(),
+  bucket: z.string(),
   window_days: numeric,
-  days: z.array(periodDay),
+  buckets: z.array(periodBucket),
   totals: periodTotals,
 });
 
@@ -236,11 +255,22 @@ function parseOrThrow<T>(
   return parsed.data;
 }
 
-/** One row per day in the range, plus the period's totals. One round trip. */
-export async function fetchPeriodSummary(period: Period): Promise<PeriodSummary> {
+/** How the chart series is grouped. Week and month are legible daily; a year is not. */
+export type Bucket = "day" | "week";
+
+export function bucketFor(granularity: Granularity): Bucket {
+  return granularity === "year" ? "week" : "day";
+}
+
+/** One row per bucket in the range, plus the period's totals. One round trip. */
+export async function fetchPeriodSummary(
+  period: Period,
+  bucket: Bucket = "day",
+): Promise<PeriodSummary> {
   const { data, error } = await supabase.rpc("get_period_summary", {
     p_start: period.start,
     p_end: period.end,
+    p_bucket: bucket,
   });
   if (error) throw error;
 
@@ -260,7 +290,23 @@ export async function fetchWeightSeries(period: Period): Promise<WeightPoint[]> 
 
 /** True when there is nothing worth drawing for this period. */
 export function isEmptyPeriod(summary: PeriodSummary): boolean {
-  return summary.totals.days_logged === 0 && summary.days.every((day) => day.meal_count === 0);
+  return (
+    summary.totals.days_logged === 0 && summary.buckets.every((bucket) => bucket.meal_count === 0)
+  );
+}
+
+const bucketDay = labelFor({ day: "numeric" });
+const bucketDayMonth = labelFor({ day: "numeric", month: "short" });
+
+/**
+ * The x-axis tick for one bucket.
+ *
+ * A daily bucket is a day number, which is unambiguous within a week or a month. A
+ * weekly one is not: 37 ticks reading "07", "14", "21" repeat and say nothing about
+ * which month they belong to, so a week carries its month.
+ */
+export function bucketTick(bucketStart: string, bucket: Bucket): string {
+  return bucket === "week" ? bucketDayMonth(bucketStart) : bucketDay(bucketStart);
 }
 
 /**

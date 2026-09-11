@@ -9,6 +9,7 @@ import { ChartCard, StatTiles } from "@/components/trends/StatTiles";
 import { WeightChart } from "@/components/trends/WeightChart";
 import { localDateString } from "@/lib/profile";
 import {
+  bucketFor,
   clampEnd,
   containsToday,
   fetchPeriodSummary,
@@ -45,11 +46,14 @@ function TrendsPage() {
   // not occurred. The label still names the whole calendar period.
   const range = clampEnd(period, today);
   const label = periodLabel(granularity, period);
+  // A year of daily bars is 254 of them and its axis is unreadable; a week per bar is
+  // ~37 and can be read. The shorter views stay daily, where each bar is legible.
+  const bucket = bucketFor(granularity);
   const enabled = userId !== "";
 
   const summary = useQuery({
-    queryKey: ["period-summary", userId, range.start, range.end],
-    queryFn: () => fetchPeriodSummary(range),
+    queryKey: ["period-summary", userId, range.start, range.end, bucket],
+    queryFn: () => fetchPeriodSummary(range, bucket),
     enabled,
   });
 
@@ -122,12 +126,16 @@ function TrendsPage() {
 
           <ChartCard
             title="Calories by day"
-            description="Bars are what you ate; the dashed line is your target on that day."
+            description={
+              bucket === "week"
+                ? "Bars are a week's total; the dashed line is what seven days allowed."
+                : "Bars are what you ate; the dashed line is your target on that day."
+            }
           >
-            <CalorieBars days={summary.data.days} />
+            <CalorieBars buckets={summary.data.buckets} bucket={bucket} />
           </ChartCard>
 
-          <MacroSplit totals={summary.data.totals} days={summary.data.days} />
+          <MacroSplit totals={summary.data.totals} buckets={summary.data.buckets} bucket={bucket} />
         </>
       )}
 

@@ -12,7 +12,13 @@ import {
   YAxis,
 } from "recharts";
 import { ChartCard } from "@/components/trends/StatTiles";
-import { macroShares, type PeriodDay, type PeriodTotals } from "@/lib/trends";
+import {
+  bucketTick,
+  macroShares,
+  type Bucket,
+  type PeriodBucket,
+  type PeriodTotals,
+} from "@/lib/trends";
 
 const MACRO_META = {
   protein: { label: "Protein", colour: "var(--chart-3)" },
@@ -39,7 +45,15 @@ const TOOLTIP_STYLE = {
  * The donut is of the *average judged day*, not of the period's total, so it describes a
  * typical day. Summing a period would make the ring a picture of how long the period was.
  */
-export function MacroSplit({ totals, days }: { totals: PeriodTotals; days: PeriodDay[] }) {
+export function MacroSplit({
+  totals,
+  buckets,
+  bucket,
+}: {
+  totals: PeriodTotals;
+  buckets: PeriodBucket[];
+  bucket: Bucket;
+}) {
   const shares = macroShares(totals);
 
   const donutData = (shares ?? []).map((share) => ({
@@ -50,13 +64,13 @@ export function MacroSplit({ totals, days }: { totals: PeriodTotals; days: Perio
     share: share.share,
   }));
 
-  const stacked = days.map((day) => ({
-    localDate: day.local_date,
-    tick: day.local_date.slice(8),
-    protein: Math.round(day.protein_kcal),
-    carbs: Math.round(day.carbs_kcal),
-    fat: Math.round(day.fat_kcal),
-    logged: day.meal_count > 0,
+  const stacked = buckets.map((entry) => ({
+    bucketStart: entry.bucket_start,
+    tick: bucketTick(entry.bucket_start, bucket),
+    protein: Math.round(entry.protein_kcal),
+    carbs: Math.round(entry.carbs_kcal),
+    fat: Math.round(entry.fat_kcal),
+    logged: entry.meal_count > 0,
   }));
 
   if (shares === null) {
@@ -119,7 +133,14 @@ export function MacroSplit({ totals, days }: { totals: PeriodTotals; days: Perio
         </div>
       </ChartCard>
 
-      <ChartCard title="Macros over time" description="Calories from each macro, by day.">
+      <ChartCard
+        title="Macros over time"
+        description={
+          bucket === "week"
+            ? "Calories from each macro, by week."
+            : "Calories from each macro, by day."
+        }
+      >
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stacked} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
@@ -140,7 +161,7 @@ export function MacroSplit({ totals, days }: { totals: PeriodTotals; days: Perio
               <Tooltip
                 cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
                 contentStyle={TOOLTIP_STYLE}
-                labelFormatter={(label) => `Day ${String(label)}`}
+                labelFormatter={(label) => String(label)}
                 formatter={(value) => `${Number(value).toLocaleString()} kcal`}
               />
               <Legend
