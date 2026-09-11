@@ -106,7 +106,8 @@ function TodayPage() {
   });
 
   const saveWeight = useMutation({
-    mutationFn: (weightKg: number) => logWeight({ userId, date: today, weightKg }),
+    mutationFn: (input: { weightKg: number; waistCm?: number | undefined }) =>
+      logWeight({ userId, date: today, ...input }),
     onSuccess: () => {
       toast.success("Weight recorded");
       void queryClient.invalidateQueries({ queryKey: ["weights"] });
@@ -163,7 +164,7 @@ function TodayPage() {
           entries={weights.data}
           unitSystem={unitSystem}
           saving={saveWeight.isPending}
-          onSave={(weightKg) => saveWeight.mutate(weightKg)}
+          onSave={(input) => saveWeight.mutate(input)}
         />
       )}
 

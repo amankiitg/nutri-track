@@ -315,6 +315,7 @@ export type Database = {
           logged_on: string;
           source: Database["public"]["Enums"]["weight_source"];
           user_id: string;
+          waist_cm: number | null;
           weight_kg: number;
         };
         Insert: {
@@ -323,6 +324,7 @@ export type Database = {
           logged_on: string;
           source?: Database["public"]["Enums"]["weight_source"];
           user_id: string;
+          waist_cm?: number | null;
           weight_kg: number;
         };
         Update: {
@@ -331,6 +333,7 @@ export type Database = {
           logged_on?: string;
           source?: Database["public"]["Enums"]["weight_source"];
           user_id?: string;
+          waist_cm?: number | null;
           weight_kg?: number;
         };
         Relationships: [];
@@ -378,6 +381,19 @@ export type Database = {
           target_carbs_g: number;
           target_fat_g: number;
           target_protein_g: number;
+        }[];
+      };
+      get_period_summary: {
+        Args: { p_end: string; p_start: string };
+        Returns: Json;
+      };
+      get_weight_series: {
+        Args: { p_end: string; p_start: string };
+        Returns: {
+          logged_on: string;
+          waist_cm: number;
+          weight_avg_7d: number;
+          weight_kg: number;
         }[];
       };
       is_admin: { Args: never; Returns: boolean };

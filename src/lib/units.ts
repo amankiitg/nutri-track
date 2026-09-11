@@ -32,3 +32,15 @@ export function formatPace(kgPerWeek: number, units: UnitSystem): string {
     ? `${kgToLb(kgPerWeek).toFixed(1)} lb/week`
     : `${kgPerWeek.toFixed(2).replace(/0$/, "")} kg/week`;
 }
+
+/**
+ * A length the user measures with a tape, such as a waist. Centimetres in, centimetres
+ * or inches out.
+ *
+ * Deliberately not `formatHeight`: a waist is not usefully expressed in feet, and
+ * keeping the conversion here leaves exactly one `cmToIn` factor in the codebase rather
+ * than a second copy appearing next to whichever input needed it.
+ */
+export function formatLength(cm: number, units: UnitSystem, digits = 1): string {
+  return units === "imperial" ? `${cmToIn(cm).toFixed(digits)} in` : `${cm.toFixed(digits)} cm`;
+}

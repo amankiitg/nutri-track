@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { kgToLb, lbToKg, type UnitSystem } from "@/lib/units";
+import { formatLength, kgToLb, lbToKg, cmToIn, inToCm, type UnitSystem } from "@/lib/units";
 import { weightDelta, type WeightEntry } from "@/lib/dashboard";
 
 /** Weigh-ins are recorded to two decimals by the column, so do not offer more. */
@@ -11,13 +11,21 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Waists are recorded to one decimal. Bounds match the column's check constraint. */
+const WAIST_MIN_CM = 20;
+const WAIST_MAX_CM = 300;
+
 /**
- * One field and a button, for the common case of stepping on a scale and wanting the
- * number recorded. Enter submits, because on a phone that is one thumb.
+ * A quick-entry card: weight, optionally with a waist measurement.
  *
- * The input is in whatever unit the profile uses; the database is always kilograms.
- * Converting in one place here is why every other screen can read `weight_kg` without
- * asking what unit it is in.
+ * Weight is prefilled with the last weigh-in, because correcting a number is common and
+ * retyping it is not. Waist is deliberately **not** prefilled: it is measured far less
+ * often, and a stale value sitting in the box is one accidental Save away from being
+ * recorded as a new measurement on a day nobody measured anything.
+ *
+ * Both inputs are in the profile's display units; storage is always kilograms and
+ * centimetres. Converting at this boundary is why every other screen can read
+ * `weight_kg` and `waist_cm` without asking what unit they are in.
  */
 export function WeightEntry({
   entries,
@@ -28,7 +36,7 @@ export function WeightEntry({
   /** Newest first, at most two: the latest weigh-in and the one before it. */
   entries: WeightEntry[];
   unitSystem: UnitSystem;
-  onSave: (weightKg: number) => void;
+  onSave: (input: { weightKg: number; waistCm?: number | undefined }) => void;
   saving: boolean;
 }) {
   const latest = entries[0] ?? null;
@@ -38,25 +46,43 @@ export function WeightEntry({
       ? ""
       : String(round(unitSystem === "imperial" ? kgToLb(latest.weight_kg) : latest.weight_kg));
 
-  // Prefilled with the last weigh-in, so re-recording after a correction does not mean
-  // retyping. Cleared state means the user is typing something new.
   const [value, setValue] = useState<string | null>(null);
+  const [waist, setWaist] = useState("");
   const shown = value ?? display;
   const unit = unitSystem === "imperial" ? "lb" : "kg";
+  const waistUnit = unitSystem === "imperial" ? "in" : "cm";
 
   const parsed = Number(shown);
-  const valid = shown.trim() !== "" && Number.isFinite(parsed) && parsed > 0 && parsed < 1000;
+  const weightValid = shown.trim() !== "" && Number.isFinite(parsed) && parsed > 0 && parsed < 1000;
+
+  // Converted to cm only to validate against the column's bounds, so a value the
+  // database would reject is caught here rather than surfacing as a raw constraint error.
+  const parsedWaist = waist.trim() === "" ? null : Number(waist);
+  const waistCm =
+    parsedWaist === null || !Number.isFinite(parsedWaist)
+      ? null
+      : unitSystem === "imperial"
+        ? inToCm(parsedWaist)
+        : parsedWaist;
+  const waistValid =
+    parsedWaist === null ||
+    (Number.isFinite(parsedWaist) &&
+      waistCm !== null &&
+      waistCm > WAIST_MIN_CM &&
+      waistCm < WAIST_MAX_CM);
+
+  const valid = weightValid && waistValid;
 
   function submit(): void {
     if (!valid) return;
     const weightKg = round(unitSystem === "imperial" ? lbToKg(parsed) : parsed);
-    onSave(weightKg);
+    onSave(waistCm === null ? { weightKg } : { weightKg, waistCm: round(waistCm) });
   }
 
   return (
     <Card className="card-soft animate-rise">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Weight</CardTitle>
+        <CardTitle className="text-base">Weight and waist</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {latest === null ? (
@@ -90,12 +116,13 @@ export function WeightEntry({
                 since the one before.
               </>
             )}
+            {latest.waist_cm !== null && <> Waist {formatLength(latest.waist_cm, unitSystem)}.</>}
           </p>
         )}
 
-        <div className="flex items-end gap-2">
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="weight-today">Today ({unit})</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label htmlFor="weight-today">Weight ({unit})</Label>
             <Input
               id="weight-today"
               inputMode="decimal"
@@ -108,12 +135,42 @@ export function WeightEntry({
                   submit();
                 }
               }}
-              aria-invalid={shown.trim() !== "" && !valid}
+              aria-invalid={shown.trim() !== "" && !weightValid}
             />
           </div>
+          <div className="space-y-1">
+            <Label htmlFor="waist-today">
+              Waist ({waistUnit}) <span className="font-normal">optional</span>
+            </Label>
+            <Input
+              id="waist-today"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="—"
+              value={waist}
+              onChange={(event) => setWaist(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              aria-invalid={!waistValid}
+            />
+          </div>
+        </div>
+
+        {!waistValid && (
+          <p role="alert" className="text-xs text-destructive">
+            A waist of {formatLength(WAIST_MIN_CM, unitSystem)} to{" "}
+            {formatLength(WAIST_MAX_CM, unitSystem)} is expected.
+          </p>
+        )}
+
+        <div className="flex items-end gap-2">
           <Button
             type="button"
-            className="rounded-full"
+            className="w-full rounded-full"
             disabled={!valid || saving}
             onClick={submit}
           >

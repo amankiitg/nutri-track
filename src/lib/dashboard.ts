@@ -308,6 +308,7 @@ export function quantityLabel(item: TimelineItem): string | null {
 const weightRow = z.object({
   logged_on: z.string(),
   weight_kg: numeric,
+  waist_cm: numericOrNull,
 });
 
 export type WeightEntry = z.infer<typeof weightRow>;
@@ -316,7 +317,7 @@ export type WeightEntry = z.infer<typeof weightRow>;
 export async function fetchRecentWeights(limit = 2): Promise<WeightEntry[]> {
   const { data, error } = await supabase
     .from("weight_log")
-    .select("logged_on, weight_kg")
+    .select("logged_on, weight_kg, waist_cm")
     .order("logged_on", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -324,8 +325,50 @@ export async function fetchRecentWeights(limit = 2): Promise<WeightEntry[]> {
   return parseOrThrow(z.array(weightRow), data, "weight_log");
 }
 
+export interface WeightLogInput {
+  userId: string;
+  date: string;
+  weightKg: number;
+  /** Undefined leaves any measurement already stored for the day untouched. */
+  waistCm?: number | undefined;
+}
+
+export interface WeightLogRow {
+  user_id: string;
+  logged_on: string;
+  weight_kg: number;
+  source: "manual";
+  /**
+   * No `| undefined` here, unlike the input. Under `exactOptionalPropertyTypes` that
+   * difference is the whole point: the key may be absent, but it may never be present
+   * holding undefined, because the upsert would then write a null over a real
+   * measurement.
+   */
+  waist_cm?: number;
+}
+
 /**
- * Records today's weight.
+ * The row handed to the upsert.
+ *
+ * A separate function because of one detail that is easy to get wrong and invisible
+ * from the outside: `waist_cm` is **absent** rather than null when the user did not
+ * measure one. An upsert only writes the columns it is given, so omitting the key
+ * preserves whatever was recorded earlier that day, while sending `waist_cm: null`
+ * would silently erase it — turning "weight only, this morning" into a deletion of last
+ * night's measurement.
+ */
+export function weightLogRow(input: WeightLogInput): WeightLogRow {
+  return {
+    user_id: input.userId,
+    logged_on: input.date,
+    weight_kg: input.weightKg,
+    source: "manual",
+    ...(input.waistCm === undefined ? {} : { waist_cm: input.waistCm }),
+  };
+}
+
+/**
+ * Records today's weight, and today's waist when one was measured.
  *
  * Two writes, deliberately. `weight_log` is the history and is what the trend reads;
  * `profiles.weight_kg` is the value the next BMR/TDEE calculation starts from, so
@@ -337,20 +380,10 @@ export async function fetchRecentWeights(limit = 2): Promise<WeightEntry[]> {
  * Unlike the profile save, which never overwrites an existing day, this one upserts:
  * the user is explicitly stating today's weight, and correcting a typo has to work.
  */
-export async function logWeight(input: {
-  userId: string;
-  date: string;
-  weightKg: number;
-}): Promise<void> {
-  const { error: logError } = await supabase.from("weight_log").upsert(
-    {
-      user_id: input.userId,
-      logged_on: input.date,
-      weight_kg: input.weightKg,
-      source: "manual",
-    },
-    { onConflict: "user_id,logged_on" },
-  );
+export async function logWeight(input: WeightLogInput): Promise<void> {
+  const { error: logError } = await supabase
+    .from("weight_log")
+    .upsert(weightLogRow(input), { onConflict: "user_id,logged_on" });
   if (logError) throw logError;
 
   const { error: profileError } = await supabase

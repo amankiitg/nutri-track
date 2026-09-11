@@ -8,6 +8,8 @@ import {
   verdictHasNumbers,
   verdictSentence,
   weekdayName,
+  weightDelta,
+  weightLogRow,
   type TimelineItem,
   type WeekVerdict,
 } from "./dashboard";
@@ -227,6 +229,61 @@ const item = (over: Partial<TimelineItem> = {}): TimelineItem => ({
   confidence: 0.8,
   user_edited: false,
   ...over,
+});
+
+describe("weightLogRow", () => {
+  const base = { userId: "u1", date: "2026-09-11", weightKg: 71.5 };
+
+  it("always carries the weight and the day", () => {
+    expect(weightLogRow(base)).toMatchObject({
+      user_id: "u1",
+      logged_on: "2026-09-11",
+      weight_kg: 71.5,
+      source: "manual",
+    });
+  });
+
+  it("includes the waist when one was measured", () => {
+    expect(weightLogRow({ ...base, waistCm: 80 })).toHaveProperty("waist_cm", 80);
+  });
+
+  it("omits the waist entirely when none was measured", () => {
+    // The difference that matters: an upsert writes only the columns it is given, so an
+    // absent key leaves an earlier measurement for the day intact, while an explicit
+    // null erases it. Recording weight alone must not delete this morning's waist.
+    const row = weightLogRow(base);
+    expect(Object.hasOwn(row, "waist_cm")).toBe(false);
+    expect(row.waist_cm).toBeUndefined();
+  });
+
+  it("treats an explicit undefined as not measured rather than as zero", () => {
+    // Zero is not a waist, and the column's check constraint would reject it, which is
+    // the right outcome — but only if we never send it.
+    const row = weightLogRow({ ...base, waistCm: undefined });
+    expect(Object.hasOwn(row, "waist_cm")).toBe(false);
+  });
+});
+
+describe("weightDelta", () => {
+  const entry = (loggedOn: string, kg: number) => ({
+    logged_on: loggedOn,
+    weight_kg: kg,
+    waist_cm: null,
+  });
+
+  it("reports the change since the previous weigh-in", () => {
+    expect(weightDelta([entry("2026-09-11", 71.5), entry("2026-09-10", 71.1)])).toBe(0.4);
+    expect(weightDelta([entry("2026-09-11", 70.6), entry("2026-09-10", 71.1)])).toBe(-0.5);
+  });
+
+  it("says nothing when there is only one weigh-in", () => {
+    expect(weightDelta([entry("2026-09-11", 71.5)])).toBeNull();
+    expect(weightDelta([])).toBeNull();
+  });
+
+  it("says nothing when the change rounds away", () => {
+    expect(weightDelta([entry("2026-09-11", 71.52), entry("2026-09-10", 71.5)])).toBeNull();
+  });
 });
 
 describe("quantityLabel", () => {
