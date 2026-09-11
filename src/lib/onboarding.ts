@@ -18,7 +18,7 @@ import {
   type Sex,
   type TargetResult,
 } from "./targets";
-import { targetsFromProfile, type ProfileInsert } from "./profile";
+import { targetsFromProfile, type Profile, type ProfileInsert } from "./profile";
 import type { UnitSystem } from "./units";
 
 export const MIN_AGE = 13;
@@ -48,6 +48,29 @@ export const STEP_TITLES: Record<OnboardingStep, string> = {
 
 export const SEX_OPTIONS = ["female", "male"] as const satisfies readonly Sex[];
 export const GOAL_OPTIONS = ["lose", "maintain", "gain"] as const satisfies readonly Goal[];
+
+/** Every activity level, derived from the multiplier table so the two cannot drift. */
+export const ACTIVITY_LEVELS = Object.keys(ACTIVITY_MULTIPLIERS) as ActivityLevel[];
+
+export const GOAL_COPY: Record<Goal, { title: string; description: string }> = {
+  lose: {
+    title: "Lose weight",
+    description: "Eat below maintenance to lose at your chosen pace.",
+  },
+  maintain: {
+    title: "Maintain",
+    description: "Eat around maintenance to hold your current weight.",
+  },
+  gain: {
+    title: "Gain weight",
+    description: "Eat above maintenance to gain at your chosen pace.",
+  },
+};
+
+/** Formats a date for display. */
+export function toLocaleDate(date: Date): string {
+  return date.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+}
 
 export interface OnboardingForm {
   display_name: string;
@@ -223,14 +246,25 @@ const preferencesStepSchema = onboardingBaseSchema.pick({
 
 function collect(result: z.SafeParseReturnType<unknown, unknown>): FieldErrors {
   if (result.success) return {};
+  return zodFieldErrors(result.error);
+}
+
+/** Flattens a Zod error into one message per form field. */
+export function zodFieldErrors(error: z.ZodError): FieldErrors {
   const errors: FieldErrors = {};
-  for (const issue of result.error.issues) {
+  for (const issue of error.issues) {
     const key = issue.path[0];
     if (typeof key === "string" && !(key in errors)) {
       errors[key as keyof OnboardingForm] = issue.message;
     }
   }
   return errors;
+}
+
+/** Whole-form validation, for callers that are not the step wizard. */
+export function validateForm(form: OnboardingForm): FieldErrors {
+  const parsed = onboardingSchema.safeParse(form);
+  return parsed.success ? {} : zodFieldErrors(parsed.error);
 }
 
 /** BMI floor on the goal step, which needs the height captured on the body step. */
@@ -272,6 +306,33 @@ export function computeTargetsFromForm(form: OnboardingForm): TargetResult | nul
     pace_kg_per_week: form.goal === "maintain" ? null : form.pace_kg_per_week,
     protein_g_per_kg: form.protein_g_per_kg,
   });
+}
+
+function paceFromDb(value: number | null): Pace {
+  const match = PACE_OPTIONS.find((option) => option === value);
+  return match ?? 0.5;
+}
+
+/** Rebuilds the editable form state from a stored profile row. */
+export function formFromProfile(profile: Profile): OnboardingForm {
+  return {
+    display_name: profile.display_name,
+    dob: profile.dob,
+    sex: profile.sex,
+    height_cm: Number(profile.height_cm),
+    weight_kg: Number(profile.weight_kg),
+    units: profile.units,
+    activity_level: profile.activity_level,
+    goal: profile.goal,
+    target_weight_kg: profile.target_weight_kg == null ? null : Number(profile.target_weight_kg),
+    pace_kg_per_week: paceFromDb(
+      profile.pace_kg_per_week == null ? null : Number(profile.pace_kg_per_week),
+    ),
+    protein_g_per_kg: Number(profile.protein_g_per_kg),
+    dietary_tags: profile.dietary_tags,
+    timezone: profile.timezone,
+    reminder_time: profile.reminder_time ?? "",
+  };
 }
 
 /** Maps the validated form onto the row written to `profiles`. */

@@ -2,25 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Slider } from "@/components/ui/slider";
-import {
-  ACTIVITY_LABELS,
-  ACTIVITY_MULTIPLIERS,
-  PACE_OPTIONS,
-  ageFromDob,
-  projectedTargetDate,
-  type ActivityLevel,
-  type Goal,
-} from "@/lib/targets";
-import { DIETARY_TAG_OPTIONS, type ProfileInsert } from "@/lib/profile";
+import { ACTIVITY_LABELS, ACTIVITY_MULTIPLIERS, ageFromDob } from "@/lib/targets";
+import type { ProfileInsert } from "@/lib/profile";
 import { formatHeight, formatPace, formatWeight } from "@/lib/units";
 import {
   DEFAULT_ONBOARDING_FORM,
-  GOAL_OPTIONS,
-  MAX_AGE,
-  MIN_AGE,
+  GOAL_COPY,
   ONBOARDING_STEPS,
-  SEX_OPTIONS,
   STEP_TITLES,
   clearOnboardingDraft,
   computeTargetsFromForm,
@@ -33,19 +21,7 @@ import {
   type OnboardingForm,
   type OnboardingStep,
 } from "@/lib/onboarding";
-import { ChoiceCard, ChipGroup, HeightField, TextField, WeightField } from "./fields";
-import { TimeZoneSelect } from "./TimeZoneSelect";
-
-const ACTIVITY_LEVELS = Object.keys(ACTIVITY_MULTIPLIERS) as ActivityLevel[];
-
-const GOAL_COPY: Record<Goal, { title: string; description: string }> = {
-  lose: { title: "Lose weight", description: "Eat below maintenance to lose at your chosen pace." },
-  maintain: {
-    title: "Maintain",
-    description: "Eat around maintenance to hold your current weight.",
-  },
-  gain: { title: "Gain weight", description: "Eat above maintenance to gain at your chosen pace." },
-};
+import { AboutStep, ActivityStep, BodyStep, GoalStep, PreferencesStep } from "./steps";
 
 export interface OnboardingWizardProps {
   userId: string;
@@ -138,11 +114,6 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
 
   const targets = computeTargetsFromForm(form);
 
-  const projectedOn =
-    form.goal !== "maintain" && form.target_weight_kg != null && form.weight_kg != null
-      ? projectedTargetDate(form.weight_kg, form.target_weight_kg, form.pace_kg_per_week)
-      : null;
-
   return (
     <div className="space-y-6 pb-6">
       <header className="space-y-3">
@@ -157,205 +128,16 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
       </header>
 
       <div className="space-y-5">
-        {step === "about" && (
-          <>
-            <TextField
-              id="display_name"
-              label="Display name"
-              value={form.display_name}
-              onChange={(value) => setField("display_name", value)}
-              error={errors.display_name}
-              autoComplete="name"
-              placeholder="Ada"
-            />
-            <TextField
-              id="dob"
-              label="Date of birth"
-              type="date"
-              value={form.dob}
-              onChange={(value) => setField("dob", value)}
-              error={errors.dob}
-              max={new Date().toISOString().slice(0, 10)}
-              hint={`Used for your age. You must be ${MIN_AGE} to ${MAX_AGE}.`}
-            />
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-medium">Biological sex</legend>
-              <p className="text-xs text-muted-foreground">
-                This selects which BMR formula we use.
-              </p>
-              {SEX_OPTIONS.map((option) => (
-                <ChoiceCard
-                  key={option}
-                  name="sex"
-                  value={option}
-                  checked={form.sex === option}
-                  onSelect={() => setField("sex", option)}
-                  title={option === "female" ? "Female" : "Male"}
-                />
-              ))}
-            </fieldset>
-          </>
-        )}
+        {step === "about" && <AboutStep form={form} errors={errors} setField={setField} />}
 
-        {step === "body" && (
-          <>
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-medium">Units</legend>
-              {(["metric", "imperial"] as const).map((option) => (
-                <ChoiceCard
-                  key={option}
-                  name="units"
-                  value={option}
-                  checked={form.units === option}
-                  onSelect={() => setField("units", option)}
-                  title={option === "metric" ? "Metric" : "Imperial"}
-                  description={option === "metric" ? "cm and kg" : "ft/in and lb"}
-                />
-              ))}
-            </fieldset>
-            <HeightField
-              valueCm={form.height_cm}
-              units={form.units}
-              onChange={(value) => setField("height_cm", value)}
-              error={errors.height_cm}
-            />
-            <WeightField
-              valueKg={form.weight_kg}
-              units={form.units}
-              onChange={(value) => setField("weight_kg", value)}
-              error={errors.weight_kg}
-            />
-          </>
-        )}
+        {step === "body" && <BodyStep form={form} errors={errors} setField={setField} />}
 
-        {step === "activity" && (
-          <fieldset className="space-y-3">
-            <legend className="sr-only">Activity level</legend>
-            {ACTIVITY_LEVELS.map((level) => (
-              <ChoiceCard
-                key={level}
-                name="activity_level"
-                value={level}
-                checked={form.activity_level === level}
-                onSelect={() => setField("activity_level", level)}
-                title={ACTIVITY_LABELS[level].label}
-                description={ACTIVITY_LABELS[level].hint}
-                meta={`×${ACTIVITY_MULTIPLIERS[level]}`}
-              />
-            ))}
-          </fieldset>
-        )}
+        {step === "activity" && <ActivityStep form={form} errors={errors} setField={setField} />}
 
-        {step === "goal" && (
-          <>
-            <fieldset className="space-y-3">
-              <legend className="sr-only">Goal</legend>
-              {GOAL_OPTIONS.map((option) => (
-                <ChoiceCard
-                  key={option}
-                  name="goal"
-                  value={option}
-                  checked={form.goal === option}
-                  onSelect={() => setField("goal", option)}
-                  title={GOAL_COPY[option].title}
-                  description={GOAL_COPY[option].description}
-                />
-              ))}
-            </fieldset>
-
-            {form.goal !== "maintain" && (
-              <>
-                <WeightField
-                  label="Target weight"
-                  valueKg={form.target_weight_kg}
-                  units={form.units}
-                  onChange={(value) => setField("target_weight_kg", value)}
-                  error={errors.target_weight_kg}
-                />
-
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Pace</legend>
-                  <div className="grid grid-cols-2 gap-3">
-                    {PACE_OPTIONS.map((pace) => (
-                      <ChoiceCard
-                        key={pace}
-                        name="pace_kg_per_week"
-                        value={String(pace)}
-                        checked={form.pace_kg_per_week === pace}
-                        onSelect={() => setField("pace_kg_per_week", pace)}
-                        title={formatPace(pace, form.units)}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-
-                {projectedOn && (
-                  <p className="text-sm text-muted-foreground">
-                    At {formatPace(form.pace_kg_per_week, form.units)} you'd reach{" "}
-                    {formatWeight(form.target_weight_kg ?? 0, form.units)} around{" "}
-                    <strong>{toLocaleDate(projectedOn)}</strong>.
-                  </p>
-                )}
-              </>
-            )}
-          </>
-        )}
+        {step === "goal" && <GoalStep form={form} errors={errors} setField={setField} />}
 
         {step === "preferences" && (
-          <>
-            <fieldset className="space-y-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <legend className="text-sm font-medium">Protein target</legend>
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  {form.protein_g_per_kg.toFixed(1)} g/kg
-                </span>
-              </div>
-              <Slider
-                value={[form.protein_g_per_kg]}
-                min={1.2}
-                max={2.2}
-                step={0.1}
-                aria-label="Protein grams per kilogram of body weight"
-                onValueChange={(values) => {
-                  const value = values[0];
-                  if (typeof value === "number") setField("protein_g_per_kg", value);
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                1.6 g/kg suits most people. More protein helps keep muscle while losing.
-              </p>
-            </fieldset>
-
-            <ChipGroup
-              legend="Dietary tags"
-              options={DIETARY_TAG_OPTIONS}
-              selected={form.dietary_tags}
-              onToggle={(tag) =>
-                setField(
-                  "dietary_tags",
-                  form.dietary_tags.includes(tag)
-                    ? form.dietary_tags.filter((value) => value !== tag)
-                    : [...form.dietary_tags, tag],
-                )
-              }
-            />
-
-            <TimeZoneSelect
-              value={form.timezone}
-              onChange={(value) => setField("timezone", value)}
-              error={errors.timezone}
-            />
-
-            <TextField
-              id="reminder_time"
-              label="Daily reminder"
-              type="time"
-              value={form.reminder_time}
-              onChange={(value) => setField("reminder_time", value)}
-              error={errors.reminder_time}
-              hint="Optional. Leave blank for no reminder."
-            />
-          </>
+          <PreferencesStep form={form} errors={errors} setField={setField} />
         )}
 
         {step === "review" && (
@@ -474,10 +256,6 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
       </div>
     </div>
   );
-}
-
-function toLocaleDate(date: Date): string {
-  return date.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function ReviewSection({
