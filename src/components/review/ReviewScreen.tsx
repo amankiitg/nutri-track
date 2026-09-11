@@ -1,0 +1,327 @@
+/**
+ * The review screen. The only route from a capture to a saved meal.
+ *
+ * It owns the idempotency key — generated once, when it mounts, so a double tap on
+ * Save cannot log two meals — and the fingerprint, which was computed when the capture
+ * was parsed and covers the photos, the words and the ten-minute window.
+ *
+ * Discard and Cancel delete the photos this capture uploaded. So does closing the
+ * sheet without saving: see the effect in `CaptureSheet`.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import type { MealType } from "@shared/meal-parse";
+import {
+  blankReviewItem,
+  canSave,
+  mealTotals,
+  remainingCalories,
+  reviewItemFromDraft,
+  toSaveMealArgs,
+  type ReviewItem,
+  type SaveMealResult,
+} from "@/lib/review";
+import type { ParseResponse } from "@/lib/capture";
+import { MealItemCard } from "./MealItemCard";
+
+const MEAL_TYPE_LABELS: Record<MealType, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snack",
+};
+
+const MACRO_LABELS: Array<{ key: "protein_g" | "carbs_g" | "fat_g"; label: string }> = [
+  { key: "protein_g", label: "Protein" },
+  { key: "carbs_g", label: "Carbs" },
+  { key: "fat_g", label: "Fat" },
+];
+
+export interface ReviewScreenProps {
+  result: ParseResponse;
+  photoPaths: readonly string[];
+  photoHashes: readonly string[];
+  /** Local object URLs for the thumbnails, so no storage round trip is needed. */
+  photoPreviews: readonly string[];
+  /** What was said or typed, shown when there are no photos. */
+  transcript: string | null;
+  inputFingerprint: string;
+  /** Today's target, for the remaining-calories line. */
+  targetCalories: number | null;
+  eatenAt: Date;
+  mealType: MealType;
+  notes: string | null;
+  onSaved: (saved: SaveMealResult) => void;
+  /** Called for Discard and Cancel. The caller deletes the photos. */
+  onDiscard: () => void;
+  /** Re-runs the parse with a hint, reusing the same photos. */
+  onReanalyze: (hint: string) => Promise<void>;
+  isReanalyzing: boolean;
+}
+
+export function ReviewScreen({
+  result,
+  photoPaths,
+  photoHashes,
+  photoPreviews,
+  transcript,
+  inputFingerprint,
+  targetCalories,
+  eatenAt,
+  mealType,
+  notes,
+  onSaved,
+  onDiscard,
+  onReanalyze,
+  isReanalyzing,
+}: ReviewScreenProps) {
+  const [items, setItems] = useState<ReviewItem[]>(() =>
+    result.items.map((draft) => reviewItemFromDraft(draft)),
+  );
+  const [type, setType] = useState<MealType>(mealType);
+  const [when, setWhen] = useState(() => eatenAt);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hintOpen, setHintOpen] = useState(false);
+  const [hint, setHint] = useState("");
+
+  /**
+   * Generated once, when this screen mounts, and reused for every attempt to save it.
+   * That is what makes a double tap on Save idempotent rather than two meals: the
+   * second call finds the same key and returns the first meal.
+   */
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+
+  // Re-parsing replaces the items, so drop whatever the user had edited: the numbers
+  // on screen must belong to the reply on screen.
+  useEffect(() => {
+    setItems(result.items.map((draft) => reviewItemFromDraft(draft)));
+  }, [result]);
+
+  const totals = useMemo(() => mealTotals(items), [items]);
+  const remaining = targetCalories === null ? null : remainingCalories(targetCalories, totals);
+
+  function replaceItem(next: ReviewItem): void {
+    setItems((current) => current.map((item) => (item.id === next.id ? next : item)));
+  }
+
+  function deleteItem(id: string): void {
+    setItems((current) => current.filter((item) => item.id !== id));
+  }
+
+  async function save(): Promise<void> {
+    setIsSaving(true);
+    setError(null);
+    try {
+      const args = toSaveMealArgs({
+        items,
+        mealType: type,
+        source: result.source,
+        eatenAt: when,
+        notes,
+        photoPaths,
+        photoHashes,
+        inputFingerprint,
+        idempotencyKey,
+      });
+
+      const { data, error: rpcError } = await supabase.rpc("save_meal", args);
+      if (rpcError) throw new Error(rpcError.message);
+
+      const saved = data as SaveMealResult | null;
+      if (!saved?.meal_id) throw new Error("The meal was not saved.");
+      onSaved(saved);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save the meal.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="rounded-2xl border border-border bg-muted/30 p-3">
+        {photoPreviews.length > 0 ? (
+          <ul className="flex gap-2">
+            {photoPreviews.map((url, index) => (
+              <li key={url}>
+                <img
+                  src={url}
+                  alt={`Photo ${index + 1} of this meal`}
+                  className="size-14 rounded-xl object-cover"
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm">
+            {transcript !== null && transcript !== ""
+              ? `“${transcript}”`
+              : result.source === "voice"
+                ? "From your voice note"
+                : "From your description"}
+          </p>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="space-y-1.5 text-sm">
+            <span className="text-muted-foreground">Meal</span>
+            <select
+              value={type}
+              onChange={(event) => setType(event.target.value as MealType)}
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+            >
+              {(Object.keys(MEAL_TYPE_LABELS) as MealType[]).map((value) => (
+                <option key={value} value={value}>
+                  {MEAL_TYPE_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1.5 text-sm">
+            <span className="text-muted-foreground">Eaten at</span>
+            <input
+              type="datetime-local"
+              value={toLocalInputValue(when)}
+              onChange={(event) => {
+                const parsed = new Date(event.target.value);
+                if (!Number.isNaN(parsed.getTime())) setWhen(parsed);
+              }}
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+            />
+          </label>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {items.length} item{items.length === 1 ? "" : "s"} · {result.model}
+            {result.attempts > 1 ? " · retried" : ""}
+          </span>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 underline"
+            onClick={() => setHintOpen((open) => !open)}
+          >
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            Re-analyze with a hint
+          </button>
+        </div>
+
+        {hintOpen && (
+          <div className="mt-2 flex gap-2">
+            <input
+              value={hint}
+              onChange={(event) => setHint(event.target.value)}
+              aria-label="Hint for re-analysis"
+              placeholder="e.g. the rice was a small portion, not a cup"
+              className="h-10 flex-1 rounded-xl border border-input bg-background px-3 text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-full"
+              disabled={hint.trim() === "" || isReanalyzing}
+              onClick={() => void onReanalyze(hint.trim())}
+            >
+              {isReanalyzing ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                "Go"
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <ul className="space-y-3">
+        {items.map((item, index) => (
+          <MealItemCard
+            key={item.id}
+            item={item}
+            index={index}
+            onChange={replaceItem}
+            onDelete={() => deleteItem(item.id)}
+          />
+        ))}
+      </ul>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full rounded-full"
+        onClick={() => setItems((current) => [...current, blankReviewItem()])}
+      >
+        <Plus className="mr-1.5 size-4" aria-hidden="true" />
+        Add item
+      </Button>
+
+      {error !== null && (
+        <p
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm"
+        >
+          {error}
+        </p>
+      )}
+
+      {/* Sticky, because the totals are the thing you are deciding about. */}
+      <div className="sticky bottom-0 -mx-6 space-y-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm text-muted-foreground">This meal</span>
+          <span className="text-lg font-semibold">{Math.round(totals.calories)} kcal</span>
+        </div>
+        <dl className="grid grid-cols-3 gap-2 text-xs">
+          {MACRO_LABELS.map(({ key, label }) => (
+            <div key={key} className="flex justify-between rounded-lg bg-muted/50 px-2 py-1">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-medium">{Math.round(totals[key])} g</dd>
+            </div>
+          ))}
+        </dl>
+        {remaining !== null && (
+          <p className="text-xs text-muted-foreground">
+            {remaining >= 0
+              ? `${Math.round(remaining)} kcal left of today's ${Math.round(targetCalories ?? 0)}`
+              : `${Math.abs(Math.round(remaining))} kcal over today's ${Math.round(targetCalories ?? 0)}`}
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-full"
+            disabled={isSaving}
+            onClick={onDiscard}
+          >
+            <Trash2 className="mr-1.5 size-4" aria-hidden="true" />
+            Discard
+          </Button>
+          <Button
+            type="button"
+            className="flex-1 rounded-full"
+            disabled={!canSave(items) || isSaving}
+            onClick={() => void save()}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
+                Saving…
+              </>
+            ) : (
+              "Save meal"
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** `datetime-local` wants `YYYY-MM-DDTHH:mm` in the device's own zone. */
+function toLocalInputValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

@@ -22,9 +22,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { guessMealType, MAX_PHOTOS, type MealSource, type MealType } from "@shared/meal-parse";
+import {
+  guessMealType,
+  MAX_PHOTOS,
+  mealFingerprint,
+  type MealSource,
+  type MealType,
+} from "@shared/meal-parse";
 import {
   buildParseRequest,
+  deleteMealPhotos,
   preparePhoto,
   requestParseMeal,
   uploadMealPhoto,
@@ -38,7 +45,7 @@ import {
   type Dictation,
 } from "@/lib/speech";
 import { supabase } from "@/integrations/supabase/client";
-import { ParseDebugPanel } from "./ParseDebugPanel";
+import { ReviewScreen } from "@/components/review/ReviewScreen";
 
 /** One selected photo, previewed from the original before any work is done on it. */
 interface SelectedPhoto {
@@ -66,9 +73,17 @@ export interface CaptureSheetProps {
   userId: string;
   /** The profile's zone, so the meal type agrees with the rest of the app. */
   timeZone: string;
+  /** Today's calorie target, for the review screen's remaining-calories line. */
+  targetCalories: number | null;
 }
 
-export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSheetProps) {
+export function CaptureSheet({
+  open,
+  onOpenChange,
+  userId,
+  timeZone,
+  targetCalories,
+}: CaptureSheetProps) {
   const [tab, setTab] = useState("photo");
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
   const [text, setText] = useState("");
@@ -80,10 +95,41 @@ export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSh
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ParseResponse | null>(null);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [dictation, setDictation] = useState<Dictation | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
+
+  /**
+   * Photos this capture has uploaded and not yet saved. Held in a ref as well as in
+   * state because the cleanup runs from an unmount, where state would be stale.
+   */
+  const unsavedUploads = useRef<{ paths: string[]; hashes: string[]; fingerprint: string | null }>({
+    paths: [],
+    hashes: [],
+    fingerprint: null,
+  });
+
+  /**
+   * Deletes the photos a capture uploaded but never saved. Called by Discard, and by
+   * closing the sheet: without it, every abandoned capture leaves files in the bucket
+   * that nothing else will ever remove.
+   */
+  const discardUploads = useCallback(async () => {
+    const { paths } = unsavedUploads.current;
+    if (paths.length === 0) return;
+    unsavedUploads.current.paths = [];
+    await deleteMealPhotos(paths);
+  }, []);
+
+  // Navigation away from the shell unmounts this component with no chance to ask, so
+  // the same cleanup runs here.
+  useEffect(() => {
+    return () => {
+      void discardUploads();
+    };
+  }, [discardUploads]);
 
   const speechSupported = useMemo(() => isSpeechRecognitionSupported(), []);
 
@@ -126,7 +172,27 @@ export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSh
     setMealType(null);
     setError(null);
     setResult(null);
+    setIsReanalyzing(false);
     setTab("photo");
+  }
+
+  /** Discard, and closing the sheet with an unsaved capture: drop the photos too. */
+  function abandonCapture(): void {
+    void discardUploads();
+    reset();
+  }
+
+  /** The review screen's Discard: the photos go, and the sheet closes. */
+  function handleDiscard(): void {
+    abandonCapture();
+    onOpenChange(false);
+  }
+
+  function handleOpenChange(next: boolean): void {
+    // Closing on the way to a saved meal must not delete the meal's own photos, which
+    // is why the paths are cleared the moment a save succeeds.
+    if (!next) abandonCapture();
+    onOpenChange(next);
   }
 
   function addPhotos(files: FileList | null): void {
@@ -185,6 +251,39 @@ export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSh
     setDictation(handle);
   }
 
+  /** Runs one parse and records the uploads it is now holding, unsaved. */
+  async function parseInto(
+    accessToken: string,
+    uploaded: { paths: string[]; hashes: string[] },
+    hint: string | null,
+  ): Promise<void> {
+    const source: MealSource = photos.length > 0 ? "photo" : textOrigin;
+    const spokenOrTyped = text.trim() === "" ? null : text.trim();
+    const when = new Date(eatenAt);
+
+    // The fingerprint covers the photos, the words and a ten-minute window, so the
+    // same meal captured twice is recognisably the same meal. save_meal uses it to
+    // return the existing meal instead of duplicating it.
+    const fingerprint = await mealFingerprint({
+      userId,
+      photoHashes: uploaded.hashes,
+      text: spokenOrTyped,
+      eatenAt: when,
+    });
+
+    const body = buildParseRequest({
+      source,
+      text: spokenOrTyped,
+      photoPaths: uploaded.paths,
+      eatenAt: when,
+      mealType: effectiveMealType,
+      hint,
+    });
+
+    unsavedUploads.current = { ...uploaded, fingerprint };
+    setResult(await requestParseMeal(accessToken, body));
+  }
+
   async function submit(): Promise<void> {
     setIsWorking(true);
     setError(null);
@@ -197,29 +296,45 @@ export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSh
 
       // Resize and hash first, then upload: the hash is taken over the resized bytes
       // because those are the bytes that get sent.
-      const uploaded: string[] = [];
+      const paths: string[] = [];
+      const hashes: string[] = [];
       for (const photo of photos) {
         const prepared: PreparedPhoto = await preparePhoto(photo.file);
-        const { path } = await uploadMealPhoto(userId, prepared);
-        uploaded.push(path);
+        const uploaded = await uploadMealPhoto(userId, prepared);
+        paths.push(uploaded.path);
+        hashes.push(uploaded.sha256);
       }
 
-      const source: MealSource = photos.length > 0 ? "photo" : textOrigin;
-      const body = buildParseRequest({
-        source,
-        text: text.trim() === "" ? null : text.trim(),
-        photoPaths: uploaded,
-        eatenAt: new Date(eatenAt),
-        mealType: effectiveMealType,
-        hint: notes.trim() === "" ? null : notes.trim(),
-      });
-
-      setResult(await requestParseMeal(token, body));
+      await parseInto(token, { paths, hashes }, notes.trim() === "" ? null : notes.trim());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Something went wrong.");
     } finally {
       setIsWorking(false);
     }
+  }
+
+  /** Re-runs the parse on the same photos with the user's hint, replacing the items. */
+  async function reanalyze(hint: string): Promise<void> {
+    setIsReanalyzing(true);
+    setError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your session has expired. Sign in again.");
+      const { paths, hashes } = unsavedUploads.current;
+      await parseInto(token, { paths: [...paths], hashes: [...hashes] }, hint);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not re-analyze the meal.");
+    } finally {
+      setIsReanalyzing(false);
+    }
+  }
+
+  /** The meal is stored, so its photos are the meal's now and must not be deleted. */
+  function handleSaved(): void {
+    unsavedUploads.current = { paths: [], hashes: [], fingerprint: null };
+    reset();
+    onOpenChange(false);
   }
 
   const canSubmit = photos.length > 0 || text.trim() !== "";
@@ -408,40 +523,54 @@ export function CaptureSheet({ open, onOpenChange, userId, timeZone }: CaptureSh
           </p>
         )}
 
-        <div className="mt-5 flex items-center gap-2">
-          <Button
-            type="button"
-            className="flex-1 rounded-full"
-            disabled={!canSubmit || isWorking}
-            onClick={() => void submit()}
-          >
-            {isWorking ? (
-              <>
-                <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
-                Analysing…
-              </>
-            ) : (
-              "Analyse meal"
-            )}
-          </Button>
-          {(photos.length > 0 || text !== "" || result) && (
-            <Button type="button" variant="ghost" className="rounded-full" onClick={reset}>
-              <RotateCcw className="mr-1.5 size-4" aria-hidden="true" />
-              Start over
-            </Button>
-          )}
-        </div>
-
-        {result && (
-          <div className="mt-5 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{MEAL_TYPE_LABELS[result.meal_type]}</Badge>
-              <Badge variant="outline">{result.source}</Badge>
-              <Badge variant="outline">{result.items.length} items</Badge>
-              {result.attempts > 1 && <Badge variant="outline">retried once</Badge>}
+        {result ? (
+          <ReviewScreen
+            result={result}
+            photoPaths={unsavedUploads.current.paths}
+            photoHashes={unsavedUploads.current.hashes}
+            photoPreviews={photos.map((photo) => photo.previewUrl)}
+            transcript={text.trim() === "" ? null : text.trim()}
+            inputFingerprint={unsavedUploads.current.fingerprint ?? ""}
+            targetCalories={targetCalories}
+            eatenAt={new Date(eatenAt)}
+            mealType={effectiveMealType}
+            notes={notes.trim() === "" ? null : notes.trim()}
+            onSaved={handleSaved}
+            onDiscard={handleDiscard}
+            onReanalyze={reanalyze}
+            isReanalyzing={isReanalyzing}
+          />
+        ) : (
+          <>
+            <div className="mt-5 flex items-center gap-2">
+              <Button
+                type="button"
+                className="flex-1 rounded-full"
+                disabled={!canSubmit || isWorking}
+                onClick={() => void submit()}
+              >
+                {isWorking ? (
+                  <>
+                    <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
+                    Analysing…
+                  </>
+                ) : (
+                  "Analyse meal"
+                )}
+              </Button>
+              {(photos.length > 0 || text !== "") && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="rounded-full"
+                  onClick={() => abandonCapture()}
+                >
+                  <RotateCcw className="mr-1.5 size-4" aria-hidden="true" />
+                  Start over
+                </Button>
+              )}
             </div>
-            <ParseDebugPanel result={result} />
-          </div>
+          </>
         )}
       </SheetContent>
     </Sheet>

@@ -6,7 +6,9 @@
  * covering the content underneath.
  */
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { fetchCurrentTarget } from "@/lib/profile";
 import { CaptureSheet } from "./CaptureSheet";
 
 export interface CaptureDockProps {
@@ -16,6 +18,14 @@ export interface CaptureDockProps {
 
 export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
   const [open, setOpen] = useState(false);
+
+  // Read here rather than in the sheet: the remaining-calories line on the review
+  // screen is the only thing that needs it, and this is the component that already
+  // knows who the user is and what their timezone is.
+  const target = useQuery({
+    queryKey: ["currentTarget", userId, timeZone],
+    queryFn: () => fetchCurrentTarget(userId, timeZone),
+  });
 
   return (
     <>
@@ -30,7 +40,13 @@ export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
         <Plus className="size-6" aria-hidden="true" />
       </button>
 
-      <CaptureSheet open={open} onOpenChange={setOpen} userId={userId} timeZone={timeZone} />
+      <CaptureSheet
+        open={open}
+        onOpenChange={setOpen}
+        userId={userId}
+        timeZone={timeZone}
+        targetCalories={target.data?.calories ?? null}
+      />
     </>
   );
 }

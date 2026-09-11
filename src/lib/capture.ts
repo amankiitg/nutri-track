@@ -229,3 +229,24 @@ export function messageFromErrorBody(text: string): string | null {
     return null;
   }
 }
+
+/**
+ * Deletes photos a capture uploaded but never saved.
+ *
+ * This is the only thing standing between an abandoned capture and a file that lives in
+ * the bucket forever, so every path that gives up on a capture has to call it: Discard,
+ * Cancel, and closing the sheet. A tab killed outright runs no code at all, which is the
+ * case a sweeper would still be needed for.
+ *
+ * Failures are swallowed on purpose: the user is closing a sheet, and an error about
+ * cleanup they cannot act on is worse than a leftover file.
+ */
+export async function deleteMealPhotos(paths: readonly string[]): Promise<boolean> {
+  if (paths.length === 0) return true;
+  try {
+    const { error } = await supabase.storage.from(MEAL_PHOTO_BUCKET).remove([...paths]);
+    return error === null;
+  } catch {
+    return false;
+  }
+}

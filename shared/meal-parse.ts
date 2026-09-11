@@ -180,27 +180,15 @@ export function normalizeItem(item: ModelItem): MealItemDraft {
   const proteinG = roundTo(item.protein_g ?? 0, 1);
   const carbsG = roundTo(item.carbs_g ?? 0, 1);
   const fatG = roundTo(item.fat_g ?? 0, 1);
-
-  const reasons: string[] = [];
-
-  if (calories > MAX_ITEM_KCAL) {
-    reasons.push(REVIEW_REASONS.caloriesTooHigh);
-  } else if (calories === 0) {
-    reasons.push(REVIEW_REASONS.caloriesZero);
-  }
-
   const grams = item.grams === null ? null : roundTo(item.grams, 1);
-  if (grams !== null && grams > MAX_ITEM_GRAMS) {
-    reasons.push(REVIEW_REASONS.gramsTooHigh);
-  }
 
-  // Only meaningful when the item actually claims calories: a zero-calorie item
-  // with no macros is "zero calories", not a macro mismatch.
-  const fromMacros = macroCalories(proteinG, carbsG, fatG);
-  const denominator = Math.max(calories, fromMacros);
-  if (denominator > 0 && Math.abs(calories - fromMacros) > MACRO_KCAL_TOLERANCE * denominator) {
-    reasons.push(REVIEW_REASONS.macroMismatch);
-  }
+  const reasons = reviewReasonsFor({
+    grams,
+    calories,
+    protein_g: proteinG,
+    carbs_g: carbsG,
+    fat_g: fatG,
+  });
 
   const confidence = item.confidence === null ? 0.5 : Math.min(1, Math.max(0, item.confidence));
 
@@ -220,6 +208,50 @@ export function normalizeItem(item: ModelItem): MealItemDraft {
     needs_review: reasons.length > 0,
     review_reasons: reasons,
   };
+}
+
+/** The numbers the sanity checks look at, and all they look at. */
+export interface ReviewableNutrients {
+  grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+/**
+ * The sanity checks, as a pure function of the numbers currently on screen.
+ *
+ * Separate from `normalizeItem` so the review screen can re-run them after an edit.
+ * That matters: rescaling a portion can push an item over the calorie ceiling or
+ * pull it back under, so a flag computed from the model's original reply would be
+ * describing a version of the item the user is no longer looking at.
+ */
+export function reviewReasonsFor(item: ReviewableNutrients): string[] {
+  const reasons: string[] = [];
+
+  if (item.calories > MAX_ITEM_KCAL) {
+    reasons.push(REVIEW_REASONS.caloriesTooHigh);
+  } else if (item.calories === 0) {
+    reasons.push(REVIEW_REASONS.caloriesZero);
+  }
+
+  if (item.grams !== null && item.grams > MAX_ITEM_GRAMS) {
+    reasons.push(REVIEW_REASONS.gramsTooHigh);
+  }
+
+  // Only meaningful when the item claims calories: a zero-calorie item with no
+  // macros is "zero calories", not a macro mismatch.
+  const fromMacros = macroCalories(item.protein_g, item.carbs_g, item.fat_g);
+  const denominator = Math.max(item.calories, fromMacros);
+  if (
+    denominator > 0 &&
+    Math.abs(item.calories - fromMacros) > MACRO_KCAL_TOLERANCE * denominator
+  ) {
+    reasons.push(REVIEW_REASONS.macroMismatch);
+  }
+
+  return reasons;
 }
 
 export function normalizeItems(items: readonly ModelItem[]): MealItemDraft[] {
