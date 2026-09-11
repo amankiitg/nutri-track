@@ -3,7 +3,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Loader2, MailCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,16 +61,16 @@ function AuthPage() {
   const google = async () => {
     setBusy("google");
     setError(null);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
-    if (result.error) {
-      setError(result.error.message);
+    if (oauthError) {
+      setError(oauthError.message);
       setBusy(null);
       return;
     }
-    if (result.redirected) return;
-    navigate({ to: "/today", replace: true });
+    // On success the browser is already leaving for Google.
   };
 
   const signIn = async (e: FormEvent) => {
@@ -116,7 +115,7 @@ function AuthPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
     setBusy(null);
     if (error) {
