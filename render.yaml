@@ -4,6 +4,9 @@
 # this file and builds only server/, which is why server/ is a standalone npm
 # package with its own lockfile.
 #
+# Validate any edit against Render's Blueprint spec before pushing: a rejected file
+# fails the whole deploy, including the service that was already working.
+#
 # Secrets are never written here. Every value that matters is marked `sync: false`, so
 # Render asks for it on the first deploy and holds it in the dashboard — this file
 # commits key names and nothing else. The only literal values below are NODE_VERSION
@@ -78,22 +81,28 @@ services:
   # the Americas, which is when the fewest captures are in flight. Nothing depends on
   # the hour: the grace period, not the schedule, is what protects a capture in progress.
   #
-  # THE FIRST DEPLOYS ARE DRY RUNS. `command` has no --live and SWEEP_DRY_RUN defaults
-  # to true, so this deletes nothing until you say so. To go live, set SWEEP_DRY_RUN to
-  # false on this service in Render's dashboard; no commit and no redeploy are needed.
-  # See README.md, "Going live with the sweeper".
+  # THE FIRST DEPLOYS ARE DRY RUNS. `startCommand` has no --live and SWEEP_DRY_RUN
+  # defaults to true, so this deletes nothing until you say so. To go live, set
+  # SWEEP_DRY_RUN to false on this service in Render's dashboard; no commit and no
+  # redeploy are needed. See README.md, "Going live with the sweeper".
+  #
+  # `starter`, not `free`: the free instance type is not offered for cron jobs. Cron
+  # jobs bill by run time rather than continuously, and this one finishes in seconds,
+  # so the cost is negligible.
   # ---------------------------------------------------------------------------
   - type: cron
     name: nutritrack-sweep-orphan-photos
     runtime: node
-    plan: free
+    plan: starter
     rootDir: server
     buildCommand: npm ci && npm run build
     schedule: "0 4 * * *"
+    # `startCommand`, the same field a web service uses; cron jobs have no `command`.
+    #
     # The built bundle, not `npm run sweep`. The cron run should execute exactly what
     # the build produced, so a passing build is the whole guarantee — no dependency on
     # devDependencies being installed at run time.
-    command: node dist/sweep.js
+    startCommand: node dist/sweep.js
     envVars:
       - key: NODE_VERSION
         value: "22"

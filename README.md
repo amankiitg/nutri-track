@@ -213,12 +213,19 @@ guessing "false" deletes photos.
 | Service                          | Type   | Plan      | What it runs                             |
 | -------------------------------- | ------ | --------- | ---------------------------------------- |
 | `nutritrack-parse-meal`          | `web`  | `starter` | `npm start` — the parse-meal API         |
-| `nutritrack-sweep-orphan-photos` | `cron` | `free`    | `node dist/sweep.js`, daily at 04:00 UTC |
+| `nutritrack-sweep-orphan-photos` | `cron` | `starter` | `node dist/sweep.js`, daily at 04:00 UTC |
 
-The web service is **not** on the free plan on purpose. A free instance sleeps after
-about fifteen minutes idle and the next request pays a cold start of tens of seconds,
-which is the wrong thing to meet while standing at a dinner table waiting to log a meal.
-The cron job is fine on free — a job that runs once a day has no cold-start problem.
+Neither service uses the free instance type, for different reasons. The web service is
+**not** free on purpose: a free instance sleeps after about fifteen minutes idle and the
+next request pays a cold start of tens of seconds, which is the wrong thing to meet while
+standing at a dinner table waiting to log a meal. The cron job cannot be free — Render does
+not offer the free instance type for cron jobs at all. It bills by run time rather than
+continuously, and this one finishes in seconds, so its cost is negligible.
+
+Two field names are worth knowing before editing this file, because getting either wrong
+fails the whole deploy — including the service that was already working: a cron job uses
+**`startCommand`**, the same field a web service uses, and **not** `command`. And the
+`plan` value must be one Render offers for that service type.
 
 #### 1. Render environment variables
 
