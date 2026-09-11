@@ -20,6 +20,15 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Environment files (secrets live here — never commit)
+.env
+.env.*
+!.env.example
+
+# Package manager: this repo's committed lockfile is bun.lock (see bunfig.toml).
+# npm is used locally, so keep its lockfile out of version control.
+package-lock.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
