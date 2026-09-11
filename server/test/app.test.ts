@@ -24,7 +24,7 @@ const CONFIG: Config = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
   GEMINI_API_KEY: "gemini-example",
-  GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
+  GEMINI_VISION_MODEL: "gemini-3.8-flash",
   ALLOWED_ORIGINS: ["http://localhost:8080"],
 };
 
@@ -302,7 +302,7 @@ describe("a successful parse", () => {
     expect(response.body.attempts).toBe(1);
     expect(response.body.meal_type).toBe("lunch");
     expect(response.body.source).toBe("text");
-    expect(response.body.model).toBe("gemini-3.1-flash-lite");
+    expect(response.body.model).toBe("gemini-3.8-flash");
     expect(response.body.items).toHaveLength(1);
     expect(response.body.items[0]).toMatchObject({
       name: "Oatmeal with banana",
@@ -345,7 +345,7 @@ describe("a successful parse", () => {
     expect(completions).toHaveLength(1);
     expect(recorded).toEqual([
       {
-        model: "gemini-3.1-flash-lite",
+        model: "gemini-3.8-flash",
         promptTokens: 11,
         completionTokens: 22,
         latencyMs: 3,
@@ -390,7 +390,7 @@ describe("photos", () => {
   it("uses the same multimodal model as a text-only meal", async () => {
     const { app } = buildHarness();
     const response = await post(app, PHOTO_MEAL);
-    expect(response.body.model).toBe("gemini-3.1-flash-lite");
+    expect(response.body.model).toBe("gemini-3.8-flash");
   });
 
   it("sends a caption alongside the photos when there is one", async () => {

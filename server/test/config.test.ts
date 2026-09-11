@@ -7,7 +7,7 @@ const VALID: Record<string, string> = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
   GEMINI_API_KEY: "gemini-example",
-  GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
+  GEMINI_VISION_MODEL: "gemini-3.8-flash",
   ALLOWED_ORIGINS: "http://localhost:8080, https://nutritrack.example.com",
 };
 
@@ -26,7 +26,7 @@ describe("loadConfig", () => {
       SUPABASE_URL: "https://example.supabase.co",
       SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
       GEMINI_API_KEY: "gemini-example",
-      GEMINI_VISION_MODEL: "gemini-3.1-flash-lite",
+      GEMINI_VISION_MODEL: "gemini-3.8-flash",
       ALLOWED_ORIGINS: ["http://localhost:8080", "https://nutritrack.example.com"],
     });
   });

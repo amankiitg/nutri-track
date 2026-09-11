@@ -57,7 +57,7 @@ Server-only. Copy exactly these into Render's environment panel:
   also carries the caller's own token
 - `SUPABASE_PROJECT_ID` — the project ref. Not read by any code
 - `GEMINI_API_KEY` — **the only genuine secret in the file**
-- `GEMINI_VISION_MODEL` — the stable model id from AI Studio, e.g. `gemini-3.1-flash-lite`.
+- `GEMINI_VISION_MODEL` — the stable model id from AI Studio, e.g. `gemini-3.8-flash`.
   One id serves photos and text alike, because Flash is multimodal, so there is no
   separate text model to keep in step. Pin a stable version rather than a `-latest`
   alias, which gets hot-swapped underneath you
@@ -178,7 +178,7 @@ code change:
 | Variable              | Purpose                                                                                                                                                          |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GEMINI_API_KEY`      | Google AI Studio API key. Must never appear under `src/` or `shared/`                                                                                            |
-| `GEMINI_VISION_MODEL` | Stable model id from AI Studio, e.g. `gemini-3.1-flash-lite`. Multimodal, so it serves photos and text alike; pin a stable version rather than a `-latest` alias |
+| `GEMINI_VISION_MODEL` | Stable model id from AI Studio, e.g. `gemini-3.8-flash`. Multimodal, so it serves photos and text alike; pin a stable version rather than a `-latest` alias |
 
 All model traffic goes through the service. The key must never reach the browser, and
 never appears under `src/` or `shared/`.

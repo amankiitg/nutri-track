@@ -47,7 +47,7 @@ services:
       # --- Google Gemini ------------------------------------------------------
       - key: GEMINI_API_KEY
         sync: false
-      # The stable model id from AI Studio, e.g. gemini-3.1-flash-lite.
+      # The stable model id from AI Studio, e.g. gemini-3.8-flash.
       - key: GEMINI_VISION_MODEL
         sync: false
 

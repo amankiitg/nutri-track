@@ -24,7 +24,7 @@ function okReply(text = '{"items":[]}', overrides: Record<string, unknown> = {})
   return {
     candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }],
     usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 40 },
-    modelVersion: "gemini-3.1-flash-lite-001",
+    modelVersion: "gemini-3.8-flash-001",
     ...overrides,
   };
 }
@@ -95,7 +95,7 @@ describe("createGeminiClient", () => {
   it("posts to generateContent for the requested model, with the key in a header", async () => {
     const { calls, fetchImpl } = capture(jsonResponse(okReply()));
     await createGeminiClient({ apiKey: KEY, fetchImpl }).complete({
-      model: "gemini-3.1-flash-lite",
+      model: "gemini-3.8-flash",
       messages: [{ role: "user", content: "two eggs" }],
       maxTokens: 100,
       responseSchema: SCHEMA,
@@ -103,7 +103,7 @@ describe("createGeminiClient", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
     );
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers["x-goog-api-key"]).toBe(KEY);
@@ -115,7 +115,7 @@ describe("createGeminiClient", () => {
   it("asks for structured output and sends the schema", async () => {
     const { calls, fetchImpl } = capture(jsonResponse(okReply()));
     await createGeminiClient({ apiKey: KEY, fetchImpl }).complete({
-      model: "gemini-3.1-flash-lite",
+      model: "gemini-3.8-flash",
       messages: [{ role: "user", content: "x" }],
       maxTokens: 2048,
       responseSchema: SCHEMA,
@@ -134,14 +134,14 @@ describe("createGeminiClient", () => {
   it("returns the content, the model that answered and the token usage", async () => {
     const { fetchImpl } = capture(jsonResponse(okReply('{"items":[]}')));
     const completion = await createGeminiClient({ apiKey: KEY, fetchImpl }).complete({
-      model: "gemini-3.1-flash-lite",
+      model: "gemini-3.8-flash",
       messages: [],
       maxTokens: 10,
       responseSchema: SCHEMA,
     });
 
     expect(completion.content).toBe('{"items":[]}');
-    expect(completion.model).toBe("gemini-3.1-flash-lite-001");
+    expect(completion.model).toBe("gemini-3.8-flash-001");
     expect(completion.promptTokens).toBe(120);
     expect(completion.completionTokens).toBe(40);
     expect(completion.finishReason).toBe("STOP");
