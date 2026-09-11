@@ -93,7 +93,9 @@ export function targetsFromProfile(p: TargetSource): TargetResult {
 
 /**
  * Writes the profile and a fresh targets row (effective today in the user's zone).
- * A second save on the same day updates that day's row instead of duplicating it.
+ * A second save on the same day updates that day's row instead of duplicating it:
+ * the upsert relies on the `(user_id, effective_from)` unique constraint added in
+ * `20260911120000_targets_unique_effective_from.sql`.
  */
 export async function saveProfileWithTargets(profile: ProfileInsert) {
   const { data: saved, error: profileError } = await supabase
@@ -114,17 +116,11 @@ export async function saveProfileWithTargets(profile: ProfileInsert) {
     fat_g: t.fatG,
   };
 
-  const { data: existing } = await supabase
+  const { data: target, error: targetError } = await supabase
     .from("targets")
-    .select("id")
-    .eq("user_id", saved.user_id)
-    .eq("effective_from", effectiveFrom)
-    .maybeSingle();
-
-  const query = existing
-    ? supabase.from("targets").update(row).eq("id", existing.id).select().single()
-    : supabase.from("targets").insert(row).select().single();
-  const { data: target, error: targetError } = await query;
+    .upsert(row, { onConflict: "user_id,effective_from" })
+    .select()
+    .single();
   if (targetError) throw targetError;
 
   // Seed the weight log with the starting weight (does not overwrite an existing entry).
