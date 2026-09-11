@@ -327,6 +327,55 @@ undo possible and what takes the meal out of every total, since `daily_summaries
 on it. The photos are deliberately kept: the row still names them, so the sweeper leaves
 them alone. See the note in AGENTS.md — a deleted meal's photos persist indefinitely.
 
+### Body measurements
+
+The quick-entry card on Today records weight, and a waist when one was measured. Waist is
+optional and its field is deliberately **not** prefilled with the last value, unlike
+weight: a stale number sitting in the box is one accidental Save away from being recorded
+as today's measurement.
+
+Both are stored canonically — kilograms and centimetres — and converted only for display
+using the helpers in `src/lib/units.ts`. `weight_log.waist_cm` is nullable and stays
+nullable; a missing measurement must never read as zero.
+
+Recording a weight updates `profiles.weight_kg`, which is the value the next BMR/TDEE
+calculation starts from. It does **not** rewrite today's calorie target — see the note in
+`src/routes/_authenticated/today.tsx`.
+
+Only `units` in `profiles` is unit-dependent. Everything the user measures is stored
+canonically, so switching between metric and imperial reinterprets nothing. Verified: after
+a round trip through both settings, `height_cm`, `weight_kg`, `target_weight_kg`,
+`pace_kg_per_week` and the computed `targets` row were all bit-identical.
+
+### The Trends screen
+
+A Week / Month / Year segmented control, a date navigator, daily calorie bars with the
+target drawn across them, a macro donut and a stacked macro bar over time, a weight line
+with its 7-day rolling average and waist as a second series, and four stat tiles.
+
+**All aggregation is in Postgres**, over the same day spine as the dashboard:
+
+| Function                         | Returns                                                          |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `get_period_summary(start, end)` | One row per day in the range plus the period's totals, as jsonb  |
+| `get_weight_series(start, end)`  | The weigh-ins in the range, each with its trailing 7-day average |
+
+Three things about it are deliberate:
+
+- **The current period is clamped to today.** Asking for the rest of September would return
+  a zero row per future day and drag every average towards zero. The label still names the
+  whole calendar period.
+- **Macros are in calories, not grams, in both charts.** A gram of fat is 2.25 times the
+  energy of a gram of carbohydrate, so a donut of grams would compare things that are not
+  comparable. The conversion happens in Postgres so both charts share one basis.
+- **The averages cover only days that have both food and a target.** `days_judged` is
+  reported separately from `days_logged`, so a period that predates the user's first target
+  is described honestly rather than averaged into something misleading.
+
+Dates cross this boundary as `YYYY-MM-DD` strings, never as `Date` objects. The period
+label is rendered with `Intl` rather than date-fns, because date-fns gives "Sep" where the
+rest of the app shows "Sept".
+
 ## Conventions
 
 - One logical change per commit, e.g. `feat(parse-meal): ...` or `fix(dedupe): ...`

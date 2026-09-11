@@ -103,6 +103,15 @@ npm test
   `20260911161000_dashboard_verdict_and_empty_days.sql`. `daily_totals` and `trailing_days`
   return a null `status` for a day with nothing logged: an unlogged day is unknown, not
   "under".
+- `src/lib/trends.ts` — the Trends screen: which dates to ask about, and how to say them.
+  `get_period_summary` and `get_weight_series` (`20260911180000`, `20260911181000`) do all
+  the aggregation, over the same `trailing_days` day spine the dashboard uses. Dates cross
+  this boundary as `YYYY-MM-DD` strings and never as `Date` objects — an instant formatted
+  in one zone and parsed in another is a different day. Labels are rendered with `Intl`
+  en-GB, not date-fns, because date-fns gives "Sep" where the rest of the app shows "Sept".
+- Charts use Recharts directly. **A `Line` inside a `BarChart` typechecks and is silently
+  not drawn**; mixing bars with a line needs `ComposedChart`. This shipped broken for one
+  round of review because the target line simply did not appear.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
 - `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's
