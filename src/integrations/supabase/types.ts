@@ -357,10 +357,82 @@ export type Database = {
       };
     };
     Functions: {
+      calorie_status: {
+        Args: { p_actual: number; p_target: number };
+        Returns: string;
+      };
       check_email_allowed: { Args: { _email: string }; Returns: boolean };
+      daily_totals: {
+        Args: { p_date: string };
+        Returns: {
+          calories: number;
+          carbs_g: number;
+          fat_g: number;
+          fiber_g: number;
+          local_date: string;
+          meal_count: number;
+          protein_g: number;
+          remaining_calories: number;
+          status: string;
+          target_calories: number;
+          target_carbs_g: number;
+          target_fat_g: number;
+          target_protein_g: number;
+        }[];
+      };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
+      meals_for_day: { Args: { p_date: string }; Returns: Json };
       save_meal: { Args: { _items: Json; _meal: Json }; Returns: Json };
+      target_on: {
+        Args: { p_date: string };
+        Returns: {
+          calories: number;
+          carbs_g: number;
+          created_at: string;
+          effective_from: string;
+          fat_g: number;
+          fiber_g: number | null;
+          id: string;
+          protein_g: number;
+          user_id: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "targets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      trailing_days: {
+        Args: { p_days?: number; p_end_date: string };
+        Returns: {
+          calories: number;
+          carbs_g: number;
+          day_offset: number;
+          fat_g: number;
+          local_date: string;
+          meal_count: number;
+          protein_g: number;
+          status: string;
+          target_calories: number;
+          target_protein_g: number;
+        }[];
+      };
+      week_verdict: {
+        Args: { p_days?: number; p_end_date: string };
+        Returns: {
+          avg_calories: number;
+          avg_protein_g: number;
+          avg_target_calories: number;
+          avg_target_protein_g: number;
+          days_judged: number;
+          days_logged: number;
+          days_on_track: number;
+          verdict: string;
+          window_days: number;
+        }[];
+      };
     };
     Enums: {
       activity_level:
