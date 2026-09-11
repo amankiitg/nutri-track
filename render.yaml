@@ -1,0 +1,59 @@
+# Render Blueprint for the parse-meal service.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repository. Render reads
+# this file and builds only server/, which is why server/ is a standalone npm
+# package with its own lockfile.
+#
+# Every value below is marked `sync: false`, so Render asks for it on the first
+# deploy instead of storing it here. Copy them out of .env (or .env.example) into
+# the dashboard once. Nothing in this file is a secret and nothing should become
+# one.
+#
+# The frontend is not described here: it is a static build served elsewhere
+# (Cloudflare Workers via Nitro, or any static host), and it only needs
+# VITE_PARSE_MEAL_URL pointed at this service's URL.
+
+services:
+  - type: web
+    name: nutritrack-parse-meal
+    runtime: node
+    plan: free
+
+    # Build and run from server/. The relative import of ../../shared/meal-parse is
+    # inlined into the bundle by esbuild, so the deployed artifact does not reach
+    # outside this directory.
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+
+    # Render polls this and will not cut traffic over to a deploy that fails it.
+    healthCheckPath: /health
+
+    envVars:
+      # Match the local runtime; parse-meal targets node22 in its esbuild step.
+      - key: NODE_VERSION
+        value: "22"
+
+      # NOTE: PORT is deliberately absent. Render injects it, and the service
+      # defaults to 8787 only when it is missing.
+
+      # --- Supabase -----------------------------------------------------------
+      - key: SUPABASE_URL
+        sync: false
+      # Public value, the same one the browser has. Needed for the `apikey` header.
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+
+      # --- DeepSeek -----------------------------------------------------------
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_VISION_MODEL
+        sync: false
+      - key: DEEPSEEK_TEXT_MODEL
+        sync: false
+
+      # --- CORS ---------------------------------------------------------------
+      # Comma-separated. In production this must include the origin the frontend is
+      # served from, not localhost.
+      - key: ALLOWED_ORIGINS
+        sync: false
