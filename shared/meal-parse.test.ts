@@ -377,6 +377,32 @@ describe("mealFingerprint", () => {
       "2026-03-02T12:00:00.000Z",
     );
   });
+
+  it("lets an explicit new meal be distinguishable from the one already logged", async () => {
+    // The only reason to set this is a person saying "this is a new meal" after being
+    // asked. Without it the fingerprint would quietly refuse the second helping.
+    const base = {
+      userId: "user-1",
+      photoHashes: ["hash-a"],
+      text: "rice",
+      eatenAt: new Date(Date.UTC(2026, 2, 2, 12, 3)),
+    };
+    const plain = await mealFingerprint(base);
+
+    expect(await mealFingerprint({ ...base, distinct: "session-1" })).not.toBe(plain);
+    expect(await mealFingerprint({ ...base, distinct: "session-2" })).not.toBe(
+      await mealFingerprint({ ...base, distinct: "session-1" }),
+    );
+
+    // Stable within one session, so a retry of the same review is still the same meal
+    // and the idempotency key keeps working.
+    expect(await mealFingerprint({ ...base, distinct: "session-1" })).toBe(
+      await mealFingerprint({ ...base, distinct: "session-1" }),
+    );
+
+    // Absent and null must mean the same thing, or old fingerprints would stop matching.
+    expect(await mealFingerprint({ ...base, distinct: null })).toBe(plain);
+  });
 });
 
 describe("confidenceBand", () => {

@@ -35,9 +35,22 @@ import {
   preparePhoto,
   requestParseMeal,
   uploadMealPhoto,
-  type ParseResponse,
   type PreparedPhoto,
 } from "@/lib/capture";
+import { findDuplicate, type DuplicateMatch } from "@/lib/duplicates";
+import {
+  fetchMealItems,
+  fetchRecentMeals,
+  findMealByPhotoHashes,
+  type SavedItem,
+} from "@/lib/duplicates-repo";
+import {
+  reviewItemFromDraft,
+  reviewItemFromSaved,
+  type ReviewItem,
+  type ReviewMeta,
+} from "@/lib/review";
+import { DuplicateBanner } from "./DuplicateBanner";
 import {
   dictationErrorMessage,
   isSpeechRecognitionSupported,
@@ -94,7 +107,20 @@ export function CaptureSheet({
   const [mealType, setMealType] = useState<MealType | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ParseResponse | null>(null);
+  /**
+   * The items being reviewed, and the id of that review session.
+   *
+   * The id doubles as the idempotency key and as the marker that lets an explicitly
+   * new meal coexist with one already logged from the same photos. Bumping it remounts
+   * the review screen, which is how a re-parse or a copy replaces the items.
+   */
+  const [review, setReview] = useState<{
+    id: string;
+    meta: ReviewMeta;
+    items: ReviewItem[];
+  } | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null);
+  const [existingItems, setExistingItems] = useState<SavedItem[] | null>(null);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [dictation, setDictation] = useState<Dictation | null>(null);
@@ -171,7 +197,9 @@ export function CaptureSheet({
     setEatenAt(toLocalInputValue(new Date()));
     setMealType(null);
     setError(null);
-    setResult(null);
+    setReview(null);
+    setDuplicate(null);
+    setExistingItems(null);
     setIsReanalyzing(false);
     setTab("photo");
   }
@@ -256,20 +284,14 @@ export function CaptureSheet({
     accessToken: string,
     uploaded: { paths: string[]; hashes: string[] },
     hint: string | null,
+    reviewId: string,
+    distinct: string | null = null,
   ): Promise<void> {
     const source: MealSource = photos.length > 0 ? "photo" : textOrigin;
     const spokenOrTyped = text.trim() === "" ? null : text.trim();
     const when = new Date(eatenAt);
 
-    // The fingerprint covers the photos, the words and a ten-minute window, so the
-    // same meal captured twice is recognisably the same meal. save_meal uses it to
-    // return the existing meal instead of duplicating it.
-    const fingerprint = await mealFingerprint({
-      userId,
-      photoHashes: uploaded.hashes,
-      text: spokenOrTyped,
-      eatenAt: when,
-    });
+    const fingerprint = await computeFingerprint(uploaded.hashes, spokenOrTyped, when, distinct);
 
     const body = buildParseRequest({
       source,
@@ -280,14 +302,83 @@ export function CaptureSheet({
       hint,
     });
 
+    const parsed = await requestParseMeal(accessToken, body);
     unsavedUploads.current = { ...uploaded, fingerprint };
-    setResult(await requestParseMeal(accessToken, body));
+    setReview({
+      id: reviewId,
+      meta: { source: parsed.source, model: parsed.model, attempts: parsed.attempts },
+      items: parsed.items.map((draft) => reviewItemFromDraft(draft)),
+    });
+
+    // The names are only known now, so this is the first point at which a meal can be
+    // recognised by what was in it rather than by which photo was taken.
+    await checkForSimilarMeal(
+      parsed.items.map((item) => item.name),
+      when,
+    );
   }
 
-  async function submit(): Promise<void> {
+  /**
+   * The fingerprint covers the photos, the words and a ten-minute window, so the same
+   * meal captured twice is recognisably the same meal and `save_meal` can answer "you
+   * already logged this".
+   *
+   * `distinct` breaks that on purpose. It is set only where a person has been asked
+   * whether this is a new meal and said yes — which is what logging a second helping
+   * looks like — and it is the review session's id, so retries within one screen still
+   * share a fingerprint and the idempotency key still blocks a double submit.
+   */
+  async function computeFingerprint(
+    hashes: readonly string[],
+    spokenOrTyped: string | null,
+    when: Date,
+    distinct: string | null,
+  ): Promise<string> {
+    return mealFingerprint({
+      userId,
+      photoHashes: hashes,
+      text: spokenOrTyped,
+      eatenAt: when,
+      distinct,
+    });
+  }
+
+  /** Loads the meal an earlier capture already logged, without calling the model. */
+  async function copyExistingMeal(match: DuplicateMatch, reviewId: string): Promise<void> {
+    const items = await fetchMealItems(match.meal.id);
+    unsavedUploads.current = {
+      paths: [...unsavedUploads.current.paths],
+      hashes: [...unsavedUploads.current.hashes],
+      fingerprint: await computeFingerprint(
+        unsavedUploads.current.hashes,
+        text.trim() === "" ? null : text.trim(),
+        new Date(eatenAt),
+        reviewId,
+      ),
+    };
+    setReview({
+      id: reviewId,
+      meta: { source: "photo", model: null, attempts: 0 },
+      items: items.map((item) => reviewItemFromSaved(item)),
+    });
+    setDuplicate(null);
+  }
+
+  /** The name-based check, run once the items are known. */
+  async function checkForSimilarMeal(itemNames: readonly string[], when: Date): Promise<void> {
+    try {
+      const recent = await fetchRecentMeals(when);
+      setDuplicate(findDuplicate({ itemNames, photoHashes: [] }, recent));
+    } catch {
+      // A failed duplicate check must never block logging a meal.
+      setDuplicate(null);
+    }
+  }
+
+  async function submit(options: { distinct?: string | null } = {}): Promise<void> {
     setIsWorking(true);
     setError(null);
-    setResult(null);
+    setDuplicate(null);
 
     try {
       const { data } = await supabase.auth.getSession();
@@ -305,7 +396,26 @@ export function CaptureSheet({
         hashes.push(uploaded.sha256);
       }
 
-      await parseInto(token, { paths, hashes }, notes.trim() === "" ? null : notes.trim());
+      unsavedUploads.current = { paths, hashes, fingerprint: null };
+
+      // Checked before the model is called: a matching hash means the items are
+      // already on record, so the whole round trip can be skipped.
+      const known = await findMealByPhotoHashes(hashes, new Date(eatenAt)).catch(() => null);
+      if (known) {
+        const items = await fetchMealItems(known.id).catch(() => []);
+        setExistingItems(items);
+        setDuplicate({ meal: known, matchedItems: 0, reason: "photo" });
+        setIsWorking(false);
+        return;
+      }
+
+      await parseInto(
+        token,
+        { paths, hashes },
+        notes.trim() === "" ? null : notes.trim(),
+        crypto.randomUUID(),
+        options.distinct ?? null,
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Something went wrong.");
     } finally {
@@ -322,7 +432,7 @@ export function CaptureSheet({
       const token = data.session?.access_token;
       if (!token) throw new Error("Your session has expired. Sign in again.");
       const { paths, hashes } = unsavedUploads.current;
-      await parseInto(token, { paths: [...paths], hashes: [...hashes] }, hint);
+      await parseInto(token, { paths: [...paths], hashes: [...hashes] }, hint, crypto.randomUUID());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not re-analyze the meal.");
     } finally {
@@ -340,7 +450,7 @@ export function CaptureSheet({
   const canSubmit = photos.length > 0 || text.trim() !== "";
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto pb-8">
         <SheetHeader className="text-left">
           <SheetTitle>Add a meal</SheetTitle>
@@ -523,14 +633,32 @@ export function CaptureSheet({
           </p>
         )}
 
-        {result ? (
+        {duplicate !== null && review === null && (
+          <DuplicateBanner
+            match={duplicate}
+            existingItems={existingItems}
+            busy={isWorking}
+            onKeepAsNew={() => {
+              // The user has been asked, so their answer has to be able to win: without
+              // this marker the fingerprint would quietly refuse the second helping.
+              setDuplicate(null);
+              void submit({ distinct: crypto.randomUUID() });
+            }}
+            onCopyExisting={() => void copyExistingMeal(duplicate, crypto.randomUUID())}
+          />
+        )}
+
+        {review !== null ? (
           <ReviewScreen
-            result={result}
+            key={review.id}
+            meta={review.meta}
+            initialItems={review.items}
             photoPaths={unsavedUploads.current.paths}
             photoHashes={unsavedUploads.current.hashes}
             photoPreviews={photos.map((photo) => photo.previewUrl)}
             transcript={text.trim() === "" ? null : text.trim()}
             inputFingerprint={unsavedUploads.current.fingerprint ?? ""}
+            idempotencyKey={review.id}
             targetCalories={targetCalories}
             eatenAt={new Date(eatenAt)}
             mealType={effectiveMealType}

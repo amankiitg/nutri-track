@@ -382,11 +382,24 @@ export async function mealFingerprint(input: {
   photoHashes?: readonly string[];
   text?: string | null;
   eatenAt: Date;
+  /**
+   * Set only when a person has explicitly said a capture is a new meal.
+   *
+   * The whole point of the fingerprint is that the same capture produces the same
+   * string, so `save_meal` can answer "you already logged this". That is right by
+   * default and wrong when the user has just been asked and said no: logging a second
+   * helping of the same plate is a real thing to do. The marker is the review
+   * session's own id, so it is stable across retries of that same screen — the
+   * double-tap protection still holds — and different for a later session, where the
+   * user meant a new meal.
+   */
+  distinct?: string | null;
 }): Promise<string> {
   const photoPart = [...(input.photoHashes ?? [])].sort().join(",");
   const textPart = normalizeText(input.text ?? "");
   const timePart = roundToTenMinutes(input.eatenAt).toISOString();
-  return sha256Hex([input.userId, photoPart, textPart, timePart].join("|"));
+  const distinctPart = input.distinct ?? "";
+  return sha256Hex([input.userId, photoPart, textPart, timePart, distinctPart].join("|"));
 }
 
 export type ConfidenceBand = "high" | "medium" | "low";

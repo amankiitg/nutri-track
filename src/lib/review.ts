@@ -124,6 +124,58 @@ export function blankReviewItem(): ReviewItem {
   };
 }
 
+/** What the screen says about where the numbers came from. */
+export interface ReviewMeta {
+  source: MealSource;
+  /** Null when the items were copied from an earlier meal, so no call was made. */
+  model: string | null;
+  /** How many model calls produced these items. Zero for a copy. */
+  attempts: number;
+}
+
+/**
+ * A review item built from a meal that is already saved, for the "copy that meal
+ * instead" path.
+ *
+ * `llmRaw` is null because these numbers came from the user's own earlier review, not
+ * from the model on this capture, and claiming otherwise would put a model's name on
+ * numbers it never produced. `userEdited` is true for the same reason: a person
+ * checked them.
+ */
+export function reviewItemFromSaved(saved: {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  confidence: number | null;
+  user_edited: boolean;
+}): ReviewItem {
+  return {
+    id: crypto.randomUUID(),
+    name: saved.name,
+    quantity: saved.quantity,
+    unit: saved.unit,
+    grams: saved.grams,
+    calories: saved.calories,
+    protein_g: saved.protein_g,
+    carbs_g: saved.carbs_g,
+    fat_g: saved.fat_g,
+    fiber_g: saved.fiber_g,
+    sugar_g: saved.sugar_g,
+    sodium_mg: saved.sodium_mg,
+    confidence: saved.confidence ?? 1,
+    userEdited: true,
+    llmRaw: null,
+  };
+}
+
 /**
  * The flags for an item as it stands now.
  *

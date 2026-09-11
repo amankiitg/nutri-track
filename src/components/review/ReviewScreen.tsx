@@ -23,17 +23,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { MealType } from "@shared/meal-parse";
+import type { ParseResponse } from "@/lib/capture";
+import { formatMealTime } from "@/lib/duplicates";
 import {
   blankReviewItem,
   canSave,
   mealTotals,
   remainingCalories,
-  reviewItemFromDraft,
   toSaveMealArgs,
   type ReviewItem,
+  type ReviewMeta,
   type SaveMealResult,
 } from "@/lib/review";
-import type { ParseResponse } from "@/lib/capture";
 import { MealItemCard } from "./MealItemCard";
 
 const MEAL_TYPE_LABELS: Record<MealType, string> = {
@@ -50,7 +51,9 @@ const MACRO_LABELS: Array<{ key: "protein_g" | "carbs_g" | "fat_g"; label: strin
 ];
 
 export interface ReviewScreenProps {
-  result: ParseResponse;
+  meta: ReviewMeta;
+  /** The starting items. The screen owns them from here. */
+  initialItems: readonly ReviewItem[];
   photoPaths: readonly string[];
   photoHashes: readonly string[];
   /** Local object URLs for the thumbnails, so no storage round trip is needed. */
@@ -58,6 +61,8 @@ export interface ReviewScreenProps {
   /** What was said or typed, shown when there are no photos. */
   transcript: string | null;
   inputFingerprint: string;
+  /** Stable for this review session, so a retry cannot log the meal twice. */
+  idempotencyKey: string;
   /** Today's target, for the remaining-calories line. */
   targetCalories: number | null;
   eatenAt: Date;
@@ -72,12 +77,14 @@ export interface ReviewScreenProps {
 }
 
 export function ReviewScreen({
-  result,
+  meta,
+  initialItems,
   photoPaths,
   photoHashes,
   photoPreviews,
   transcript,
   inputFingerprint,
+  idempotencyKey,
   targetCalories,
   eatenAt,
   mealType,
@@ -87,9 +94,7 @@ export function ReviewScreen({
   onReanalyze,
   isReanalyzing,
 }: ReviewScreenProps) {
-  const [items, setItems] = useState<ReviewItem[]>(() =>
-    result.items.map((draft) => reviewItemFromDraft(draft)),
-  );
+  const [items, setItems] = useState<ReviewItem[]>(() => [...initialItems]);
   const [type, setType] = useState<MealType>(mealType);
   const [when, setWhen] = useState(() => eatenAt);
   const [isSaving, setIsSaving] = useState(false);
@@ -99,17 +104,10 @@ export function ReviewScreen({
   const [confirmReanalyze, setConfirmReanalyze] = useState(false);
 
   /**
-   * Generated once, when this screen mounts, and reused for every attempt to save it.
-   * That is what makes a double tap on Save idempotent rather than two meals: the
-   * second call finds the same key and returns the first meal.
+   * Generated once by the capture sheet and stable for this review session, so every
+   * attempt to save this meal carries the same key and a double tap cannot log two.
    */
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
-
-  // Re-parsing replaces the items, so drop whatever the user had edited: the numbers
-  // on screen must belong to the reply on screen.
-  useEffect(() => {
-    setItems(result.items.map((draft) => reviewItemFromDraft(draft)));
-  }, [result]);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const totals = useMemo(() => mealTotals(items), [items]);
   const remaining = targetCalories === null ? null : remainingCalories(targetCalories, totals);
@@ -132,7 +130,7 @@ export function ReviewScreen({
       const args = toSaveMealArgs({
         items,
         mealType: type,
-        source: result.source,
+        source: meta.source,
         eatenAt: when,
         notes,
         photoPaths,
@@ -146,6 +144,18 @@ export function ReviewScreen({
 
       const saved = data as SaveMealResult | null;
       if (!saved?.meal_id) throw new Error("The meal was not saved.");
+
+      // created: false means the service recognised this meal as one already on
+      // record — the same fingerprint, or a replay of this very key. Saying "saved"
+      // would be a lie, and the user would go looking for a second meal that is not
+      // there.
+      if (!saved.created) {
+        setSavedNotice(
+          `You already logged this meal. It is on your record for ${formatMealTime(new Date(when).toISOString())}.`,
+        );
+        return;
+      }
+
       onSaved(saved);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the meal.");
@@ -173,7 +183,7 @@ export function ReviewScreen({
           <p className="text-sm">
             {transcript !== null && transcript !== ""
               ? `“${transcript}”`
-              : result.source === "voice"
+              : meta.source === "voice"
                 ? "From your voice note"
                 : "From your description"}
           </p>
@@ -210,8 +220,9 @@ export function ReviewScreen({
 
         <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            {items.length} item{items.length === 1 ? "" : "s"} · {result.model}
-            {result.attempts > 1 ? " · retried" : ""}
+            {items.length} item{items.length === 1 ? "" : "s"}
+            {meta.model === null ? " · copied from an earlier meal" : ` · ${meta.model}`}
+            {meta.attempts > 1 ? " · retried" : ""}
           </span>
           <button
             type="button"
@@ -286,6 +297,15 @@ export function ReviewScreen({
         <Plus className="mr-1.5 size-4" aria-hidden="true" />
         Add item
       </Button>
+
+      {savedNotice !== null && (
+        <p
+          role="status"
+          className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+        >
+          {savedNotice}
+        </p>
+      )}
 
       {error !== null && (
         <p
