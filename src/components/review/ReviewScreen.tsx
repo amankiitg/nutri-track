@@ -10,6 +10,16 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { MealType } from "@shared/meal-parse";
@@ -86,6 +96,7 @@ export function ReviewScreen({
   const [error, setError] = useState<string | null>(null);
   const [hintOpen, setHintOpen] = useState(false);
   const [hint, setHint] = useState("");
+  const [confirmReanalyze, setConfirmReanalyze] = useState(false);
 
   /**
    * Generated once, when this screen mounts, and reused for every attempt to save it.
@@ -102,6 +113,9 @@ export function ReviewScreen({
 
   const totals = useMemo(() => mealTotals(items), [items]);
   const remaining = targetCalories === null ? null : remainingCalories(targetCalories, totals);
+
+  /** How many items the user has changed, which a re-analysis would replace. */
+  const editedCount = items.filter((item) => item.userEdited).length;
 
   function replaceItem(next: ReviewItem): void {
     setItems((current) => current.map((item) => (item.id === next.id ? next : item)));
@@ -210,27 +224,43 @@ export function ReviewScreen({
         </div>
 
         {hintOpen && (
-          <div className="mt-2 flex gap-2">
-            <input
-              value={hint}
-              onChange={(event) => setHint(event.target.value)}
-              aria-label="Hint for re-analysis"
-              placeholder="e.g. the rice was a small portion, not a cup"
-              className="h-10 flex-1 rounded-xl border border-input bg-background px-3 text-sm"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-full"
-              disabled={hint.trim() === "" || isReanalyzing}
-              onClick={() => void onReanalyze(hint.trim())}
-            >
-              {isReanalyzing ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                "Go"
-              )}
-            </Button>
+          <div className="mt-2 space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={hint}
+                onChange={(event) => setHint(event.target.value)}
+                aria-label="Hint for re-analysis"
+                placeholder="e.g. the rice was a small portion, not a cup"
+                className="h-10 flex-1 rounded-xl border border-input bg-background px-3 text-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                disabled={hint.trim() === "" || isReanalyzing}
+                onClick={() => {
+                  // Re-analyzing throws away whatever was typed. When there is
+                  // nothing to lose it just runs; when there is, it asks first.
+                  if (editedCount > 0) setConfirmReanalyze(true);
+                  else void onReanalyze(hint.trim());
+                }}
+              >
+                {isReanalyzing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  "Go"
+                )}
+              </Button>
+            </div>
+
+            {editedCount > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                {editedCount === 1
+                  ? "1 item has been edited by you."
+                  : `${editedCount} items have been edited by you.`}{" "}
+                Re-analyzing will replace them.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -316,6 +346,34 @@ export function ReviewScreen({
           </Button>
         </div>
       </div>
+
+      {/*
+        A re-analysis replaces every item, so anything the user has corrected goes with
+        it. Asking first costs one tap and saves the work of re-entering four items.
+      */}
+      <AlertDialog open={confirmReanalyze} onOpenChange={setConfirmReanalyze}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-analyze and lose your edits?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {editedCount === 1
+                ? "1 item has been changed by you. Re-analyzing replaces all the items with what the model returns."
+                : `${editedCount} items have been changed by you. Re-analyzing replaces all the items with what the model returns.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep my edits</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmReanalyze(false);
+                void onReanalyze(hint.trim());
+              }}
+            >
+              Re-analyze anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
