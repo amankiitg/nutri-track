@@ -65,6 +65,17 @@ npm test
   emitted the Suspense fallback where the client emitted the page. React recovers, the page
   renders correctly, and a direct load of `/auth` is clean. Revisit when the Wrangler
   preview is set up, to confirm whether it also occurs in a production build.
+- **A height box that would not accept typing on a metric profile (unexplained).**
+  Reported once: a metric height showing `160` where typing produced nothing usable, and
+  what was typed cleared itself. Not reproducible on the metric path in any sequence tried
+  — per-keypress, blur, and a change batched with a blur — and the reporter later said they
+  could not reproduce it either and may have misremembered which unit they were on. A real
+  and severe bug **was** found and fixed in the imperial pair around the same time: each
+  box refused to commit unless its sibling was already committed, so an emptied box could
+  never be written again. That is the likely cause, and it was never confirmed against the
+  original report. **If this reappears on a metric profile, it is new.** Start in
+  `src/components/onboarding/fields.tsx`; the imperial tests in `fields.test.tsx` show the
+  shape of the coverage that did not catch it.
 
 ## Known characteristics (not bugs, do not "fix" without evidence)
 
@@ -157,7 +168,12 @@ npm test
   `.wrangler/deploy/config.json`, which is what makes a bare `wrangler deploy` from the
   root work. Nitro ignores a hand-set `main` or `assets` with a warning, so the only
   field worth configuring is the Worker name, pinned in `vite.config.ts` — unpinned it is
-  derived from the git remote, and that name sets the origin Supabase and Google pin to.
+  derived from the git remote, and that name sets the Worker's own `*.workers.dev`
+  hostname. The canonical origin is the custom domain, `https://tracknutri.app`, attached
+  to the script in Cloudflare's dashboard rather than in this repository; the
+  `*.workers.dev` hostname still works and is allow-listed alongside it. The name stays
+  pinned because a custom domain is attached to a script _name_: renaming the Worker would
+  leave the domain pointing at a script that no longer receives deploys.
 - `VITE_*` values are inlined at build time, so `npm run build:cloudflare` supplies the
   production `VITE_PARSE_MEAL_URL` inline and `.env` keeps the localhost one for dev.
   `vite.config.ts` fails a production build with a missing, localhost or non-https

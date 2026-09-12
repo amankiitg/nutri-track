@@ -295,7 +295,10 @@ command below has no `--config` or `--cwd`. Adding a root `wrangler.toml` would 
 second copy of generated truth, and Nitro _ignores_ any `main` or `assets` set by hand
 (with a warning), so the only field worth stating is the Worker name, which
 `vite.config.ts` pins to `nutritrack`. Unpinned, Nitro derives it from the git remote,
-and that name determines the origin Supabase and Google are pinned to.
+and that name sets the Worker's own hostname — `*.workers.dev` — which is **not** the
+origin Supabase and Google pin to. The canonical origin is the custom domain, below. The
+name stays pinned anyway: a custom domain is attached to a script _name_, so renaming the
+Worker would leave the domain pointing at a script that no longer receives deploys.
 
 ```sh
 wrangler login
@@ -334,9 +337,32 @@ service**. Verified behaviour: a request from an origin not on that list is refu
 deployed app fails until this is done — and it looks like the service being down rather
 than like a CORS policy.
 
-A custom domain is worth the five minutes: a stable origin is what Supabase's Site URL
-and Google's authorized origins are pinned to, and a `*.workers.dev` subdomain is a
-thing that can change.
+**The app is served at `https://tracknutri.app`.** That is the canonical origin: the one to
+put in Supabase's Site URL and Redirect URLs, in Google's authorized JavaScript origins,
+and in `ALLOWED_ORIGINS` on the Render service.
+
+`https://nutritrack.<subdomain>.workers.dev` still works, and is allow-listed in all three
+alongside it, because the same Worker answers on both hostnames. Treat it as a working
+alias rather than a second deployment: same build, same inlined `VITE_PARSE_MEAL_URL`,
+same Supabase project, so there is nothing to keep in step beyond those three lists.
+
+**An install from the workers.dev URL is a separate PWA identity, not a stale copy of
+this one.** Everything an installed web app keeps is partitioned by origin — the service
+worker registration, CacheStorage, and `localStorage`, which is where the Supabase session
+lives — and the manifest's `"id": "/"` resolves against whichever origin served it. So the
+old install keeps working, with its own sign-in, against the same data. The shared cache
+name in `sw.js` is harmless for the same reason: caches are per-origin.
+
+Nothing in the manifest or the service worker is origin-dependent — every path in both is
+root-relative — which is what made the move free. That is worth preserving. An absolute
+`start_url` is the trap: after a domain move, tapping an old icon would navigate the
+installed app outside its own scope and eject it into a browser.
+
+**The fix for an old install is to delete the icon.** It will not move itself and it will
+not stop working, so it does nothing worse than sit there as a duplicate. A Cloudflare
+redirect from the workers.dev hostname to `tracknutri.app` is the tempting alternative and
+is worse: a cross-origin navigation leaves the PWA's scope, so the icon becomes a bookmark
+that opens Safari, and the shell it cached can no longer be served.
 
 `render.yaml` is a Render Blueprint describing the whole stack. In the dashboard choose
 **New → Blueprint**, pick this repository, and Render reads the service definitions from

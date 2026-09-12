@@ -94,10 +94,15 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
           // and `no_bundle` itself, and *ignores* any of those set here with a
           // warning — so this is the one field worth stating, and nothing else.
           //
-          // Left unset, Nitro derives the name from the git remote, which makes the
-          // Worker's URL a function of the repository name. That URL is what Supabase's
-          // Site URL and Google's authorized origins are pinned to, so it should not
-          // move if the repository is ever renamed.
+          // Left unset, Nitro derives the name from the git remote, and that name sets the
+          // Worker's own hostname: https://nutritrack.<subdomain>.workers.dev. That is a
+          // working alias, not the canonical origin — the app is served at
+          // https://tracknutri.app, a custom domain attached to this Worker in Cloudflare's
+          // dashboard rather than here.
+          //
+          // The name is still pinned, because a custom domain is attached to a script
+          // *name*: renaming the Worker would leave tracknutri.app pointing at a script
+          // that no longer receives deploys.
           wrangler: { name: "nutritrack" },
         },
       }),
