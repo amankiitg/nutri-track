@@ -183,7 +183,6 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
                 value={form.dietary_tags.length > 0 ? form.dietary_tags.join(", ") : "None"}
               />
               <ReviewRow label="Time zone" value={form.timezone} />
-              <ReviewRow label="Reminder" value={form.reminder_time || "None"} />
             </ReviewSection>
 
             {targets && (

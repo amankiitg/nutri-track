@@ -89,8 +89,6 @@ export interface OnboardingForm {
   protein_g_per_kg: number;
   dietary_tags: string[];
   timezone: string;
-  /** `HH:MM`, or an empty string for "no reminder". */
-  reminder_time: string;
 }
 
 export type FieldErrors = Partial<Record<keyof OnboardingForm, string>>;
@@ -132,44 +130,9 @@ export const DEFAULT_ONBOARDING_FORM: OnboardingForm = {
   protein_g_per_kg: DEFAULT_PROTEIN_G_PER_KG,
   dietary_tags: [],
   timezone: detectTimeZone(),
-  reminder_time: "",
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * A time of day, with seconds optional.
- *
- * Seconds are optional because `profiles.reminder_time` is `time without time zone` and
- * PostgREST serialises that as `20:00:00`. Demanding `HH:MM` meant the app refused a
- * value it had written itself: a reminder saved once came back in a form the validator
- * rejected, so Settings loaded already invalid and Save was refused with the blame on a
- * field nobody had touched.
- *
- * `normalizeTimeOfDay` is what actually makes the two agree; accepting seconds here is
- * the belt to that pair of braces, for a value that reaches validation without coming
- * through `formFromProfile`.
- */
-const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
-
-/**
- * A time in the one form the rest of this module uses: `HH:MM`.
- *
- * Anything unrecognised is returned trimmed rather than coerced, so the validator still
- * gets to complain about it instead of a bad value being quietly turned into "no
- * reminder" — a reminder silently deleted is worse than one refused.
- */
-export function normalizeTimeOfDay(value: string): string {
-  const trimmed = value.trim();
-  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(trimmed);
-  if (match === null) return trimmed;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return trimmed;
-
-  return `${String(hours).padStart(2, "0")}:${match[2]}`;
-}
 
 const activityLevelSchema = z.custom<ActivityLevel>(
   (value) =>
@@ -205,7 +168,6 @@ const formShape = {
     .max(2.2, "Protein must be at most 2.2 g per kg."),
   dietary_tags: z.array(z.string()),
   timezone: z.string().min(1, "Please pick your time zone."),
-  reminder_time: z.union([z.literal(""), z.string().regex(TIME_OF_DAY, "Use a time like 19:30.")]),
 };
 
 export const onboardingBaseSchema = z.object(formShape);
@@ -274,7 +236,6 @@ const preferencesStepSchema = onboardingBaseSchema.pick({
   protein_g_per_kg: true,
   dietary_tags: true,
   timezone: true,
-  reminder_time: true,
 });
 
 function collect(result: z.SafeParseReturnType<unknown, unknown>): FieldErrors {
@@ -364,7 +325,6 @@ export function formFromProfile(profile: Profile): OnboardingForm {
     protein_g_per_kg: Number(profile.protein_g_per_kg),
     dietary_tags: profile.dietary_tags,
     timezone: profile.timezone,
-    reminder_time: normalizeTimeOfDay(profile.reminder_time ?? ""),
   };
 }
 
@@ -387,7 +347,6 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
     protein_g_per_kg: form.protein_g_per_kg,
     units: form.units,
     timezone: form.timezone,
-    reminder_time: form.reminder_time === "" ? null : normalizeTimeOfDay(form.reminder_time),
     dietary_tags: form.dietary_tags,
   };
 }

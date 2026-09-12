@@ -235,15 +235,21 @@ export function PreferencesStep({ form, errors, setField }: StepProps) {
         error={errors.timezone}
       />
 
-      <TextField
-        id="reminder_time"
-        label="Daily reminder"
-        type="time"
-        value={form.reminder_time}
-        onChange={(value) => setField("reminder_time", value)}
-        error={errors.reminder_time}
-        hint="Optional. Leave blank for no reminder."
-      />
+      {/*
+        A "Daily reminder" time field used to sit here. It is gone because nothing ever
+        read it: no notification code, no push subscription, nothing. A control that
+        stores a value and does nothing is worse than no control, because it costs a
+        belief someone is relying on.
+
+        `profiles.reminder_time` is deliberately still there and its contents are
+        untouched — nothing writes it now, so a profile save leaves it alone, and
+        `upsert` only touches the columns it is given.
+
+        If reminders are ever built, re-adding the field means knowing this: the column is
+        `time without time zone`, which PostgREST serialises as `20:00:00`, so a form that
+        validates `HH:MM` will refuse the value it wrote itself. That is the bug this
+        field was removed with.
+      */}
     </>
   );
 }
