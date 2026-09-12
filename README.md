@@ -267,15 +267,18 @@ Authentication → **URL Configuration**:
 
 #### 3. Google Cloud
 
-APIs & Services → Credentials → your OAuth 2.0 Client:
+**Nothing here changes when the frontend origin changes.** This app signs in with
+`signInWithOAuth`, so Supabase brokers the exchange and Google only ever learns Supabase's
+own callback:
 
-- **Authorized JavaScript origins**: add the deployed frontend origin.
-- **Authorized redirect URIs**: unchanged. With Supabase as the OAuth broker, Google
-  redirects to `https://<project-ref>.supabase.co/auth/v1/callback`, and Supabase
-  forwards to the app. Google never sees the app's own callback URL.
+- **Authorized redirect URIs**: must contain
+  `https://<project-ref>.supabase.co/auth/v1/callback`. It does not move with the frontend
+  — Google redirects to Supabase, and Supabase forwards to the app.
+- **Authorized JavaScript origins**: **not used by this flow.** That list exists for the
+  Google Identity Services button, which this app does not render. Adding the frontend
+  origin here changes nothing; leaving it out breaks nothing.
 
-A missing origin here fails as `origin_mismatch` or `redirect_uri_mismatch` from Google,
-not as an app error.
+A wrong redirect URI fails as `redirect_uri_mismatch` from Google, not as an app error.
 
 #### 4. The frontend — Cloudflare Workers
 
@@ -337,14 +340,23 @@ service**. Verified behaviour: a request from an origin not on that list is refu
 deployed app fails until this is done — and it looks like the service being down rather
 than like a CORS policy.
 
-**The app is served at `https://tracknutri.app`.** That is the canonical origin: the one to
-put in Supabase's Site URL and Redirect URLs, in Google's authorized JavaScript origins,
-and in `ALLOWED_ORIGINS` on the Render service.
+**The app is served at `https://tracknutri.app`.** That is the canonical origin, and moving
+it means updating **two** allow lists, not three:
 
-`https://nutritrack.<subdomain>.workers.dev` still works, and is allow-listed in all three
-alongside it, because the same Worker answers on both hostnames. Treat it as a working
-alias rather than a second deployment: same build, same inlined `VITE_PARSE_MEAL_URL`,
-same Supabase project, so there is nothing to keep in step beyond those three lists.
+1. Supabase → Authentication → URL Configuration: **Site URL** and **Redirect URLs**.
+2. `ALLOWED_ORIGINS` on the Render parse-meal service.
+
+Google Cloud is the third place you would expect to look, and it is the one that never
+moves. The only Google setting this flow uses is **Authorized redirect URIs**, and that
+holds Supabase's callback rather than the app's. **Authorized JavaScript origins is not
+used at all** — it belongs to the Google Identity Services button, which this app does not
+render — so an origin added there has no effect, and a domain move is not a Google change.
+
+`https://nutritrack.nutritrack.workers.dev` still works and is allow-listed in both lists
+alongside the canonical origin, because the same Worker answers on both hostnames. Treat it
+as a working alias rather than a second deployment: same build, same inlined
+`VITE_PARSE_MEAL_URL`, same Supabase project, so there is nothing to keep in step beyond
+those two lists.
 
 **An install from the workers.dev URL is a separate PWA identity, not a stale copy of
 this one.** Everything an installed web app keeps is partitioned by origin — the service
