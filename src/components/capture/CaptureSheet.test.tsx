@@ -253,19 +253,41 @@ describe("a parse that is taking a long time", () => {
   });
 
   it("gives up on its own before the user has to, and says nothing was logged", async () => {
-    vi.stubGlobal("fetch", hangingFetch);
+    // Records the signal the request was given, which is the deterministic half of this
+    // and the half that matters: it is what actually stops a hung request. The promise
+    // still has to reject when that signal fires, or nothing downstream can react.
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", (_input: unknown, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("The operation was aborted.", "AbortError")),
+        );
+      });
+    });
+
     await openTypeTab();
     vi.useFakeTimers();
     submitTypedMeal();
 
+    // The click only starts the chain: the session lookup resolves on a microtask
+    // before the request is made, so the fetch has not happened yet.
+    await act(async () => {
+      for (let turn = 0; turn < 10; turn += 1) await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(signal).toBeDefined();
+    expect(signal?.aborted).toBe(false);
+
     // Past the ceiling the client sets for a request that never answers.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(151_000);
-      // The abort rejects the pending fetch, and the rejection has to travel back
-      // through the awaited call before React has anything to render.
-      await vi.advanceTimersByTimeAsync(0);
+      // The abort travels timer -> combined signal -> fetch rejection -> error state,
+      // so the render needs a few turns. Looping on `0` flushes timers and microtasks
+      // together, which is steadier than counting turns by hand.
+      for (let turn = 0; turn < 50; turn += 1) await vi.advanceTimersByTimeAsync(0);
     });
 
+    expect(signal?.aborted).toBe(true);
     expect(screen.getByRole("alert").textContent).toContain("Nothing was logged");
     expect(screen.getByRole("button", { name: /analyse meal/i })).toBeEnabled();
   });

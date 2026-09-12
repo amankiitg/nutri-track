@@ -152,6 +152,7 @@ export function GoalStep({ form, errors, setField }: StepProps) {
       {form.goal !== "maintain" && (
         <>
           <WeightField
+            id="target-weight"
             label="Target weight"
             valueKg={form.target_weight_kg}
             units={form.units}

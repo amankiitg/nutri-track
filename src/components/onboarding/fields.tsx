@@ -4,7 +4,7 @@
  * These are deliberately dumb: they render a value and report changes. All
  * validation lives in `@/lib/onboarding`.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type FocusEvent, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -92,6 +92,65 @@ export function TextField({
  * Numeric input with a local text buffer, so a half-typed value like "-" or
  * "1." does not get clobbered mid-keystroke.
  */
+/**
+ * The input, its unit suffix, and nothing else.
+ *
+ * Controlled: the caller owns the text. That matters for the imperial height pair,
+ * where the two boxes are one value and each one has to be able to see what the other
+ * currently says rather than what has been committed.
+ */
+function NumberInput({
+  id,
+  text,
+  onTextChange,
+  onFocus,
+  onBlur,
+  suffix,
+  inputMode,
+  invalid,
+  describedBy,
+}: {
+  id: string;
+  text: string;
+  onTextChange: (text: string) => void;
+  onFocus?: (() => void) | undefined;
+  onBlur?: ((event: FocusEvent<HTMLInputElement>) => void) | undefined;
+  suffix?: string | undefined;
+  inputMode: "numeric" | "decimal";
+  invalid: boolean;
+  describedBy?: string | undefined;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        inputMode={inputMode}
+        value={text}
+        onChange={(event) => onTextChange(event.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={describedBy}
+        className={suffix ? "pr-12" : undefined}
+      />
+      {suffix && (
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+          {suffix}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Numeric input with a local text buffer, so a half-typed value like "-" or
+ * "1." does not get clobbered mid-keystroke.
+ *
+ * The buffer is what makes a partial entry survive: what is on screen is the text, not
+ * a number converted back and forth, so "1" and "16" sit there untouched while 165 is
+ * being typed. The committed value is only ever read back once this field is no longer
+ * the one being edited.
+ */
 export function NumberField({
   id,
   label,
@@ -120,30 +179,28 @@ export function NumberField({
 
   return (
     <Field id={id} label={label} hint={hint} error={error}>
-      <div className="relative">
-        <Input
-          id={id}
-          inputMode={inputMode}
-          value={text}
-          onFocus={() => setEditing(true)}
-          onBlur={() => {
-            setEditing(false);
-            setText(displayValue);
-          }}
-          onChange={(event) => {
-            setText(event.target.value);
-            onCommit(event.target.value);
-          }}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
-          className={suffix ? "pr-12" : undefined}
-        />
-        {suffix && (
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
-            {suffix}
-          </span>
-        )}
-      </div>
+      <NumberInput
+        id={id}
+        text={text}
+        suffix={suffix}
+        inputMode={inputMode}
+        invalid={error !== undefined}
+        describedBy={error ? `${id}-error` : undefined}
+        onFocus={() => setEditing(true)}
+        onBlur={() => {
+          // Hand the buffer over before releasing it. A value that was typed but never
+          // committed — because it is not a number yet, or because the field it belongs
+          // to combines with another one — would otherwise be discarded when the buffer
+          // is dropped, which looks exactly like the field clearing itself as you leave
+          // it.
+          if (text !== displayValue) onCommit(text);
+          setEditing(false);
+        }}
+        onTextChange={(next) => {
+          setText(next);
+          onCommit(next);
+        }}
+      />
     </Field>
   );
 }
@@ -181,34 +238,93 @@ export function HeightField({
     );
   }
 
+  return <ImperialHeightField valueCm={valueCm} onChange={onChange} error={error} />;
+}
+
+/**
+ * Feet and inches, which are two boxes holding one stored value.
+ *
+ * The boxes are controlled from here, so each one can see what the other currently
+ * *says* rather than what has been committed. That is the fix for the way this used to
+ * behave: the old version read the sibling from the committed value, so clearing either
+ * box — or opening a profile with no height yet, where both are empty — nulled the pair
+ * and left the remaining box unable to write anything at all. The digits stayed on
+ * screen, were never stored, and were wiped the moment the field lost focus.
+ *
+ * A blank box counts as zero. Somebody who types 5 and then 11 has asked for five foot
+ * eleven, not for a puzzle.
+ */
+function ImperialHeightField({
+  valueCm,
+  onChange,
+  error,
+}: {
+  valueCm: number | null;
+  onChange: (cm: number | null) => void;
+  error?: string | undefined;
+}) {
   const { ft, in: inches } = valueCm == null ? { ft: null, in: null } : cmToFtIn(valueCm);
+  const storedFeet = ft == null ? "" : String(ft);
+  const storedInches = inches == null ? "" : String(inches);
+
+  /**
+   * What is in the two boxes while they are being used, or null when they are not.
+   *
+   * Nothing but a blur that leaves the pair throws this away, so a keystroke cannot be
+   * undone by the committed value arriving a render later.
+   */
+  const [typed, setTyped] = useState<{ feet: string; inches: string } | null>(null);
+  const feetText = typed?.feet ?? storedFeet;
+  const inchesText = typed?.inches ?? storedInches;
+
+  function edit(next: { feet: string; inches: string }): void {
+    setTyped(next);
+    const feet = parseNumber(next.feet);
+    const remaining = parseNumber(next.inches);
+    if (feet === null && remaining === null) {
+      onChange(null);
+      return;
+    }
+    onChange(ftInToCm(feet ?? 0, remaining ?? 0));
+  }
+
+  /** Moving between the two boxes is not leaving the field. */
+  function handleBlur(event: FocusEvent<HTMLInputElement>): void {
+    const next = event.relatedTarget;
+    if (next instanceof HTMLElement && (next.id === "height-ft" || next.id === "height-in")) {
+      return;
+    }
+    setTyped(null);
+  }
 
   return (
     <fieldset className="space-y-1.5">
       <legend className="text-sm font-medium">Height</legend>
       <div className="grid grid-cols-2 gap-3">
-        <NumberField
-          id="height-ft"
-          label="Feet"
-          suffix="ft"
-          inputMode="numeric"
-          displayValue={ft == null ? "" : String(ft)}
-          onCommit={(text) => {
-            const next = parseNumber(text);
-            onChange(next == null || inches == null ? null : ftInToCm(next, inches));
-          }}
-        />
-        <NumberField
-          id="height-in"
-          label="Inches"
-          suffix="in"
-          inputMode="numeric"
-          displayValue={inches == null ? "" : String(inches)}
-          onCommit={(text) => {
-            const next = parseNumber(text);
-            onChange(next == null || ft == null ? null : ftInToCm(ft, next));
-          }}
-        />
+        <Field id="height-ft" label="Feet">
+          <NumberInput
+            id="height-ft"
+            text={feetText}
+            suffix="ft"
+            inputMode="numeric"
+            invalid={error !== undefined}
+            describedBy={error ? "height-error" : undefined}
+            onBlur={handleBlur}
+            onTextChange={(text) => edit({ feet: text, inches: inchesText })}
+          />
+        </Field>
+        <Field id="height-in" label="Inches">
+          <NumberInput
+            id="height-in"
+            text={inchesText}
+            suffix="in"
+            inputMode="numeric"
+            invalid={error !== undefined}
+            describedBy={error ? "height-error" : undefined}
+            onBlur={handleBlur}
+            onTextChange={(text) => edit({ feet: feetText, inches: text })}
+          />
+        </Field>
       </div>
       <FieldError id="height" message={error} />
     </fieldset>
@@ -217,12 +333,19 @@ export function HeightField({
 
 /** Weight, displayed in kg or lb, always stored in kg. */
 export function WeightField({
+  id,
   valueKg,
   units,
   onChange,
   error,
   label = "Weight",
 }: {
+  /**
+   * Required where two of these appear on one screen. Both used to render `id="weight"`,
+   * which is invalid, and made the "Target weight" label point its `htmlFor` at the body
+   * weight box — so tapping that label put the cursor in the wrong field.
+   */
+  id?: string | undefined;
   valueKg: number | null;
   units: UnitSystem;
   onChange: (kg: number | null) => void;
@@ -232,7 +355,7 @@ export function WeightField({
   const metric = units === "metric";
   return (
     <NumberField
-      id={metric ? "weight" : "weight-lb"}
+      id={id ?? (metric ? "weight" : "weight-lb")}
       label={label}
       suffix={metric ? "kg" : "lb"}
       displayValue={
