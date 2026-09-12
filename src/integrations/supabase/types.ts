@@ -48,6 +48,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      invite_requests: {
+        Row: {
+          email: string;
+          handled_at: string | null;
+          handled_by: string | null;
+          id: string;
+          notify_attempts: number;
+          notified_at: string | null;
+          requested_at: string;
+          requested_by: string;
+          status: string;
+        };
+        Insert: {
+          email?: string;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          notify_attempts?: number;
+          notified_at?: string | null;
+          requested_at?: string;
+          requested_by?: string;
+          status?: string;
+        };
+        Update: {
+          email?: string;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          notify_attempts?: number;
+          notified_at?: string | null;
+          requested_at?: string;
+          requested_by?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
       allowed_emails: {
         Row: {
           added_by: string | null;
@@ -363,6 +399,36 @@ export type Database = {
       };
     };
     Functions: {
+      admin_approve_request: {
+        Args: { p_request: string };
+        Returns: string;
+      };
+      admin_invites: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          added_by: string | null;
+          created_at: string;
+          email: string;
+          is_admin: boolean;
+          signed_up_at: string | null;
+          user_id: string | null;
+        }[];
+      };
+      admin_spend: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          calls_month: number;
+          calls_today: number;
+          calls_total: number;
+          email: string;
+          last_call_at: string | null;
+          resets_today: string;
+          timezone: string;
+          tokens_month: number;
+          tokens_total: number;
+          user_id: string;
+        }[];
+      };
       calorie_status: {
         Args: { p_actual: number; p_target: number };
         Returns: string;
@@ -403,6 +469,14 @@ export type Database = {
       };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
+      local_day_start: {
+        Args: { p_at: string; p_tz: string };
+        Returns: string;
+      };
+      local_day_start_offset: {
+        Args: { p_at: string; p_days: number; p_tz: string };
+        Returns: string;
+      };
       llm_call_budget: {
         Args: Record<PropertyKey, never>;
         Returns: {

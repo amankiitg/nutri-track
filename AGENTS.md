@@ -162,6 +162,17 @@ npm test
   production `VITE_PARSE_MEAL_URL` inline and `.env` keeps the localhost one for dev.
   `vite.config.ts` fails a production build with a missing, localhost or non-https
   parse-meal URL: nothing downstream can detect that afterwards.
+- `src/lib/admin.ts` — the admin page. Two rules. **An invite address is normalised to
+  `lower(trim(email))` before it is stored**, in the browser and again by a trigger on
+  `allowed_emails`, because an invite that looks added and can never match is worse than
+  no invite. And **`invite_requests` is the only write an uninvited person can cause**:
+  the row's address comes from the `email` claim of their signed JWT, not from the
+  request body, one row per address is enforced by a unique index, and a trigger skips
+  repeats. Do not add an email to that body, and do not give `authenticated` an update or
+  delete policy on the table.
+- `src/lib/calls.ts` — the meal-analysis budget for the signed-in user; the admin page
+  reads everyone's from `admin_spend()`, which shares `local_day_start()` with
+  `llm_call_budget()` so there is one day-boundary rule and not two.
 - Deployment is documented in README.md, "Deploying to production": two Render services
   from `render.yaml` and a Cloudflare Worker for the frontend.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset

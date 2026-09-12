@@ -1,10 +1,11 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchProfile, isEmailAllowed } from "@/lib/profile";
-import { Button } from "@/components/ui/button";
+import { fetchIsAdmin } from "@/lib/admin";
 import { BrandMark } from "@/components/app/BrandMark";
 import { CaptureDock } from "@/components/capture/CaptureDock";
 import { TabBar } from "@/components/app/TabBar";
+import { NotOnTheList } from "@/components/admin/NotOnTheList";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -14,43 +15,26 @@ export const Route = createFileRoute("/_authenticated")({
 
     // Invite-list gate: a user who is not allowed never reaches onboarding.
     const allowed = await isEmailAllowed().catch(() => false);
-    if (!allowed) return { user: data.user, profile: null, allowed: false };
+    if (!allowed) return { user: data.user, profile: null, allowed: false, isAdmin: false };
 
     // Single gate that guarantees every authenticated screen has a profile,
     // and therefore a target row to read.
     const profile = await fetchProfile(data.user.id);
     if (!profile) throw redirect({ to: "/onboarding" });
 
-    return { user: data.user, profile, allowed: true };
+    // Read once here rather than on the admin route, because the navigation needs it too:
+    // a tab that appears and then disappears is worse than one that appears late.
+    const isAdmin = await fetchIsAdmin();
+
+    return { user: data.user, profile, allowed: true, isAdmin };
   },
   component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-  const { allowed, user, profile } = Route.useRouteContext();
+  const { allowed, user, profile, isAdmin } = Route.useRouteContext();
   if (!allowed) {
-    return (
-      <main className="paper-grain min-h-dvh">
-        <div className="app-shell flex min-h-dvh flex-col justify-center py-10">
-          <BrandMark size={48} />
-          <h1 className="mt-6 text-3xl font-semibold">Not on the list yet</h1>
-          <p className="mt-2 text-muted-foreground">
-            <strong>{user.email}</strong> isn't on the invite list. Ask the account owner to add it,
-            then sign in again.
-          </p>
-          <Button
-            className="mt-6 w-fit rounded-full"
-            variant="outline"
-            onClick={async () => {
-              await supabase.auth.signOut();
-              window.location.href = "/auth";
-            }}
-          >
-            Sign out
-          </Button>
-        </div>
-      </main>
-    );
+    return <NotOnTheList email={user.email ?? "this account"} />;
   }
 
   return (
@@ -61,7 +45,7 @@ function AuthenticatedLayout() {
       {/* Available on every authenticated screen, not just Today: a meal gets eaten
           wherever you happen to be in the app. */}
       <CaptureDock userId={user.id} timeZone={profile?.timezone ?? "UTC"} />
-      <TabBar />
+      <TabBar isAdmin={isAdmin} />
     </div>
   );
 }
