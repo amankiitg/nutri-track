@@ -5,7 +5,9 @@ import { fetchIsAdmin } from "@/lib/admin";
 import { BrandMark } from "@/components/app/BrandMark";
 import { CaptureDock } from "@/components/capture/CaptureDock";
 import { TabBar } from "@/components/app/TabBar";
-import { NotOnTheList } from "@/components/admin/NotOnTheList";
+import { NotOnTheList, type GateFailure } from "@/components/admin/NotOnTheList";
+
+type Gate = "allowed" | GateFailure;
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -14,8 +16,18 @@ export const Route = createFileRoute("/_authenticated")({
     if (error || !data.user) throw redirect({ to: "/auth" });
 
     // Invite-list gate: a user who is not allowed never reaches onboarding.
-    const allowed = await isEmailAllowed().catch(() => false);
-    if (!allowed) return { user: data.user, profile: null, allowed: false, isAdmin: false };
+    //
+    // A check that failed and a genuine refusal have to stay distinguishable. Collapsing both
+    // into `false` -- as `.catch(() => false)` did -- told a signed-in person they had been
+    // taken off the list because a train tunnel ate one request. Access still fails closed;
+    // it is only the *message* that stops claiming a refusal it never received.
+    const gate: Gate = await isEmailAllowed()
+      .then((allowed): Gate => (allowed ? "allowed" : "denied"))
+      .catch((): Gate => "unavailable");
+
+    if (gate !== "allowed") {
+      return { user: data.user, profile: null, gate, isAdmin: false };
+    }
 
     // Single gate that guarantees every authenticated screen has a profile,
     // and therefore a target row to read.
@@ -26,15 +38,15 @@ export const Route = createFileRoute("/_authenticated")({
     // a tab that appears and then disappears is worse than one that appears late.
     const isAdmin = await fetchIsAdmin();
 
-    return { user: data.user, profile, allowed: true, isAdmin };
+    return { user: data.user, profile, gate, isAdmin };
   },
   component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-  const { allowed, user, profile, isAdmin } = Route.useRouteContext();
-  if (!allowed) {
-    return <NotOnTheList email={user.email ?? "this account"} />;
+  const { gate, user, profile, isAdmin } = Route.useRouteContext();
+  if (gate !== "allowed") {
+    return <NotOnTheList email={user.email ?? "this account"} reason={gate} />;
   }
 
   return (
