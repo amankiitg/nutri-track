@@ -39,7 +39,10 @@ function AuthenticatedLayout() {
 
   return (
     <div className="paper-grain flex min-h-dvh flex-col">
-      <main className="flex-1 pb-20">
+      {/* Clearance for the tab bar, derived from the bar's own height rather than a fixed
+          guess: `pb-20` was 80px and did not include the safe-area inset, so the room left
+          under the last card shrank by 1px for every 1px of inset. */}
+      <main className="flex-1 pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom)+1rem)]">
         <Outlet />
       </main>
       {/* Available on every authenticated screen, not just Today: a meal gets eaten

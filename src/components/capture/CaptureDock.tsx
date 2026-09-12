@@ -34,8 +34,10 @@ export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
         aria-label="Add a meal"
         onClick={() => setOpen(true)}
         className="fixed right-4 z-40 grid size-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform active:scale-95"
-        // Clear of the tab bar, and of the home indicator on a notched phone.
-        style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
+        // Derived from the tab bar's own height rather than a hand-picked offset, so the two
+        // cannot drift apart: the bar is `--tabbar-height` plus the inset, and this is that
+        // plus the inset plus the gap. Clear at any viewport height and any inset.
+        style={{ bottom: "calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 1rem)" }}
       >
         <Plus className="size-6" aria-hidden="true" />
       </button>

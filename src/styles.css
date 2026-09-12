@@ -99,6 +99,17 @@
 :root {
   --radius: 1rem;
 
+  /*
+   * How tall the bottom tab bar is. Declared once, because two things have to agree about
+   * it: the bar itself, and the add-meal button floating above it. They used to be
+   * independent numbers and they drifted, because the bar counted the safe-area inset twice
+   * (its own padding, plus the page-content padding its inner row inherited from
+   * `app-shell`) while the button counted it once. Consumers add env(safe-area-inset-bottom)
+   * themselves, so it is counted once each.
+   */
+  --tabbar-row: 3.5rem;
+  --tabbar-height: calc(var(--tabbar-row) + 1px); /* the row, plus the bar's top border */
+
   --background: oklch(0.975 0.012 85);
   --foreground: oklch(0.24 0.025 140);
   --card: oklch(0.995 0.006 85);
@@ -216,6 +227,18 @@
   input[type="number"] {
     -moz-appearance: textfield;
   }
+}
+
+@utility app-shell-x {
+  /*
+   * The page's horizontal metrics and nothing vertical. The tab bar's inner row uses this so
+   * its tabs line up with page content -- it must not inherit the page-content bottom
+   * padding below, which is what made the bar taller than the button above it assumed.
+   */
+  margin-inline: auto;
+  width: 100%;
+  max-width: 30rem;
+  padding-inline: 1.25rem;
 }
 
 @utility app-shell {
