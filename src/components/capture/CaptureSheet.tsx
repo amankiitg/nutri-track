@@ -551,7 +551,18 @@ export function CaptureSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto pb-8">
+      {/*
+        `pb-0` cancels the `p-6` in the sheet variant, on purpose. A scroll container's
+        padding-bottom lifts a `sticky bottom-0` child by exactly that amount, so the review
+        footer used to clear the home indicator only because this element happened to carry
+        `pb-8` -- a coupling with nothing to do with either of them, and one that tidying away
+        would have silently dropped the Save button onto the indicator. Each step carries its
+        own inset now: the capture steps pad their last block, and the review footer pads
+        itself. Measured with a 34px inset: this element pads 0px, the capture step's last
+        block sits 66px above the screen bottom, and the review footer's own padding puts its
+        buttons 46px above it.
+      */}
+      <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto pb-0">
         <SheetHeader className="text-left">
           <SheetTitle>Add a meal</SheetTitle>
           <SheetDescription>
@@ -769,7 +780,7 @@ export function CaptureSheet({
             isReanalyzing={isReanalyzing}
           />
         ) : (
-          <>
+          <div className="pb-[calc(env(safe-area-inset-bottom)+2rem)]">
             <div className="mt-5 flex items-center gap-2">
               <Button
                 type="button"
@@ -821,7 +832,7 @@ export function CaptureSheet({
                 tap Cancel and type what you ate instead.
               </p>
             )}
-          </>
+          </div>
         )}
       </SheetContent>
     </Sheet>

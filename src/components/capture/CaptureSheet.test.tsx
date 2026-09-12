@@ -293,36 +293,35 @@ describe("a parse that is taking a long time", () => {
   });
 });
 
+/** A parse the service could plausibly return, for the tests that need to reach review. */
+const PARSED_MEAL = {
+  items: [
+    {
+      name: "Sourdough toast",
+      quantity: 2,
+      unit: "slice",
+      grams: 70,
+      calories: 180,
+      protein_g: 6,
+      carbs_g: 34,
+      fat_g: 1.5,
+      fiber_g: 2,
+      sugar_g: 2,
+      sodium_mg: 300,
+      confidence: 0.8,
+      needs_review: false,
+      review_reasons: [],
+    },
+  ],
+  meal_type: "breakfast",
+  source: "text",
+  model: "gemini-test",
+  attempts: 1,
+};
+
 describe("a parse that works", () => {
   it("shows no error at all, which is the case that must not have regressed", async () => {
-    vi.stubGlobal("fetch", () =>
-      Promise.resolve(
-        jsonResponse({
-          items: [
-            {
-              name: "Sourdough toast",
-              quantity: 2,
-              unit: "slice",
-              grams: 70,
-              calories: 180,
-              protein_g: 6,
-              carbs_g: 34,
-              fat_g: 1.5,
-              fiber_g: 2,
-              sugar_g: 2,
-              sodium_mg: 300,
-              confidence: 0.8,
-              needs_review: false,
-              review_reasons: [],
-            },
-          ],
-          meal_type: "breakfast",
-          source: "text",
-          model: "gemini-test",
-          attempts: 1,
-        }),
-      ),
-    );
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(PARSED_MEAL)));
     const user = userEvent.setup();
     renderSheet();
     await analyseTypedMeal(user);
@@ -330,5 +329,38 @@ describe("a parse that works", () => {
     // The review screen replaces the button, and nothing red appears.
     expect(await screen.findByRole("button", { name: /save meal/i })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  /**
+   * The review footer used to be positioned by accident. A scroll container's `padding-bottom`
+   * lifts a `sticky bottom-0` child by exactly that amount, so the footer cleared the home
+   * indicator only because the sheet happened to carry `pb-8` -- a number with no relationship
+   * to either of them. Tidying that padding away would have put the Save button under the
+   * indicator with nothing to show for it. Both halves of the arrangement are asserted here so
+   * that either change fails a test rather than a phone.
+   */
+  it("keeps the review footer's clearance its own, not borrowed from the scroll container", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(PARSED_MEAL)));
+    const user = userEvent.setup();
+    renderSheet();
+    await analyseTypedMeal(user);
+
+    const save = await screen.findByRole("button", { name: /save meal/i });
+
+    // The footer carries the inset itself. A `py-*` would drop it and sit the buttons under
+    // the indicator.
+    const footer = save.closest(".sticky");
+    expect(footer).not.toBeNull();
+    expect(footer?.className).toContain("env(safe-area-inset-bottom)");
+    expect(footer?.className).not.toMatch(/(^|\s)py-/);
+
+    // And the scroll container pads nothing at the bottom, because its padding moves the
+    // footer rather than spacing the content above it. The sheet content is the scroll
+    // container: it is the element that carries `overflow-y-auto`.
+    const scrollRegion = screen.getByRole("dialog");
+    expect(scrollRegion.className).toContain("overflow-y-auto");
+    // `pb-0` explicitly cancels the sheet variant's `p-6`. Any other bottom padding here
+    // would move the footer up rather than spacing the content below it.
+    expect(scrollRegion.className).toContain("pb-0");
   });
 });

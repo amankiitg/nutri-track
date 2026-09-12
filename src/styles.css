@@ -242,11 +242,18 @@
 }
 
 @utility app-shell {
+  /*
+   * The page's horizontal metrics. Deliberately no bottom padding: room for the bottom bar
+   * lives on `main` in the authenticated shell, derived from `--tabbar-height`. An
+   * inset-aware `padding-bottom` used to sit here, but every caller pairs this utility with a
+   * `py-*`, which overrode it -- so it did nothing while looking like it cleared the bar.
+   * Believing a page-level utility clears the bar is how the add-meal button ended up behind
+   * it; see CaptureDock.
+   */
   margin-inline: auto;
   width: 100%;
   max-width: 30rem;
   padding-inline: 1.25rem;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 1.5rem);
 }
 
 @utility card-soft {

@@ -316,8 +316,15 @@ export function ReviewScreen({
         </p>
       )}
 
-      {/* Sticky, because the totals are the thing you are deciding about. */}
-      <div className="sticky bottom-0 -mx-6 space-y-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
+      {/*
+        Pinned, because the totals are the thing you are deciding about. Its own bottom padding
+        carries the home-indicator inset, so where it sits does not depend on the scroll
+        container's padding: that coupling is invisible, and it is the same one that once put
+        the add-meal button behind the tab bar. The sheet therefore has no bottom padding, and
+        this element must not be given `py-*` -- that would drop the inset and sit the buttons
+        under the indicator.
+      */}
+      <div className="sticky bottom-0 -mx-6 space-y-3 border-t border-border bg-background/95 px-6 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-muted-foreground">This meal</span>
           <span className="text-lg font-semibold">{Math.round(totals.calories)} kcal</span>
