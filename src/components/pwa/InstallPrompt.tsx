@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
 import { Download, Share, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isIos, isStandalone, type BeforeInstallPromptEvent } from "@/lib/pwa";
+import {
+  iosBrowser,
+  iosInstallHint,
+  isIos,
+  isStandalone,
+  type BeforeInstallPromptEvent,
+  type IosBrowser,
+} from "@/lib/pwa";
 
 const DISMISS_KEY = "nutritrack.install.dismissed";
 
 export function InstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showIosHint, setShowIosHint] = useState(false);
+  const [ios, setIos] = useState<IosBrowser | null>(null);
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
@@ -18,11 +25,11 @@ export function InstallPrompt() {
       setDeferred(e as BeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", onPrompt);
-    if (isIos()) setShowIosHint(true);
+    if (isIos()) setIos(iosBrowser(window.navigator.userAgent));
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
-  if (dismissed || (!deferred && !showIosHint)) return null;
+  if (dismissed || (!deferred && ios === null)) return null;
 
   const dismiss = () => {
     window.localStorage.setItem(DISMISS_KEY, "1");
@@ -50,10 +57,19 @@ export function InstallPrompt() {
           {deferred ? (
             <p className="text-sm text-muted-foreground">Opens full-screen, works like an app.</p>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Tap <Share className="inline size-4 align-text-bottom" aria-label="Share" /> then{" "}
-              <span className="font-medium text-foreground">Add to Home Screen</span>.
-            </p>
+            ios !== null && (
+              <p className="text-sm text-muted-foreground">
+                {/* The glyph is the button the copy names, so it goes in front of the sentence
+                    that tells them to tap it, and not in front of one that says their browser
+                    cannot do this at all. */}
+                {ios === "other" && (
+                  <>
+                    <Share className="inline size-4 align-text-bottom" aria-label="Share" />{" "}
+                  </>
+                )}
+                {iosInstallHint(ios)}
+              </p>
+            )
           )}
           {deferred && (
             <Button size="sm" className="mt-3" onClick={install}>
