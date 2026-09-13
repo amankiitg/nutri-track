@@ -1,0 +1,23 @@
+{
+  "name": "nutritrack-invite",
+  "private": true,
+  "type": "module",
+  "description": "Local-only: creates a Gmail draft of the NutriTrack invite. Never sends.",
+  "scripts": {
+    "invite": "tsx src/server.ts",
+    "check": "tsx src/check.ts",
+    "preview": "tsx src/preview.ts",
+    "test": "node --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "imapflow": "^2.0.2",
+    "nodemailer": "^10.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "@types/nodemailer": "^8.0.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
+}

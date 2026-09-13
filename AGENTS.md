@@ -22,6 +22,16 @@ Supabase, Recharts.
    service in `render.yaml`), which needs it because it must see every user's meals to know
    which photos are still referenced. It reads it from `server/src/sweep-config.ts`, which
    the web service never loads. Never add that key to `server/src/config.ts`.
+
+   `.env` has a **third** reader: the local invite tool in `tools/invite/`, which is the only
+   thing that reads `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`. It runs on a laptop, is part of no
+   deployed service, and creates a Gmail _draft_ rather than sending. It is a small page on
+   <http://127.0.0.1:8788> — two boxes and a button — because the credential is a password to a
+   mailbox and never leaves the machine: `src/server.ts` binds to `127.0.0.1` and not `0.0.0.0`
+   for the same reason. Its credential must never be printed, logged, or put in an error message
+   — `tools/invite/src/redact.ts` exists for that and has the tests to match — which includes
+   `imapflow`'s unhandled `error` event, an uncaught exception that prints a stack.
+
 5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
    RLS is a bug.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
@@ -39,6 +49,8 @@ npm run test:server  # vitest (node) — the parse-meal service
 npm run smoke        # one real Gemini call on a real image; spends tokens, run by hand
 npm run sweep        # orphan-photo sweeper, dry run — deletes nothing
 npm run sweep:live   # the same, actually deleting
+npm run invite       # local only: creates a Gmail draft of the invite; never sends
+npm run test:invite  # the invite tool's own tests (node:test)
 npm run lint
 npm run format
 ```
@@ -46,6 +58,12 @@ npm run format
 `server/scripts/smoke-gemini.ts` spends real tokens and `server/src/sweep.ts` deletes real
 photos. Neither is ever collected by a test suite. Keep it that way: the model in the suite is
 a fake, and the sweeper's tests run against a fake store.
+
+`tools/invite/` is in the same category for the same reason: it talks to a real mailbox, so its
+tests build a message and stop — nothing in the suite opens a connection, and nothing reads a
+credential. The invite itself lives in `tools/invite/src/invite.ts` and nowhere else;
+`docs/invite-email.html` is generated from it by `npm run invite:preview` and is not edited by
+hand, because two copies of an email drift and the copy that drifts is the one you send.
 
 The service in `server/` is its own package, so run its scripts from there:
 
