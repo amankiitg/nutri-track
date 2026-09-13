@@ -14,6 +14,7 @@ import { stdout } from "node:process";
 import type { Writable } from "node:stream";
 import { loadGmailConfig } from "./env.js";
 import { rememberSecret, safeError } from "./redact.js";
+import { describeAuthFailure, formatAuthFailure, isImapFailure } from "./imap-error.js";
 import { createClient, findDraftsPath } from "./draft.js";
 
 /** Awaiting the write is what makes the explicit exits below safe when stdout is a pipe. */
@@ -52,10 +53,17 @@ async function main(): Promise<void> {
 // stops. The writes above are awaited first, because a pipe takes them asynchronously and
 // `process.exit` would otherwise discard them: the command would print nothing and look like
 // it had failed for a different reason.
+//
+// A login failure is reported through `describeAuthFailure`, not `safeError`: imapflow leaves the
+// server's reason beside the error message and the message is always the same generic string, so
+// `safeError` alone is what made this command say `Command failed` and nothing more.
 main().then(
   () => process.exit(0),
   async (error: unknown) => {
-    await write(process.stderr, `\nCould not sign in.\n${safeError(error)}\n`);
+    const report = isImapFailure(error)
+      ? `\nCould not sign in.\n${formatAuthFailure(describeAuthFailure(error))}`
+      : `\n${safeError(error)}\n`;
+    await write(process.stderr, report);
     process.exit(1);
   },
 );

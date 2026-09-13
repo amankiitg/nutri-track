@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { stdout } from "node:process";
 import { loadGmailConfig, type GmailConfig } from "./env.js";
 import { rememberSecret, safeError } from "./redact.js";
+import { describeAuthFailure, isImapFailure, pageAuthFailure } from "./imap-error.js";
 import { renderInviteHtml, renderInviteText, SENDER_NAME, SUBJECT } from "./invite.js";
 import { buildMessage, createDraft } from "./draft.js";
 import { createdPage, formPage, problemPage } from "./page.js";
@@ -55,6 +56,16 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+/**
+ * The failure, as the page shows it.
+ *
+ * Google's own words when the error came from IMAP, and the plain message otherwise: a request
+ * body this tool rejected itself would otherwise be reported as Google refusing a credential.
+ */
+function failureText(error: unknown): string {
+  return isImapFailure(error) ? pageAuthFailure(describeAuthFailure(error)) : safeError(error);
 }
 
 async function createFromForm(
@@ -109,8 +120,9 @@ function main(): void {
         }
         sendHtml(res, 404, problemPage("No such page."));
       } catch (error) {
-        // The only thing that reaches the browser is a redacted message.
-        sendHtml(res, 500, problemPage(safeError(error)));
+        // The only thing that reaches the browser is a redacted message. A login failure gets
+        // Google's own words, because "Command failed" is not something anyone can act on.
+        sendHtml(res, 500, problemPage(failureText(error)));
       }
     })();
   });

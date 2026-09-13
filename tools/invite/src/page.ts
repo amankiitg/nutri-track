@@ -80,7 +80,7 @@ const STYLE = `
   .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; border-top: 1px solid #e2ded2; }
   dt { color: #5e6657; font-size: 0.9rem; }
   dd { margin: 0; font-weight: 600; text-align: right; }
-  .problem { margin: 0 0 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: #fbeae8; color: #8c1d18; }
+  .problem { margin: 0 0 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: #fbeae8; color: #8c1d18; white-space: pre-wrap; }
   a.plain { color: #195c2e; }
   .foot { margin: 1.25rem 0 0; font-size: 0.85rem; color: #5e6657; }
 `;
