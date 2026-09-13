@@ -16,17 +16,20 @@
         ink          #192217   (--foreground)
         quiet ink    #5e6657   (--muted-foreground)
         leaf green   #195c2e   (--primary)
-        pale green   #deedda   (--secondary)
-        apricot      #ec915c   (--accent)
         border       #e2ded2   (--border)
+
+      --secondary (pale green #deedda) and --accent (apricot #ec915c) are
+      deliberately unused. The pale green belonged to the three-badge row, which is
+      gone: a row of feature chips reads as a product page rather than a note from a
+      friend, and the same point now fits in one sentence of the body.
 
       Every style is inline on purpose. Gmail discards <style> blocks and @media
       queries when HTML is pasted into the composer, so anything declared in a
       stylesheet renders as unstyled text. Table layout for the same reason: no
       flex, no grid.
 
-      Placeholders to replace before sending: {{First name}}, {{invited email}},
-      {{your name}}.
+      Two placeholders to replace before sending: {{First name}} and
+      {{invited email}}. The signature is written in, not a placeholder.
     -->
   </head>
   <body style="margin: 0; padding: 0; background-color: #f0ece4">
@@ -43,7 +46,7 @@
         color: #f0ece4;
       "
     >
-      Snap your plate, get one straight answer on your weight goal. Sign in with the address this
+      A week of tracking what I eat, and two things surprised me. Sign in with the address this
       landed in. The invite is tied to it.
       &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
     </div>
@@ -101,7 +104,7 @@
                   </tr>
                 </table>
 
-                <!-- Headline, same sentence the app opens with -->
+                <!-- Headline: the finding, not the tagline. -->
                 <p
                   style="
                     margin: 28px 0 0 0;
@@ -113,7 +116,7 @@
                     color: #192217;
                   "
                 >
-                  Know if today<br />is <em style="color: #195c2e">on track.</em>
+                  Two things <em style="color: #195c2e">surprised</em> me.
                 </p>
               </td>
             </tr>
@@ -139,17 +142,19 @@
                 <p style="margin: 0 0 16px 0">Hi {{First name}},</p>
 
                 <p style="margin: 0 0 16px 0">
-                  I've been building NutriTrack and I'd like you on it.
+                  I've been tracking what I eat for a week, and two things surprised me.
                 </p>
 
                 <p style="margin: 0 0 16px 0">
-                  It's a food tracker that starts with a photo. Snap your plate and it reads what's
-                  there, then estimates the calories and macros. You fix anything it got wrong, and
-                  you get one straight answer: whether you're on pace for your weight goal today.
+                  I eat far less protein than I assumed. And it isn't the meals that do the damage:
+                  it's the handful of chips, the biscuit with a coffee, the things I wouldn't have
+                  bothered counting. Those are what push a day past where I thought it landed.
                 </p>
 
                 <p style="margin: 0">
-                  No database to search, no weighing things. Most days it's one photo and a tap.
+                  So I built this to track it. You photograph your plate, it reads what's on it, you
+                  fix what it got wrong, and it tells you one thing: whether you're on pace. Saying
+                  or typing a meal works too, if a photo is awkward.
                 </p>
               </td>
             </tr>
@@ -184,9 +189,9 @@
                       "
                     >
                       Sign in with
-                      <strong style="color: #192217">{{invited email}}</strong>. NutriTrack is
-                      invite-only, and the invite is tied to that address. If Google offers you a
-                      list of accounts, pick that one.
+                      <strong style="color: #192217">{{invited email}}</strong>. It's invite-only
+                      and your invite is tied to that address, so use that one. If Google offers you
+                      a list of accounts, pick it.
                     </td>
                   </tr>
                 </table>
@@ -250,87 +255,6 @@
               </td>
             </tr>
 
-            <!-- Three ways in, mirroring the landing page -->
-            <tr>
-              <td style="padding: 28px 40px 0 40px">
-                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                  <tr>
-                    <td
-                      width="33%"
-                      align="center"
-                      style="
-                        padding: 14px 6px;
-                        background-color: #deedda;
-                        border-radius: 14px;
-                        font-family:
-                          &quot;Manrope&quot;,
-                          -apple-system,
-                          BlinkMacSystemFont,
-                          &quot;Segoe UI&quot;,
-                          Roboto,
-                          Helvetica,
-                          Arial,
-                          sans-serif;
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: #193b22;
-                      "
-                    >
-                      Photo first
-                    </td>
-                    <td width="3%" style="font-size: 1px; line-height: 1px">&nbsp;</td>
-                    <td
-                      width="31%"
-                      align="center"
-                      style="
-                        padding: 14px 6px;
-                        background-color: #deedda;
-                        border-radius: 14px;
-                        font-family:
-                          &quot;Manrope&quot;,
-                          -apple-system,
-                          BlinkMacSystemFont,
-                          &quot;Segoe UI&quot;,
-                          Roboto,
-                          Helvetica,
-                          Arial,
-                          sans-serif;
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: #193b22;
-                      "
-                    >
-                      Or speak
-                    </td>
-                    <td width="3%" style="font-size: 1px; line-height: 1px">&nbsp;</td>
-                    <td
-                      width="30%"
-                      align="center"
-                      style="
-                        padding: 14px 6px;
-                        background-color: #deedda;
-                        border-radius: 14px;
-                        font-family:
-                          &quot;Manrope&quot;,
-                          -apple-system,
-                          BlinkMacSystemFont,
-                          &quot;Segoe UI&quot;,
-                          Roboto,
-                          Helvetica,
-                          Arial,
-                          sans-serif;
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: #193b22;
-                      "
-                    >
-                      Or type
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
             <tr>
               <td
                 style="
@@ -350,19 +274,15 @@
                 "
               >
                 <p style="margin: 0 0 16px 0">
-                  One honest note. The numbers come from a photo, so they're estimates, and the
+                  One honest thing: the numbers come from a photo, so they're estimates, and
                   portions of calorie-dense things are the roughest part. A bowl of hummus can be
-                  out by more than you'd guess. That's what the review screen is for: you see
-                  everything before it's saved and you change what looks wrong.
-                </p>
-
-                <p style="margin: 0 0 16px 0">
-                  Add it to your home screen and it behaves like an app: full screen, no address
-                  bar.
+                  out by more than you'd guess. Nothing saves until you've looked at it, which is
+                  what that screen is for.
                 </p>
 
                 <p style="margin: 0">
-                  If it breaks, or something reads wrong, just reply to this. I want to know.
+                  Add it to your home screen and it behaves like an app. And if something breaks or
+                  reads wrong, reply to this. I want to know.
                 </p>
               </td>
             </tr>
@@ -385,7 +305,7 @@
                   color: #192217;
                 "
               >
-                <p style="margin: 0">{{your name}}</p>
+                <p style="margin: 0">Aman Kesarwani</p>
               </td>
             </tr>
 
@@ -418,9 +338,6 @@
                         color: #5e6657;
                       "
                     >
-                      Private, invite-only. Estimates are estimates: you always review before
-                      saving.
-                      <br />
                       <a
                         href="https://tracknutri.app"
                         style="color: #195c2e; text-decoration: underline"
