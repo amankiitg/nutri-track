@@ -303,8 +303,9 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                 </p>
 
                 <p style="margin: 0">
-                  Add it to your home screen and it behaves like an app. And if something breaks or
-                  reads wrong, reply to this. I want to know.
+                  On an iPhone, add it to your home screen and it behaves like an app. That part is
+                  Safari only: open tracknutri.app in Safari, tap Share, then Add to Home Screen.
+                  And if something breaks or reads wrong, reply to this. I want to know.
                 </p>
               </td>
             </tr>
@@ -408,8 +409,9 @@ One honest thing: the numbers come from a photo, so they're estimates, and porti
 calorie-dense things are the roughest part. A bowl of hummus can be out by more than you'd
 guess. Nothing saves until you've looked at it, which is what that screen is for.
 
-Add it to your home screen and it behaves like an app. And if something breaks or reads wrong,
-reply to this. I want to know.
+On an iPhone, add it to your home screen and it behaves like an app. That part is Safari only:
+open tracknutri.app in Safari, tap Share, then Add to Home Screen. And if something breaks or
+reads wrong, reply to this. I want to know.
 
 ${SENDER_NAME}
 `;

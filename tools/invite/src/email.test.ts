@@ -65,3 +65,13 @@ test("the sender is the configured mailbox, not a name written into the source",
 
   assert.ok(raw.includes(CONFIG.address));
 });
+
+test("the home-screen tip names Safari in both parts, since it is the only iOS browser that can", () => {
+  const html = renderInviteHtml(RECIPIENT);
+  const text = renderInviteText(RECIPIENT);
+
+  for (const part of [html, text]) {
+    assert.match(part, /Safari/);
+    assert.match(part, /Add to Home Screen/);
+  }
+});
