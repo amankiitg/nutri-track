@@ -9,8 +9,10 @@ import { z } from "zod";
 import {
   ACTIVITY_MULTIPLIERS,
   DEFAULT_PROTEIN_G_PER_KG,
+  MIN_SAFE_BMI,
   PACE_OPTIONS,
   ageFromDob,
+  bmi,
   minSafeWeightKg,
   type ActivityLevel,
   type Goal,
@@ -19,13 +21,24 @@ import {
   type TargetResult,
 } from "./targets";
 import { targetsFromProfile, type Profile, type ProfileInsert } from "./profile";
-import type { UnitSystem } from "./units";
+import { displayValue, wrongUnit, wrongUnitSentence, type UnitSystem } from "./units";
 
 export const MIN_AGE = 13;
 export const MAX_AGE = 100;
 
+/**
+ * Typo guards rather than physiological judgements: nobody is 40 cm tall or weighs 500 kg, so a
+ * value outside these is a slip rather than a person.
+ */
+export const HEIGHT_MIN_CM = 100;
+export const HEIGHT_MAX_CM = 250;
+export const WEIGHT_MIN_KG = 30;
+export const WEIGHT_MAX_KG = 400;
+
+/** The floor's own message, for the case where the digits cannot be a unit mix-up. */
 export const BMI_MESSAGE =
-  "That target is below a BMI of 18.5. Please pick a higher target or talk to a doctor first.";
+  `That target is below a BMI of ${MIN_SAFE_BMI}. ` +
+  "Please pick a higher target or talk to a doctor first.";
 
 export const ONBOARDING_STEPS = [
   "about",
@@ -149,14 +162,10 @@ const formShape = {
   display_name: z.string().trim().min(1, "Please add a name.").max(60, "That name is a bit long."),
   dob: z.string().regex(ISO_DATE, "Please add your date of birth."),
   sex: z.enum(SEX_OPTIONS),
-  height_cm: z
-    .number({ invalid_type_error: "Please add your height." })
-    .min(100, "That height looks too short.")
-    .max(250, "That height looks too tall."),
-  weight_kg: z
-    .number({ invalid_type_error: "Please add your weight." })
-    .min(30, "That weight looks too low.")
-    .max(400, "That weight looks too high."),
+  // The ranges are checked after parsing rather than here, because the wording depends on the
+  // unit system the user picked and a field's own message cannot see its siblings.
+  height_cm: z.number({ invalid_type_error: "Please add your height." }),
+  weight_kg: z.number({ invalid_type_error: "Please add your weight." }),
   units: z.enum(["metric", "imperial"]),
   activity_level: activityLevelSchema,
   goal: z.enum(GOAL_OPTIONS),
@@ -185,6 +194,85 @@ function addAgeIssue(dob: string, ctx: z.RefinementCtx): void {
   }
 }
 
+type HeightFields = Pick<BaseForm, "height_cm" | "units">;
+type WeightFields = Pick<BaseForm, "weight_kg" | "units">;
+
+/**
+ * Height out of range, with the likelier explanation first when the digits allow one.
+ *
+ * The range exists to catch slips, and by far the commonest slip is the wrong unit: with the
+ * field in centimetres, somebody who thinks in inches types 65. "That height looks too short"
+ * on its own sends them hunting for a mistake in the number rather than in the unit select.
+ */
+export function heightMessage(cm: number, units: UnitSystem): string {
+  const symptom =
+    cm < HEIGHT_MIN_CM ? "That height looks too short." : "That height looks too tall.";
+  const mixUp =
+    units === "metric"
+      ? wrongUnit(cm, units, "length", (base) => base >= HEIGHT_MIN_CM && base <= HEIGHT_MAX_CM)
+      : null;
+  return mixUp === null ? symptom : `${symptom} ${wrongUnitSentence(mixUp)}`;
+}
+
+/** Weight out of range. Same treatment: with pounds selected, a kilogram number reads ~half. */
+export function weightMessage(kg: number, units: UnitSystem): string {
+  const symptom = kg < WEIGHT_MIN_KG ? "That weight looks too low." : "That weight looks too high.";
+  const mixUp = wrongUnit(
+    displayValue(kg, units, "mass"),
+    units,
+    "mass",
+    (base) => base >= WEIGHT_MIN_KG && base <= WEIGHT_MAX_KG,
+  );
+  return mixUp === null ? symptom : `${symptom} ${wrongUnitSentence(mixUp)}`;
+}
+
+/**
+ * A target under the BMI floor, which is more often a unit mistake than an unsafe goal.
+ *
+ * With pounds selected, a number meant in kilograms comes out at roughly half, which lands well
+ * under the floor and reads as "your goal is dangerous" to somebody whose only mistake was the
+ * unit select. So the unit reading goes first and the safety point second. When the digits
+ * cannot be a mix-up -- 40 kg at 165 cm is not 40 of anything else -- the plain message is the
+ * honest one, and speculating about units would be noise.
+ */
+export function targetWeightMessage(targetKg: number, heightCm: number, units: UnitSystem): string {
+  const floor = minSafeWeightKg(heightCm);
+  const mixUp = wrongUnit(
+    displayValue(targetKg, units, "mass"),
+    units,
+    "mass",
+    (base) => base >= floor,
+  );
+  if (mixUp === null) return BMI_MESSAGE;
+  return (
+    `That target looks very low for your height. ${wrongUnitSentence(mixUp)} ` +
+    `Otherwise it is a BMI of ${bmi(targetKg, heightCm).toFixed(1)}, below the ${MIN_SAFE_BMI} ` +
+    "floor — please pick a higher target or talk to a doctor first."
+  );
+}
+
+function addHeightIssue(value: HeightFields, ctx: z.RefinementCtx): void {
+  const cm = value.height_cm;
+  if (!Number.isFinite(cm)) return; // the type error is already reported
+  if (cm >= HEIGHT_MIN_CM && cm <= HEIGHT_MAX_CM) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["height_cm"],
+    message: heightMessage(cm, value.units),
+  });
+}
+
+function addWeightIssue(value: WeightFields, ctx: z.RefinementCtx): void {
+  const kg = value.weight_kg;
+  if (!Number.isFinite(kg)) return;
+  if (kg >= WEIGHT_MIN_KG && kg <= WEIGHT_MAX_KG) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["weight_kg"],
+    message: weightMessage(kg, value.units),
+  });
+}
+
 function addTargetWeightIssue(value: BaseForm, ctx: z.RefinementCtx): void {
   if (value.goal === "maintain") return;
   if (value.target_weight_kg == null) {
@@ -201,7 +289,7 @@ function addTargetWeightIssue(value: BaseForm, ctx: z.RefinementCtx): void {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["target_weight_kg"],
-      message: BMI_MESSAGE,
+      message: targetWeightMessage(value.target_weight_kg, value.height_cm, value.units),
     });
   }
 }
@@ -209,6 +297,8 @@ function addTargetWeightIssue(value: BaseForm, ctx: z.RefinementCtx): void {
 /** Whole-form validation, run immediately before the write to the database. */
 export const onboardingSchema = onboardingBaseSchema.superRefine((value, ctx) => {
   addAgeIssue(value.dob, ctx);
+  addHeightIssue(value, ctx);
+  addWeightIssue(value, ctx);
   addTargetWeightIssue(value, ctx);
 });
 
@@ -216,7 +306,12 @@ const aboutStepSchema = onboardingBaseSchema
   .pick({ display_name: true, dob: true, sex: true })
   .superRefine((value, ctx) => addAgeIssue(value.dob, ctx));
 
-const bodyStepSchema = onboardingBaseSchema.pick({ height_cm: true, weight_kg: true });
+const bodyStepSchema = onboardingBaseSchema
+  .pick({ height_cm: true, weight_kg: true, units: true })
+  .superRefine((value, ctx) => {
+    addHeightIssue(value, ctx);
+    addWeightIssue(value, ctx);
+  });
 
 const activityStepSchema = onboardingBaseSchema.pick({ activity_level: true });
 
@@ -266,7 +361,9 @@ function targetWeightError(form: OnboardingForm): FieldErrors {
   if (form.goal === "maintain") return {};
   if (form.target_weight_kg == null || form.height_cm == null) return {};
   if (form.target_weight_kg < minSafeWeightKg(form.height_cm)) {
-    return { target_weight_kg: BMI_MESSAGE };
+    return {
+      target_weight_kg: targetWeightMessage(form.target_weight_kg, form.height_cm, form.units),
+    };
   }
   return {};
 }

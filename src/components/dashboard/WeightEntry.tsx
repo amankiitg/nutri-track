@@ -3,7 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatLength, kgToLb, lbToKg, cmToIn, inToCm, type UnitSystem } from "@/lib/units";
+import {
+  formatLength,
+  kgToLb,
+  lbToKg,
+  cmToIn,
+  inToCm,
+  wrongUnit,
+  wrongUnitSentence,
+  type UnitSystem,
+} from "@/lib/units";
 import { weightDelta, type WeightEntry } from "@/lib/dashboard";
 
 /** Weigh-ins are recorded to two decimals by the column, so do not offer more. */
@@ -64,12 +73,18 @@ export function WeightEntry({
       : unitSystem === "imperial"
         ? inToCm(parsedWaist)
         : parsedWaist;
+  const waistInRange = (cm: number): boolean => cm > WAIST_MIN_CM && cm < WAIST_MAX_CM;
   const waistValid =
     parsedWaist === null ||
-    (Number.isFinite(parsedWaist) &&
-      waistCm !== null &&
-      waistCm > WAIST_MIN_CM &&
-      waistCm < WAIST_MAX_CM);
+    (Number.isFinite(parsedWaist) && waistCm !== null && waistInRange(waistCm));
+
+  // A waist is the likeliest field in the app to be typed in the wrong unit: inches and
+  // centimetres are far enough apart that a mix-up lands outside the bounds, and close enough
+  // that neither number looks obviously wrong on its own. Named first, then the range.
+  const waistMixUp =
+    parsedWaist === null || !Number.isFinite(parsedWaist)
+      ? null
+      : wrongUnit(parsedWaist, unitSystem, "length", waistInRange);
 
   const valid = weightValid && waistValid;
 
@@ -162,8 +177,9 @@ export function WeightEntry({
 
         {!waistValid && (
           <p role="alert" className="text-xs text-destructive">
-            A waist of {formatLength(WAIST_MIN_CM, unitSystem)} to{" "}
-            {formatLength(WAIST_MAX_CM, unitSystem)} is expected.
+            {waistMixUp !== null && `${wrongUnitSentence(waistMixUp)} `}A waist of{" "}
+            {formatLength(WAIST_MIN_CM, unitSystem)} to {formatLength(WAIST_MAX_CM, unitSystem)} is
+            expected.
           </p>
         )}
 

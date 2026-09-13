@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cmToFtIn,
   cmToIn,
+  displayValue,
   formatHeight,
   formatLength,
   formatWeight,
@@ -9,6 +10,8 @@ import {
   inToCm,
   kgToLb,
   lbToKg,
+  wrongUnit,
+  wrongUnitSentence,
 } from "./units";
 
 describe("formatLength", () => {
@@ -35,6 +38,61 @@ describe("formatLength", () => {
 
   it("takes a smaller number of decimals when asked", () => {
     expect(formatLength(80, "metric", 0)).toBe("80 cm");
+  });
+});
+
+describe("wrongUnit", () => {
+  const adultWeight = (base: number) => base >= 30 && base <= 400;
+  const adultHeight = (base: number) => base >= 100 && base <= 250;
+
+  it("spots a kilogram number typed into a pound field", () => {
+    // 60 lb is 27.2 kg, under any adult range. 60 kg is a person.
+    expect(wrongUnit(60, "imperial", "mass", adultWeight)).toMatchObject({
+      selectedLabel: "lb",
+      intendedLabel: "Metric",
+      typed: "60",
+      asRead: "27.2 kg",
+      asIntended: "60 kg",
+    });
+  });
+
+  it("spots an inches number typed into a centimetre field", () => {
+    // 65 cm is not a person's height; 65 in is.
+    expect(wrongUnit(65, "metric", "length", adultHeight)).toMatchObject({
+      typed: "65",
+      asRead: "25.6 in",
+      asIntended: "65 in",
+    });
+  });
+
+  it("says nothing when the value is nobody's measurement in either unit", () => {
+    // 4 is not 4 kg or 4 lb. Speculating about units here is noise on top of the real message.
+    expect(wrongUnit(4, "imperial", "mass", adultWeight)).toBeNull();
+  });
+
+  it("says nothing when the guard would have passed anyway", () => {
+    expect(wrongUnit(70, "imperial", "mass", adultWeight)).toBeNull();
+  });
+
+  it("rounds the digits it prints, because they arrive through a conversion", () => {
+    // A field showing 55 lb has been through the database as 24.947 kg and back as 54.994.
+    const asShown = displayValue(lbToKg(55), "imperial", "mass");
+    expect(wrongUnit(asShown, "imperial", "mass", adultWeight)?.typed).toBe("55");
+  });
+
+  it("takes the field's own name for its unit", () => {
+    // An imperial height is two boxes, so the field says "ft and in" rather than "in".
+    expect(wrongUnit(65, "metric", "length", adultHeight, "ft and in")?.selectedLabel).toBe(
+      "ft and in",
+    );
+  });
+
+  it("words the sentence with the cause before the consequence", () => {
+    const mixUp = wrongUnit(60, "imperial", "mass", adultWeight);
+    if (mixUp === null) throw new Error("expected a unit mix-up");
+    expect(wrongUnitSentence(mixUp)).toBe(
+      "lb is selected, so 60 is being read as 27.2 kg. If you meant 60 kg, switch to Metric.",
+    );
   });
 });
 
