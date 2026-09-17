@@ -52,6 +52,16 @@ Supabase, Recharts.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
    Zod — including anything a model returns.
 7. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
+8. **Reproduce through the real input, and start from an intermediate state if that is where the
+   bug lives.** A reproduction that begins at a clean, valid value cannot see a defect that lives
+   *between* two valid values. Twice in this codebase a function behaved correctly when called
+   directly while the screen did not: the imperial height pair refused to commit unless its
+   sibling already had, and an emptied grams box re-anchored 200 kcal onto 5 g at the first digit
+   typed into it. Both were found by typing into the field and reading every keystroke, and
+   neither by calling the function with tidy arguments. So when the report involves *editing*,
+   drive the edit: clear the field, type one character at a time, blur it, and assert the whole
+   chain of values rather than the final one. An intermediate value can be saved, so an
+   intermediate value is a real state.
 
 ## Commands
 
