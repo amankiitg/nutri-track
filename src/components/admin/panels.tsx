@@ -108,7 +108,7 @@ export function InviteList({ adminId }: { adminId: string }) {
             <Input
               value={firstName}
               onChange={(event) => setFirstName(event.target.value)}
-              placeholder="Priya"
+              placeholder="First Name"
               autoComplete="off"
               aria-label="Their first name"
               className="w-1/3 min-w-24"
