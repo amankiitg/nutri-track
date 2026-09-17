@@ -77,10 +77,10 @@ function PrivacyPage() {
       <Section title="Where it lives">
         <p>
           Everything is in Supabase, a hosted Postgres database and file storage service: the rows
-          in the database and the photos in a private storage bucket. That bucket is not public.
-          The app reads a photo through a short-lived signed link that only your own signed-in
-          session can obtain, and a photo is stored under your account id, which is what the
-          access rules check.
+          in the database and the photos in a private storage bucket. That bucket is not public. The
+          app reads a photo through a short-lived signed link that only your own signed-in session
+          can obtain, and a photo is stored under your account id, which is what the access rules
+          check.
         </p>
         <p>
           The meal analysis runs on a service hosted by Render, and the website is served by
@@ -92,8 +92,8 @@ function PrivacyPage() {
         <p>
           You, and only you, through the app. That is enforced by the database rather than by the
           app's screens: every table carries an access rule requiring the row's owner to be the
-          person asking, and the photo bucket's rules require the same. A bug in a screen could
-          show an error; it could not show you somebody else's meals.
+          person asking, and the photo bucket's rules require the same. A bug in a screen could show
+          an error; it could not show you somebody else's meals.
         </p>
         <p>
           I am the admin, so I keep the invite list. Through the admin screen I can see the
@@ -102,9 +102,9 @@ function PrivacyPage() {
         </p>
         <p>
           I cannot see anyone's meals, photos, weight, waist or targets through the admin screen,
-          and there is no screen that shows them. As the person who runs the database I could
-          reach any row directly, the way any hosted database works. I have not, and no part of
-          the app does.
+          and there is no screen that shows them. As the person who runs the database I could reach
+          any row directly, the way any hosted database works. I have not, and no part of the app
+          does.
         </p>
       </Section>
 
@@ -117,8 +117,7 @@ function PrivacyPage() {
         </p>
         <p>
           If you use the microphone, your browser transcribes the recording using its own speech
-          service, which in most browsers means Google. That audio never reaches this app's
-          servers.
+          service, which in most browsers means Google. That audio never reaches this app's servers.
         </p>
       </Section>
 
@@ -141,7 +140,10 @@ function PrivacyPage() {
           There is no button for it. I would rather say that plainly than point you at something
           that does not exist.
         </p>
-        <p>To have your data removed in the meantime, reply to the email you were invited with and ask. That will:</p>
+        <p>
+          To have your data removed in the meantime, reply to the email you were invited with and
+          ask. That will:
+        </p>
         <List
           items={[
             "delete your profile, targets, meals, meal items, weight and waist readings, and your usage counts",
@@ -161,8 +163,8 @@ function PrivacyPage() {
 
       <Section title="Changes">
         <p>
-          If what is kept, or where it goes, changes, this page changes with it. The date at the
-          top is the last time it did.
+          If what is kept, or where it goes, changes, this page changes with it. The date at the top
+          is the last time it did.
         </p>
       </Section>
 
