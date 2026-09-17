@@ -44,6 +44,21 @@ export interface ReviewItem {
    * what the user accepted. Null for an item added by hand.
    */
   llmRaw: JsonValue | null;
+  /**
+   * Each nutrient's value **per gram**: the unrounded basis a grams change scales from.
+   *
+   * Held separately because scaling the displayed values compounds their rounding. Each edit
+   * rounds to a tenth and the next edit multiplies that tenth, so the answer depends on the route
+   * taken to a grams value rather than on the grams value: measured, ten small increments to
+   * 218 g left carbs at 74.7 where one jump to 218 g gave 74.9. From a density the displayed
+   * value is computed once from an unrounded basis, so the route stops mattering.
+   *
+   * Per gram rather than per item, so an explicit nutrient edit survives correctly: typing
+   * calories at 300 g is a correction to the food's density, so that becomes the density later
+   * grams changes use. Absent, or missing a field, means no basis is known for it and the
+   * displayed value is used instead.
+   */
+  perGram?: Partial<Record<NutrientField, number>>;
 }
 
 /** The nutrient fields, in the order the card shows them. */
@@ -82,6 +97,15 @@ function roundTo(value: number, digits = 1): number {
 
 /** Builds a review item from what the service returned. */
 export function reviewItemFromDraft(draft: MealItemDraft): ReviewItem {
+  const perGram: Partial<Record<NutrientField, number>> = {};
+  // No grams means no density to record, and no ratio to apply later either.
+  if (draft.grams !== null && draft.grams > 0) {
+    for (const field of SCALED_NUTRIENTS) {
+      const value = draft[field];
+      if (value !== null) perGram[field] = value / draft.grams;
+    }
+  }
+
   return {
     id: crypto.randomUUID(),
     name: draft.name,
@@ -97,10 +121,32 @@ export function reviewItemFromDraft(draft: MealItemDraft): ReviewItem {
     sodium_mg: draft.sodium_mg,
     confidence: draft.confidence,
     userEdited: false,
+    perGram,
     // The draft is a plain object that came out of JSON.parse and was then normalised,
     // so it is JSON by construction; the cast is because its interface is named.
     llmRaw: draft as unknown as JsonValue,
   };
+}
+
+/**
+ * The densities with one field replaced, or dropped when it is no longer known.
+ *
+ * Used by an explicit edit: the number the user typed becomes the basis at the grams on screen,
+ * which is what "this food is denser than the model thought" means.
+ */
+function withDensity(
+  item: ReviewItem,
+  field: NutrientField,
+  value: number | null,
+): Partial<Record<NutrientField, number>> {
+  const perGram: Partial<Record<NutrientField, number>> = { ...(item.perGram ?? {}) };
+  const grams = item.grams;
+  if (value === null || grams === null || grams <= 0) {
+    delete perGram[field];
+  } else {
+    perGram[field] = value / grams;
+  }
+  return perGram;
 }
 
 /** An empty item for the "add item" button. */
@@ -219,11 +265,14 @@ export function rescaleForGrams(item: ReviewItem, nextGrams: number | null): Rev
   const scaled: ReviewItem = { ...item, grams: nextGrams, userEdited: true };
   if (!canScale) return scaled;
 
-  const ratio = nextGrams / previous;
   for (const field of SCALED_NUTRIENTS) {
     const current = item[field];
     if (current === null) continue;
-    scaled[field] = roundTo(current * ratio);
+    // Scale from the density when there is one. Falling back to the displayed value over the
+    // previous grams is the same arithmetic and reproduces the old behaviour exactly, which is
+    // what an item built by hand gets because it carries no density.
+    const density = item.perGram?.[field] ?? current / previous;
+    scaled[field] = roundTo(density * nextGrams);
   }
   return scaled;
 }
@@ -235,12 +284,18 @@ export function setNutrient(item: ReviewItem, field: NutrientField, raw: string)
     // Only a nullable field may be emptied; calories and the macros would become
     // NULL in a NOT NULL column.
     return NULLABLE_NUTRIENTS.has(field)
-      ? { ...item, [field]: null, userEdited: true }
-      : { ...item, [field]: 0, userEdited: true };
+      ? { ...item, [field]: null, userEdited: true, perGram: withDensity(item, field, null) }
+      : { ...item, [field]: 0, userEdited: true, perGram: withDensity(item, field, null) };
   }
   const value = Number(trimmed);
   if (!Number.isFinite(value)) return item;
-  return { ...item, [field]: roundTo(Math.max(0, value)), userEdited: true };
+  const clamped = Math.max(0, value);
+  return {
+    ...item,
+    [field]: roundTo(clamped),
+    userEdited: true,
+    perGram: withDensity(item, field, clamped),
+  };
 }
 
 export function setGrams(item: ReviewItem, raw: string): ReviewItem {

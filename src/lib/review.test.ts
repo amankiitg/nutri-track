@@ -34,7 +34,12 @@ const DRAFT: MealItemDraft = {
 };
 
 function item(overrides: Partial<ReviewItem> = {}): ReviewItem {
-  return { ...reviewItemFromDraft(DRAFT), ...overrides };
+  // Built through the draft rather than spread over a finished item, because the density a grams
+  // change scales from is computed from the draft. Overriding `grams` afterwards would leave the
+  // density describing a different portion than the one on screen, which is not a state the app
+  // can reach: every real path that changes grams goes through `rescaleForGrams`.
+  const merged = { ...DRAFT, ...overrides };
+  return { ...reviewItemFromDraft(merged), ...overrides };
 }
 
 describe("rescaleForGrams — the rule", () => {
