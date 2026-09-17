@@ -131,6 +131,12 @@ npm test
   cannot work, or a retention rule that hard-deletes soft-deleted meals after N days. If
   photo storage ever becomes a problem, that retention rule is the fix, not a change to
   what the sweeper protects.
+- **Days are frozen at write time; displayed clock times are not.** A meal's `local_date` never
+  moves, but its *time* is rendered by `formatTimeInZone(meal.eaten_at, timeZone)` using the
+  profile's **current** zone. Change the zone and meals logged before the change keep their day
+  while their clock times shift. Accepted knowingly, and a separate decision from the day boundary:
+  if it ever matters, the fix is to store the zone alongside the meal and render with that, not to
+  change how `local_date` is computed.
 
 ## Layout and conventions
 
@@ -141,12 +147,27 @@ npm test
   worked example. Do not reimplement this maths anywhere else.
 - `src/lib/dashboard.ts` — the Today dashboard's RPC calls and the pure presentation logic
   behind the ring, the macro bars and the verdict sentence. It sums nothing: every total,
-  average and count comes from a Postgres function over `daily_summaries`, because a day is
-  a day in the profile's timezone and a trailing window has to include the days with no
-  meals. Those functions are in `20260911160000_today_dashboard_functions.sql` and
+  average and count comes from a Postgres function over `daily_summaries`, because a trailing
+  window has to include the days with no meals. Those functions are in
+  `20260911160000_today_dashboard_functions.sql` and
   `20260911161000_dashboard_verdict_and_empty_days.sql`. `daily_totals` and `trailing_days`
   return a null `status` for a day with nothing logged: an unlogged day is unknown, not
   "under".
+- **A meal's day is stored when the meal is written, and never derived when it is read.**
+  `meals.local_date` is set by a `before insert or update of eaten_at` trigger from the profile's
+  timezone at that moment (`20260917120000_meals_local_date.sql`), and every reader uses it:
+  `daily_summaries` selects it, `meals_for_day` filters on it. Nothing may compute a day from
+  `eaten_at` again. Until this change the day was derived at read time from the *current* profile
+  timezone, which made the day boundary a function of a setting: changing the timezone re-cut every
+  historical day, which is exactly why the app has never followed the device. It still does not.
+  The profile zone is a setting changed deliberately, and new meals use it from that point on while
+  history stays put. The backfill used the profile's current timezone — the same expression the old
+  view evaluated — **because that is the only value that cannot invent history**. If a zone did
+  change in the past, those meals are dated as of today's zone rather than the zone at the time,
+  which is what the app already showed. **Do not "fix" that by guessing historical zones** from
+  `profiles.updated_at` or anything else: `updated_at` moves for weight, protein and goals too, so
+  it is not evidence of a zone change, and a guess would silently move meals between days with no
+  way to tell which.
 - `src/lib/trends.ts` — the Trends screen: which dates to ask about, and how to say them.
   `get_period_summary` and `get_weight_series` (`20260911180000`, `20260911181000`) do all
   the aggregation, over the same `trailing_days` day spine the dashboard uses. Dates cross
