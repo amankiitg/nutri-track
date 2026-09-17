@@ -32,6 +32,21 @@ Supabase, Recharts.
    — `tools/invite/src/redact.ts` exists for that and has the tests to match — which includes
    `imapflow`'s unhandled `error` event, an uncaught exception that prints a stack.
 
+   The **deployed service** holds a separate Gmail credential, so an admin can invite someone from
+   the admin page on a phone: `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`,
+   `GMAIL_OAUTH_REFRESH_TOKEN` and `INVITE_SENDER_ADDRESS`, declared in `server/src/config.ts` and
+   read only by `server/src/gmail.ts`. An OAuth refresh token rather than an app password, because
+   this one lives on Render: revocable on its own, scoped, and attributed to a named app in the
+   account's third-party access list. `GMAIL_COMPOSE_SCOPE` is a **restricted** scope, which for a
+   public app would mean Google's verification plus an annual security assessment; this app is
+   personal use under Google's under-100-users exemption, so it needs neither and the reader
+   clicks through one unverified-app screen. Passing 100 users would change that. `POST /invite`
+   **creates a draft and can never send**: the only Gmail endpoint in that file is `drafts.create`,
+   and `server/test/gmail.test.ts` reads the source and fails if a send path is ever named in it,
+   including in a comment. The invite body itself is `shared/invite-email.ts`, which `tools/invite`
+   imports too, so there is one copy of what an invite says. Adding the address and drafting the
+   email are one request, drafted first, so a failure grants nobody access.
+
 5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
    RLS is a bug.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with

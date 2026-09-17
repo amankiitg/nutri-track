@@ -19,8 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
-  addInvite,
   approveRequest,
+  draftInvite,
   fetchInviteRequests,
   fetchInvites,
   fetchSpend,
@@ -48,20 +48,32 @@ function PanelError({ message }: { message: string }) {
 export function InviteList({ adminId }: { adminId: string }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const invites = useQuery({ queryKey: ["admin-invites"], queryFn: fetchInvites });
 
+  /**
+   * One action, not two. The service drafts the email and adds the address in a single request,
+   * in an order where a failure grants nobody access — so this page cannot leave the two out of
+   * step, and there is no way to add someone here with no draft waiting for you in Gmail.
+   */
   const add = useMutation({
-    mutationFn: (email: string) => addInvite(email, adminId),
-    onSuccess: (stored) => {
+    mutationFn: (input: { email: string; firstName: string }) =>
+      draftInvite(input.email, input.firstName),
+    onSuccess: (outcome) => {
       setDraft("");
+      setFirstName("");
       setError(null);
-      toast.success(`${stored} can now sign in`);
+      toast.success(
+        outcome.alreadyInvited
+          ? `Draft ready. ${outcome.email} was already on the list, so nothing changed there.`
+          : `Draft ready for ${outcome.email}. Read it in Gmail, then send it.`,
+      );
       void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
     },
     onError: (caught: unknown) => {
-      setError(caught instanceof Error ? caught.message : "Could not add that address.");
+      setError(caught instanceof Error ? caught.message : "Could not create the invite.");
     },
   });
 
@@ -76,7 +88,7 @@ export function InviteList({ adminId }: { adminId: string }) {
   });
 
   const normalized = normalizeEmail(draft);
-  const canAdd = isPlausibleEmail(draft) && !add.isPending;
+  const canAdd = isPlausibleEmail(draft) && firstName.trim() !== "" && !add.isPending;
 
   return (
     <Card className="card-soft">
@@ -85,30 +97,43 @@ export function InviteList({ adminId }: { adminId: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <form
-          className="flex gap-2"
+          className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (!canAdd) return;
-            add.mutate(normalized);
+            add.mutate({ email: normalized, firstName: firstName.trim() });
           }}
         >
-          <Input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="name@example.com"
-            inputMode="email"
-            autoComplete="off"
-            aria-label="Address to invite"
-            className="flex-1"
-          />
-          <Button type="submit" className="rounded-full" disabled={!canAdd}>
+          <div className="flex gap-2">
+            <Input
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              placeholder="Priya"
+              autoComplete="off"
+              aria-label="Their first name"
+              className="w-1/3 min-w-24"
+            />
+            <Input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="name@example.com"
+              inputMode="email"
+              autoComplete="off"
+              aria-label="Address to invite"
+              className="flex-1"
+            />
+          </div>
+          <Button type="submit" className="w-full rounded-full" disabled={!canAdd}>
             {add.isPending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="mr-1 size-4 animate-spin" aria-hidden="true" />
             ) : (
               <Plus className="mr-1 size-4" aria-hidden="true" />
             )}
-            Add
+            Draft the invite
           </Button>
+          <p className="text-xs text-muted-foreground">
+            Adds them to the invite list and leaves a draft in Gmail. It never sends.
+          </p>
         </form>
 
         {draft !== "" && normalized !== draft && (

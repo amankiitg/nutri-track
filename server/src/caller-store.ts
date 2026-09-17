@@ -17,6 +17,10 @@ import { safeTimeZone } from "./time";
 export const SUPABASE_FAILURE_MESSAGE =
   "Could not read this meal's photos. They may have been removed — capture the meal again, or type what you ate instead.";
 
+/** The invite action's own failure, so an admin hears which of the two halves went wrong. */
+export const INVITE_FAILURE_MESSAGE =
+  "Could not add that address to the invite list. Nothing was changed, so try again.";
+
 export interface LlmCallRecord {
   model: string;
   promptTokens: number | null;
@@ -39,6 +43,18 @@ export interface CallerStore {
   timeZone(): Promise<string>;
   /** Reads photos the caller owns. Storage policies enforce the ownership. */
   loadPhotos(paths: readonly string[]): Promise<Photo[]>;
+  /**
+   * Whether the caller is an admin, asked of the database with the caller's own token.
+   *
+   * The answer comes from `is_admin()`, which reads `auth.uid()` from that token, so it cannot
+   * be spoofed by the client. This is the check that makes /invite admin-only; the UI hiding the
+   * button is not a check.
+   */
+  isAdmin(): Promise<boolean>;
+  /** Whether this address is already on the invite list. Admin-only, by the table's policy. */
+  hasAllowedEmail(email: string): Promise<boolean>;
+  /** Adds the address. Idempotent, so a retry after a failure adds no second row. */
+  addAllowedEmail(email: string): Promise<void>;
 }
 
 const timeZoneRow = z.object({ timezone: z.string().nullable() });
@@ -58,6 +74,18 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
   function fail(operation: string, error: { message: string }): never {
     log("error", "supabase call failed", { operation, userId, error: error.message });
     throw new ApiError(502, "upstream_error", SUPABASE_FAILURE_MESSAGE);
+  }
+
+  /**
+   * The same, for a table whose rows *are* an email address.
+   *
+   * Postgres puts the offending key value in some of its messages — a unique violation says
+   * "Key (email)=(someone@example.com) already exists" — so the message is not logged here. The
+   * code is enough to act on and it names nobody.
+   */
+  function failQuietly(operation: string, code: string | undefined): never {
+    log("error", "supabase call failed", { operation, userId, code: code ?? "unknown" });
+    throw new ApiError(502, "upstream_error", INVITE_FAILURE_MESSAGE);
   }
 
   return {
@@ -110,6 +138,31 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
         });
       }
       return photos;
+    },
+
+    async isAdmin() {
+      const { data, error } = await client.rpc("is_admin");
+      if (error) fail("is_admin", error);
+      return data === true;
+    },
+
+    async hasAllowedEmail(email) {
+      const { data, error } = await client
+        .from("allowed_emails")
+        .select("email")
+        .eq("email", email)
+        .maybeSingle();
+      if (error) failQuietly("allowed_emails select", error.code);
+      return data !== null;
+    },
+
+    async addAllowedEmail(email) {
+      // DO NOTHING rather than DO UPDATE: the row's own address is the key, there is nothing to
+      // change, and a retry after a partly failed invite should not rewrite who added it first.
+      const { error } = await client
+        .from("allowed_emails")
+        .upsert({ email, added_by: userId }, { onConflict: "email", ignoreDuplicates: true });
+      if (error) failQuietly("allowed_emails insert", error.code);
     },
   };
 }

@@ -67,6 +67,28 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
 
+      # --- Gmail, for the admin invite feature --------------------------------
+      # These are the only secrets this service holds, and they must never appear
+      # in a response, a log or an error. `server/src/gmail.ts` is the only thing
+      # that reads them and it scrubs them from everything it logs.
+      #
+      # An OAuth refresh token rather than an app password, because this now lives
+      # on Render: it is revocable on its own, scoped, and shows up as a named app
+      # in the account's third-party access list. `npm run gmail:consent` (from
+      # server/, on a laptop) is the one-time step that produces it.
+      #
+      # Optional: with any of these missing the service still starts and serves
+      # /parse-meal, and /invite answers that the feature is not set up.
+      - key: GMAIL_OAUTH_CLIENT_ID
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_OAUTH_REFRESH_TOKEN
+        sync: false
+      # The mailbox the drafts are created in. Not a secret.
+      - key: INVITE_SENDER_ADDRESS
+        sync: false
+
   # ---------------------------------------------------------------------------
   # The orphan-photo sweeper (server/scripts/sweep-orphan-photos.ts).
   #

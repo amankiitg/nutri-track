@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { InviteList, InviteRequestsPanel, SpendPanel } from "./panels";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -20,7 +21,14 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: vi.fn(),
     rpc: vi.fn(),
+    auth: { getSession: vi.fn() },
   },
+}));
+
+// The invite goes to the service, not to PostgREST directly: it drafts the email and adds the
+// address in one request. Only the URL is mocked here; `fetch` carries the rest.
+vi.mock("@/lib/capture", () => ({
+  parseMealUrl: () => "https://meals.example.com/parse-meal",
 }));
 
 vi.mock("sonner", () => ({
@@ -30,6 +38,7 @@ vi.mock("sonner", () => ({
 const client = supabase as unknown as {
   from: ReturnType<typeof vi.fn>;
   rpc: ReturnType<typeof vi.fn>;
+  auth: { getSession: ReturnType<typeof vi.fn> };
 };
 
 const INVITE_ROWS = [
@@ -53,7 +62,23 @@ const INVITE_ROWS = [
 
 /** Records what was inserted, and lets a test make it fail. */
 let inserted: Array<Record<string, unknown>> = [];
-let insertError: { message: string } | null = null;
+
+/** Every request the panel made to the service. */
+let requests: Array<{ url: string; body: unknown }> = [];
+
+/** What the service replies with. */
+function serviceSays(status: number, body: unknown) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }),
+  );
+}
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,8 +87,14 @@ function renderWithQuery(ui: React.ReactElement) {
 
 beforeEach(() => {
   inserted = [];
-  insertError = null;
+  requests = [];
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+
+  client.auth.getSession.mockResolvedValue({
+    data: { session: { access_token: "token-1" } },
+    error: null,
+  });
 
   client.rpc.mockImplementation((name: string) => {
     if (name === "admin_invites") return Promise.resolve({ data: INVITE_ROWS, error: null });
@@ -78,7 +109,7 @@ beforeEach(() => {
       return {
         insert: (row: Record<string, unknown>) => {
           inserted.push(row);
-          return Promise.resolve({ error: insertError });
+          return Promise.resolve({ error: null });
         },
         delete: () => ({
           eq: () => Promise.resolve({ error: null }),
@@ -146,56 +177,78 @@ describe("the invite list", () => {
     expect(await screen.findByText("new.friend@example.com")).toBeInTheDocument();
   });
 
-  it("sends the address in the form the database will match", async () => {
+  it("sends the normalised address to the service, and does not write the list itself", async () => {
     const user = userEvent.setup();
-    renderWithQuery(<InviteList adminId="admin-1" />);
-
-    await user.type(screen.getByLabelText("Address to invite"), "  New.Friend@Example.COM ");
-    await user.click(screen.getByRole("button", { name: /add/i }));
-
-    // What the panel sends. That `addInvite` would normalise anyway is asserted separately
-    // in `lib/admin-client.test.ts` — this file cannot reach it, because the panel has
-    // already normalised by the time the call is made. Verified by breaking it: removing
-    // the normalisation from `addInvite` failed that test and not this one.
-    await waitFor(() => {
-      expect(inserted).toEqual([{ email: "new.friend@example.com", added_by: "admin-1" }]);
+    serviceSays(200, {
+      email: "new.friend@example.com",
+      firstName: "Priya",
+      draftId: "draft-1",
+      alreadyInvited: false,
     });
-  });
-
-  it("will not send an address that could never match", async () => {
-    const user = userEvent.setup();
     renderWithQuery(<InviteList adminId="admin-1" />);
 
-    await user.type(screen.getByLabelText("Address to invite"), "not-an-address");
+    await user.type(screen.getByLabelText("Their first name"), "Priya");
+    await user.type(screen.getByLabelText("Address to invite"), "  New.Friend@Example.COM ");
+    await user.click(screen.getByRole("button", { name: /draft the invite/i }));
 
-    expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+    await waitFor(() => {
+      expect(requests).toHaveLength(1);
+    });
+    // The address the database will match, and it goes to /invite rather than into the table: the
+    // service adds it in the same request that drafts the email, so the two cannot drift.
+    expect(requests[0]?.url).toBe("https://meals.example.com/invite");
+    expect(requests[0]?.body).toEqual({
+      email: "new.friend@example.com",
+      firstName: "Priya",
+    });
     expect(inserted).toEqual([]);
   });
 
-  it("says an address is already on the list rather than showing a constraint name", async () => {
+  it("will not send an address that could never match, or an invite with no name", async () => {
     const user = userEvent.setup();
-    insertError = {
-      message: 'duplicate key value violates unique constraint "allowed_emails_pkey"',
-    };
+    serviceSays(200, {});
     renderWithQuery(<InviteList adminId="admin-1" />);
 
-    await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
-    await user.click(screen.getByRole("button", { name: /add/i }));
+    await user.type(screen.getByLabelText("Address to invite"), "not-an-address");
+    expect(screen.getByRole("button", { name: /draft the invite/i })).toBeDisabled();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("already on the list");
+    // A name is needed for the greeting, so an invite without one is not sent either.
+    await user.clear(screen.getByLabelText("Address to invite"));
+    await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
+    expect(screen.getByRole("button", { name: /draft the invite/i })).toBeDisabled();
+
+    expect(requests).toEqual([]);
   });
 
-  it("reports a non-admin clearly, because that is what RLS looks like from here", async () => {
+  it("says an address was already on the list rather than claiming it was added", async () => {
     const user = userEvent.setup();
-    insertError = {
-      message: 'new row violates row-level security policy for table "allowed_emails"',
-    };
+    serviceSays(200, {
+      email: "friend@example.com",
+      firstName: "Priya",
+      draftId: "draft-2",
+      alreadyInvited: true,
+    });
     renderWithQuery(<InviteList adminId="admin-1" />);
 
+    await user.type(screen.getByLabelText("Their first name"), "Priya");
     await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
-    await user.click(screen.getByRole("button", { name: /add/i }));
+    await user.click(screen.getByRole("button", { name: /draft the invite/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("needs an admin account");
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("already on the list"));
+    });
+  });
+
+  it("shows the service's own refusal, which is written for a phone", async () => {
+    const user = userEvent.setup();
+    serviceSays(403, { error: { code: "forbidden", message: "Only an admin can invite people." } });
+    renderWithQuery(<InviteList adminId="admin-1" />);
+
+    await user.type(screen.getByLabelText("Their first name"), "Priya");
+    await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
+    await user.click(screen.getByRole("button", { name: /draft the invite/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Only an admin can invite people.");
   });
 });
 

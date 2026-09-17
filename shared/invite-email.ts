@@ -1,8 +1,13 @@
 /**
  * The invite, as the single source.
  *
- * `docs/invite-email.html` is generated from this file by `npm run preview` and is not
- * hand-edited: two copies of an email drift, and the copy that drifts is the one you send.
+ * Two things read it: the local tool in `tools/invite`, which renders `docs/invite-email.html`
+ * with `npm run preview`, and the parse-meal service, which builds the draft the admin page asks
+ * for. One copy on purpose: two copies of an email drift, and the copy that drifts is the one you
+ * send.
+ *
+ * It lives in `shared/` because both the service and the tool import it, and it stays free of
+ * browser and Node APIs for the same reason `shared/meal-parse.ts` does.
  *
  * The HTML is table layout with every style inline because Gmail discards `<style>` blocks and
  * `@media` queries when markup is pasted into its composer. The palette is the app's own,
@@ -38,6 +43,31 @@ export const PREVIEW: InviteRecipient = {
   firstName: "{{First name}}",
   invitedEmail: "{{invited email}}",
 };
+
+/**
+ * The message fields both transports hand to their composer.
+ *
+ * The content is assembled here so that the local tool and the service cannot disagree about
+ * what an invite says: they differ only in how they post it, IMAP append versus the Gmail API.
+ */
+export function inviteMessageFields(
+  recipient: InviteRecipient,
+  senderAddress: string,
+): {
+  from: { name: string; address: string };
+  to: { name: string; address: string };
+  subject: string;
+  text: string;
+  html: string;
+} {
+  return {
+    from: { name: SENDER_NAME, address: senderAddress },
+    to: { name: recipient.firstName, address: recipient.invitedEmail },
+    subject: SUBJECT,
+    text: renderInviteText(recipient),
+    html: renderInviteHtml(recipient),
+  };
+}
 
 /** The HTML part. `multipart/alternative` carries this alongside the plain text below. */
 export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): string {

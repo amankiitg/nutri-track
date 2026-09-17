@@ -8,7 +8,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createdPage, escapeHtml, formPage, problemPage } from "./page.js";
-import { SUBJECT } from "./invite.js";
+import { SUBJECT } from "../../../shared/invite-email.js";
 
 test("the form is two boxes and a button, and posts to the draft route", () => {
   const html = formPage("aman@example.com");

@@ -5,7 +5,7 @@
  * cannot break is worth more here than one that feels app-like. The credential is never sent to
  * the browser — this page only ever learns the outcome.
  */
-import { SENDER_NAME, SUBJECT } from "./invite.js";
+import { SENDER_NAME, SUBJECT } from "../../../shared/invite-email.js";
 
 /**
  * The name and address come from the form and are echoed back, so they are escaped.

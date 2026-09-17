@@ -10,8 +10,10 @@ import type { VerifiedUser } from "../src/auth";
 import type { CallerStore, LlmCallRecord } from "../src/caller-store";
 import type { Config } from "../src/config";
 import { ApiError } from "../src/errors";
+import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
 import { MAX_LLM_CALLS_PER_DAY, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
+import { SUBJECT } from "../../shared/invite-email";
 
 const USER: VerifiedUser = { id: "user-1", email: "aman@example.com" };
 const TOKEN = "a-valid-access-token";
@@ -59,6 +61,17 @@ interface HarnessOptions {
   /** null makes the verifier reject the token. */
   user?: VerifiedUser | null;
   recordThrows?: boolean;
+  /** What `is_admin()` would answer for this caller. */
+  isAdmin?: boolean;
+  /** What the invite list already holds for the address being invited. */
+  alreadyInvited?: boolean;
+  /** Makes the insert into allowed_emails fail, as a policy refusal would. */
+  addEmailThrows?: boolean;
+  /** Makes the Gmail draft fail, as a revoked refresh token would. */
+  draftThrows?: boolean;
+  /** Overrides for the invite feature's configuration. */
+  gmail?: GmailDraftClient | null;
+  inviteSender?: string | null;
   /** Makes the model client fail the way an unreachable upstream does. */
   llmThrows?: boolean;
   body?: unknown;
@@ -67,6 +80,11 @@ interface HarnessOptions {
 function buildHarness(options: HarnessOptions = {}) {
   const completions: CompletionRequest[] = [];
   const recorded: LlmCallRecord[] = [];
+  const addedEmails: string[] = [];
+  const checkedEmails: string[] = [];
+  const draftedMime: string[] = [];
+  /** The order the two halves of an invite happened in. */
+  const order: string[] = [];
   const countedSince: Date[] = [];
   const loadedPaths: string[][] = [];
   const verifiedTokens: string[] = [];
@@ -110,7 +128,35 @@ function buildHarness(options: HarnessOptions = {}) {
       loadedPaths.push([...paths]);
       return paths.map(() => ({ base64: "QUJD", mimeType: "image/jpeg" }));
     },
+    async isAdmin() {
+      return options.isAdmin ?? false;
+    },
+    async hasAllowedEmail(email) {
+      checkedEmails.push(email);
+      return options.alreadyInvited ?? false;
+    },
+    async addAllowedEmail(email) {
+      order.push("insert");
+      addedEmails.push(email);
+      if (options.addEmailThrows) {
+        throw new ApiError(502, "upstream_error", "Could not add that address to the invite list.");
+      }
+    },
   };
+
+  const gmail: GmailDraftClient | null =
+    options.gmail === undefined
+      ? {
+          async createDraft(mime) {
+            order.push("draft");
+            draftedMime.push(mime.toString("utf8"));
+            if (options.draftThrows) {
+              throw new ApiError(502, "upstream_error", "Could not create the draft in Gmail.");
+            }
+            return "draft-1";
+          },
+        }
+      : options.gmail;
 
   const app = createApp({
     config: CONFIG,
@@ -122,11 +168,117 @@ function buildHarness(options: HarnessOptions = {}) {
       return options.user ?? USER;
     },
     forCaller: () => store,
+    gmail,
+    inviteSender: options.inviteSender === undefined ? "aman@example.com" : options.inviteSender,
     now: () => NOW,
   });
 
-  return { app, completions, recorded, countedSince, loadedPaths, verifiedTokens };
+  return {
+    app,
+    completions,
+    recorded,
+    countedSince,
+    loadedPaths,
+    verifiedTokens,
+    addedEmails,
+    checkedEmails,
+    draftedMime,
+    order,
+  };
 }
+
+describe("POST /invite", () => {
+  const body = { email: "Priya@Example.com", firstName: "  Priya  " };
+
+  it("refuses a caller who is not an admin, and does nothing at all", async () => {
+    const { app, addedEmails, draftedMime } = buildHarness({ isAdmin: false });
+
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send(body);
+
+    expect(response.status).toBe(403);
+    // The point of the test: hiding the button in the UI is not the check. Neither half ran.
+    expect(addedEmails).toEqual([]);
+    expect(draftedMime).toEqual([]);
+  });
+
+  it("drafts the email before adding the address, so a failure cannot grant access", async () => {
+    const { app, order, addedEmails } = buildHarness({ isAdmin: true });
+
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(order).toEqual(["draft", "insert"]);
+    // Normalised, because allowed_emails stores lower(trim(...)) and an invite stored any other
+    // way is one that looks added and can never match.
+    expect(addedEmails).toEqual(["priya@example.com"]);
+    expect(response.body).toEqual({
+      email: "priya@example.com",
+      firstName: "Priya",
+      draftId: "draft-1",
+      alreadyInvited: false,
+    });
+  });
+
+  it("leaves the address off the list when the draft fails", async () => {
+    const { app, addedEmails, order } = buildHarness({ isAdmin: true, draftThrows: true });
+
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send(body);
+
+    expect(response.status).toBe(502);
+    expect(order).toEqual(["draft"]);
+    expect(addedEmails).toEqual([]);
+  });
+
+  it("uses the shared invite body, not a second copy of it", async () => {
+    const { app, draftedMime } = buildHarness({ isAdmin: true });
+
+    await request(app).post("/invite").set("Authorization", `Bearer ${TOKEN}`).send(body);
+
+    const mime = draftedMime[0] ?? "";
+    expect(mime).toContain(SUBJECT);
+    expect(mime).toContain("priya@example.com");
+    expect(mime).toContain("multipart/alternative");
+  });
+
+  it("rejects a body that is not an email address", async () => {
+    const { app, addedEmails, draftedMime } = buildHarness({ isAdmin: true });
+
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ email: "priya at example.com", firstName: "Priya" });
+
+    expect(response.status).toBe(400);
+    expect(addedEmails).toEqual([]);
+    expect(draftedMime).toEqual([]);
+  });
+
+  it("says the feature is not set up rather than half-working", async () => {
+    const { app, addedEmails, draftedMime } = buildHarness({
+      isAdmin: true,
+      gmail: null,
+      inviteSender: null,
+    });
+
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send(body);
+
+    expect(response.status).toBe(503);
+    expect(addedEmails).toEqual([]);
+    expect(draftedMime).toEqual([]);
+  });
+});
 
 const post = (app: ReturnType<typeof createApp>, body: unknown, token: string | null = TOKEN) => {
   const agent = request(app).post("/parse-meal");

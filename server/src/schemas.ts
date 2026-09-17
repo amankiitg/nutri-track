@@ -54,6 +54,22 @@ export const parseMealRequestSchema = z
 export type ParseMealRequest = z.infer<typeof parseMealRequestSchema>;
 
 /**
+ * The admin invite form. Two fields, and the address is checked here only for shape: what makes
+ * an address usable is whether it matches the JWT of the person signing in, which is decided by
+ * the database, not by this regex.
+ */
+export const inviteRequestSchema = z.object({
+  email: z
+    .string()
+    .min(3)
+    .max(200)
+    .refine((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()), "must be an email address"),
+  firstName: z.string().min(1).max(60),
+});
+
+export type InviteRequestPayload = z.infer<typeof inviteRequestSchema>;
+
+/**
  * Storage paths are `<user id>/<capture id>/<n>.jpg`, which the bucket policies
  * already enforce. This repeats the check in the service so a mismatch is a clear
  * 403 rather than an empty download, and rejects traversal outright.

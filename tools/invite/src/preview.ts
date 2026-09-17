@@ -9,7 +9,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { PREVIEW, renderInviteHtml } from "./invite.js";
+import { PREVIEW, renderInviteHtml } from "../../../shared/invite-email.js";
 
 const OUT = fileURLToPath(new URL("../../../docs/invite-email.html", import.meta.url));
 

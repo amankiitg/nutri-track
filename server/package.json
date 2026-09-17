@@ -17,18 +17,21 @@
     "sweep:live": "tsx scripts/sweep-orphan-photos.ts --live",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke": "tsx scripts/smoke-gemini.ts"
+    "smoke": "tsx scripts/smoke-gemini.ts",
+    "gmail:consent": "tsx scripts/gmail-consent.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "nodemailer": "^10.0.10",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/supertest": "^7.2.1",
     "esbuild": "^0.28.2",
     "supertest": "^7.2.2",

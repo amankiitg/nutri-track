@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { parseMealUrl } from "@/lib/capture";
 import { MAX_LLM_CALLS_PER_DAY } from "@shared/meal-parse";
 
 /** The one place the normalisation rule is written in the browser. */
@@ -139,6 +140,61 @@ export async function addInvite(email: string, addedBy: string): Promise<string>
     .insert({ email: normalized, added_by: addedBy });
   if (error) throw new Error(readableAdminError(error.message));
   return normalized;
+}
+
+/**
+ * Invites someone: the service drafts the email and adds the address, in one request.
+ *
+ * Deliberately not two calls from here. Two calls can half-succeed, and the half that grants
+ * access is the one that must not happen without the other: an address on the list that was
+ * never emailed can sign in, and nobody finds out. The order the service uses means a failure
+ * leaves the invite ungranted instead.
+ *
+ * The response is validated rather than trusted, like anything else that crosses a network.
+ */
+const draftedInviteSchema = z.object({
+  email: z.string(),
+  firstName: z.string(),
+  draftId: z.string(),
+  alreadyInvited: z.boolean(),
+});
+
+export type DraftedInvite = z.infer<typeof draftedInviteSchema>;
+
+/** The service's own message, which is written for a phone. */
+function inviteFailure(body: unknown, status: number): string {
+  const parsed = z.object({ error: z.object({ message: z.string() }) }).safeParse(body);
+  if (parsed.success) return parsed.data.error.message;
+  if (status === 401) return "Your session has expired. Sign in again.";
+  return "The server could not create the invite. Try again.";
+}
+
+export async function draftInvite(email: string, firstName: string): Promise<DraftedInvite> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (token === undefined || token === "") {
+    throw new Error("Your session has expired. Sign in again.");
+  }
+
+  const url = new URL("invite", parseMealUrl()).toString();
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email, firstName }),
+    });
+  } catch {
+    throw new Error("Could not reach the server. Check your connection and try again.");
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(inviteFailure(body, response.status));
+
+  const parsed = draftedInviteSchema.safeParse(body);
+  if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
+  return parsed.data;
 }
 
 export async function removeInvite(email: string): Promise<void> {

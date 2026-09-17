@@ -12,7 +12,12 @@ import { stdout } from "node:process";
 import { loadGmailConfig, type GmailConfig } from "./env.js";
 import { rememberSecret, safeError } from "./redact.js";
 import { describeAuthFailure, isImapFailure, pageAuthFailure } from "./imap-error.js";
-import { renderInviteHtml, renderInviteText, SENDER_NAME, SUBJECT } from "./invite.js";
+import {
+  renderInviteHtml,
+  renderInviteText,
+  SENDER_NAME,
+  SUBJECT,
+} from "../../../shared/invite-email.js";
 import { buildMessage, createDraft } from "./draft.js";
 import { createdPage, formPage, problemPage } from "./page.js";
 

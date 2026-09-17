@@ -8,7 +8,13 @@
  */
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { PREVIEW, renderInviteHtml, renderInviteText, SENDER_NAME, SUBJECT } from "./invite.js";
+import {
+  PREVIEW,
+  renderInviteHtml,
+  renderInviteText,
+  SENDER_NAME,
+  SUBJECT,
+} from "../../../shared/invite-email.js";
 import { buildMessage } from "./draft.js";
 
 const RECIPIENT = { firstName: "Priya", invitedEmail: "priya@example.com" };

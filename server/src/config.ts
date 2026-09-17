@@ -54,6 +54,22 @@ export const envSchema = z.object({
   GEMINI_VISION_MODEL: z.string().min(1, "required"),
   /** Comma-separated. Anything absent from this list is refused by CORS. */
   ALLOWED_ORIGINS: commaSeparated,
+
+  /**
+   * The admin invite feature's Google credentials, and the only secrets this service holds.
+   *
+   * Optional on purpose. The parse-meal route is what people use every day, and it must start
+   * without these: /invite says the feature is not configured instead of the whole service
+   * refusing to boot over a feature nobody is using at that moment.
+   *
+   * None of them may appear in a response, a log or an error. `server/src/gmail.ts` scrubs them
+   * from every string it logs, and the only thing this file ever does with them is pass them on.
+   */
+  GMAIL_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  GMAIL_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  GMAIL_OAUTH_REFRESH_TOKEN: z.string().min(1).optional(),
+  /** The mailbox the drafts are created in. Shown on the admin page; not a secret. */
+  INVITE_SENDER_ADDRESS: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
@@ -65,6 +81,8 @@ const EXPECTED = [
   "GEMINI_VISION_MODEL",
   "ALLOWED_ORIGINS",
   "PORT (optional, defaults to 8787)",
+  "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
+  "  INVITE_SENDER_ADDRESS (all optional; without them /invite says it is not set up)",
 ];
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
