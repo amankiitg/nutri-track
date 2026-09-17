@@ -125,6 +125,54 @@ export function computeTargets(input: TargetInput): TargetResult {
   };
 }
 
+export interface TargetExplanation {
+  /** Mifflin-St Jeor, kcal/day, from the four inputs below. */
+  bmr: number;
+  activity: { level: ActivityLevel; label: string; multiplier: number };
+  /** bmr x multiplier. */
+  tdee: number;
+  goal: Goal;
+  /** The pace asked for, before the floor had a say. */
+  requestedPace: number;
+  /** Negative when losing. The daily kcal step taken off TDEE. */
+  adjustment: number;
+  /** tdee + adjustment, before the floor was applied. */
+  beforeFloor: number;
+  floor: number;
+  /** True when the floor, not the pace, decided the number. */
+  floorApplied: boolean;
+  /** What the app actually shows. */
+  calories: number;
+}
+
+/**
+ * The chain that produced a target, in the order it was applied.
+ *
+ * A dashboard shows a number and nothing else, which makes it unauditable: a reader who expected
+ * 1,900 and sees 1,500 cannot tell a stale weight from a pace they had forgotten from a floor
+ * that is quietly doing the work. Every step is returned so the screen can show them, and this
+ * recomputes rather than storing anything, so it cannot disagree with `computeTargets`.
+ */
+export function explainTarget(input: TargetInput): TargetExplanation {
+  const result = computeTargets(input);
+  return {
+    bmr: result.bmr,
+    activity: {
+      level: input.activityLevel,
+      label: ACTIVITY_LABELS[input.activityLevel].label,
+      multiplier: ACTIVITY_MULTIPLIERS[input.activityLevel],
+    },
+    tdee: result.tdee,
+    goal: input.goal,
+    requestedPace: result.requestedPace,
+    adjustment: result.adjustment,
+    beforeFloor: result.tdee + result.adjustment,
+    floor: result.floor,
+    floorApplied: result.floorApplied,
+    calories: result.calories,
+  };
+}
+
 /** Date the user is projected to reach the target weight at the given pace, or null when not applicable. */
 export function projectedTargetDate(
   currentKg: number,
