@@ -255,12 +255,23 @@ export function flagsFor(item: ReviewItem): { needsReview: boolean; reasons: str
  */
 export function rescaleForGrams(item: ReviewItem, nextGrams: number | null): ReviewItem {
   const previous = item.grams;
+  /**
+   * Whether the nutrients can be recomputed for `nextGrams`.
+   *
+   * A density is enough on its own, because it already says what a gram is worth. That matters
+   * when the box has been emptied: clearing it commits `grams: null`, and without a density the
+   * next digit typed would have no previous grams to form a ratio from, so the nutrients would
+   * keep their old absolute values and 200 kcal would become anchored to 5 g. Typing on from there
+   * multiplied that. The density removes the dependence on `previous` entirely.
+   *
+   * With no density the old requirement stands: both sides need a usable weight.
+   */
+  const hasDensity = SCALED_NUTRIENTS.some((field) => item.perGram?.[field] !== undefined);
   const canScale =
-    previous !== null &&
-    previous > 0 &&
     nextGrams !== null &&
     nextGrams > 0 &&
-    previous !== nextGrams;
+    previous !== nextGrams &&
+    (hasDensity || (previous !== null && previous > 0));
 
   const scaled: ReviewItem = { ...item, grams: nextGrams, userEdited: true };
   if (!canScale) return scaled;
@@ -270,8 +281,11 @@ export function rescaleForGrams(item: ReviewItem, nextGrams: number | null): Rev
     if (current === null) continue;
     // Scale from the density when there is one. Falling back to the displayed value over the
     // previous grams is the same arithmetic and reproduces the old behaviour exactly, which is
-    // what an item built by hand gets because it carries no density.
-    const density = item.perGram?.[field] ?? current / previous;
+    // what an item built by hand gets because it carries no density. The fallback needs a usable
+    // previous grams, which the density path does not.
+    const density =
+      item.perGram?.[field] ?? (previous === null || previous <= 0 ? null : current / previous);
+    if (density === null) continue;
     scaled[field] = roundTo(density * nextGrams);
   }
   return scaled;
