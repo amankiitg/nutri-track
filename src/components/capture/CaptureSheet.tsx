@@ -103,6 +103,12 @@ export interface CaptureSheetProps {
   timeZone: string;
   /** Today's calorie target, for the review screen's remaining-calories line. */
   targetCalories: number | null;
+  /**
+   * What is left of today before this meal. The review screen subtracts this meal from it,
+   * so this must be the day's remainder and not the day's target — the two differ by
+   * everything already logged.
+   */
+  remainingToday: number | null;
 }
 
 export function CaptureSheet({
@@ -111,6 +117,7 @@ export function CaptureSheet({
   userId,
   timeZone,
   targetCalories,
+  remainingToday,
 }: CaptureSheetProps) {
   const [tab, setTab] = useState("photo");
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
@@ -786,6 +793,7 @@ export function CaptureSheet({
             inputFingerprint={unsavedUploads.current.fingerprint ?? ""}
             idempotencyKey={review.id}
             targetCalories={targetCalories}
+            remainingToday={remainingToday}
             eatenAt={new Date(eatenAt)}
             mealType={effectiveMealType}
             notes={notes.trim() === "" ? null : notes.trim()}

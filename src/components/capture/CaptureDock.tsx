@@ -8,7 +8,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { fetchCurrentTarget } from "@/lib/profile";
+import { fetchDailyTotals } from "@/lib/dashboard";
+import { localDateString } from "@/lib/profile";
 import { CaptureSheet } from "./CaptureSheet";
 
 export interface CaptureDockProps {
@@ -19,12 +20,16 @@ export interface CaptureDockProps {
 export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
   const [open, setOpen] = useState(false);
 
-  // Read here rather than in the sheet: the remaining-calories line on the review
-  // screen is the only thing that needs it, and this is the component that already
-  // knows who the user is and what their timezone is.
-  const target = useQuery({
-    queryKey: ["currentTarget", userId, timeZone],
-    queryFn: () => fetchCurrentTarget(userId, timeZone),
+  const today = localDateString(timeZone);
+
+  // The dashboard's own query, under the dashboard's own key, so the ring and the review
+  // footer read one number and cannot disagree. The footer needs what is left of the day,
+  // not the day's target: subtracting this meal from the target ignores everything already
+  // logged, which is how a phone showed "1641 kcal left" while the ring said 408.
+  const totals = useQuery({
+    queryKey: ["daily-totals", userId, today],
+    queryFn: () => fetchDailyTotals(today),
+    enabled: userId !== "",
   });
 
   return (
@@ -47,7 +52,8 @@ export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
         onOpenChange={setOpen}
         userId={userId}
         timeZone={timeZone}
-        targetCalories={target.data?.calories ?? null}
+        targetCalories={totals.data?.target_calories ?? null}
+        remainingToday={totals.data?.remaining_calories ?? null}
       />
     </>
   );

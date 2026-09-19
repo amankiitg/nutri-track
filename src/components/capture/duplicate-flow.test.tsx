@@ -93,12 +93,14 @@ function renderSheet() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
+      {/* Nothing logged today, so the day's remainder is its whole target. */}
       <CaptureSheet
         open
         onOpenChange={() => undefined}
         userId="user-1"
         timeZone="America/New_York"
         targetCalories={2000}
+        remainingToday={2000}
       />
     </QueryClientProvider>,
   );

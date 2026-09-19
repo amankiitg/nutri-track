@@ -63,8 +63,14 @@ export interface ReviewScreenProps {
   inputFingerprint: string;
   /** Stable for this review session, so a retry cannot log the meal twice. */
   idempotencyKey: string;
-  /** Today's target, for the remaining-calories line. */
+  /** Today's target, for the wording around the remaining-calories line. */
   targetCalories: number | null;
+  /**
+   * What is left of today before this meal, from the same Postgres function the dashboard's
+   * ring reads. The footer subtracts this meal from it, so the two numbers agree by
+   * construction rather than by coincidence.
+   */
+  remainingToday: number | null;
   eatenAt: Date;
   mealType: MealType;
   notes: string | null;
@@ -86,6 +92,7 @@ export function ReviewScreen({
   inputFingerprint,
   idempotencyKey,
   targetCalories,
+  remainingToday,
   eatenAt,
   mealType,
   notes,
@@ -110,7 +117,8 @@ export function ReviewScreen({
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const totals = useMemo(() => mealTotals(items), [items]);
-  const remaining = targetCalories === null ? null : remainingCalories(targetCalories, totals);
+  // Against what is left of today, not against the day's target. See `remainingCalories`.
+  const remaining = remainingToday === null ? null : remainingCalories(remainingToday, totals);
 
   /** How many items the user has changed, which a re-analysis would replace. */
   const editedCount = items.filter((item) => item.userEdited).length;

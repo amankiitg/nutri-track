@@ -224,11 +224,15 @@ describe("mealTotals", () => {
 });
 
 describe("remainingCalories", () => {
-  it("subtracts the meal from the target", () => {
-    expect(remainingCalories(1636, mealTotals([item()]))).toBe(1436);
+  // The first argument is what is left of the day *before* this meal, not the day's target.
+  // These tests could not see the defect because they only ever fed it a target: on a day
+  // with nothing logged the two are the same number, and the arithmetic is identical.
+  it("subtracts the meal from what is left of today", () => {
+    // The phone's own numbers: 408 left, a 130 kcal meal, 278 left.
+    expect(remainingCalories(408, mealTotals([item({ calories: 130 })]))).toBe(278);
   });
 
-  it("goes negative when the meal is over target", () => {
+  it("goes negative when the meal is bigger than what is left", () => {
     expect(remainingCalories(100, mealTotals([item({ calories: 250 })]))).toBe(-150);
   });
 });

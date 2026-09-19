@@ -367,9 +367,17 @@ export function mealTotals(items: readonly ReviewItem[]): MealTotals {
   return totals;
 }
 
-/** What is left of today's target after this meal. Negative means over. */
-export function remainingCalories(targetCalories: number, totals: MealTotals): number {
-  return roundTo(targetCalories - totals.calories);
+/**
+ * What is left of the day after this meal. Negative means over.
+ *
+ * `leftToday` is what is left of today *before* this meal — the number the dashboard's ring
+ * shows — and not the day's target. Handing it the target is the bug this replaced: a phone
+ * reported "1641 kcal left of today's 1771" for a 130 kcal meal on a day whose ring said 408
+ * remaining, because 1771 - 130 ignores the 1,363 kcal already logged. Both inputs were
+ * right and the arithmetic was right; the basis was the wrong number.
+ */
+export function remainingCalories(leftToday: number, totals: MealTotals): number {
+  return roundTo(leftToday - totals.calories);
 }
 
 export interface SaveMealInput {
