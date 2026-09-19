@@ -86,8 +86,10 @@ Supabase, Recharts.
    lookups without them would have swapped a silent no-save for a unique violation
    (`20260919140000`). One consequence is worth knowing. Restoring a deleted meal, which is what
    the timeline's undo does, now collides if a live meal shares its fingerprint — the same
-   photo, the same text, the same ten-minute bucket. `restoreMeal` surfaces it as a raw
-   constraint error.
+   photo, the same text, the same ten-minute bucket. `restoreMeal` catches `unique_violation`
+   and refuses with a sentence, because the alternative reaches a phone as a constraint name.
+   It does not clear the collision: that would delete the meal that was logged second, which
+   nobody asked for, and a refusal is the smaller harm.
 
 ## Commands
 
