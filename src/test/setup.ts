@@ -34,4 +34,20 @@ if (typeof window !== "undefined") {
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => {};
   }
+
+  // Pointer capture, which jsdom does not implement at all. Radix and sonner both reach
+  // for it on pointerdown — sonner on the toast itself — and an unhandled TypeError there
+  // takes the toast's tree down with it, so the failure looks like a missing element
+  // rather than a missing browser API.
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
 }

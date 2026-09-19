@@ -181,7 +181,23 @@ export async function deleteMeal(mealId: string): Promise<void> {
 /** Puts a soft-deleted meal back. */
 export async function restoreMeal(mealId: string): Promise<void> {
   const { error } = await supabase.from("meals").update({ deleted_at: null }).eq("id", mealId);
-  if (error) throw error;
+  if (!error) return;
+
+  // `23505` is unique_violation, and it is the only way this update has to fail: both
+  // unique indexes on `meals` are partial on `where deleted_at is null`, so a meal
+  // re-logged while this one was deleted can hold the fingerprint this row is coming back
+  // to. Refused rather than resolved — the alternative is clearing the collision, which
+  // would delete a meal the person did not ask to delete.
+  //
+  // Matched on the SQLSTATE and not on the message, so a genuine failure still surfaces
+  // as itself instead of being dressed up as this one. The sentence is written for a
+  // phone: no constraint name, no Postgres text, which is the same rule the service's
+  // ApiError follows.
+  if (error.code === "23505") {
+    throw new Error("This meal has already been logged again, so it cannot be restored.");
+  }
+
+  throw error;
 }
 
 export interface RingGeometry {
