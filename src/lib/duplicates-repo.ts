@@ -69,6 +69,11 @@ export async function fetchRecentMeals(at: Date): Promise<CandidateMeal[]> {
     .select(MEAL_COLUMNS)
     .gte("eaten_at", from.toISOString())
     .lte("eaten_at", to.toISOString())
+    // A deleted meal is not a duplicate of anything. Without this the banner went on naming a
+    // meal the person had already removed, which is how it was reported. `daily_summaries`,
+    // `meals_for_day` and the day backfill all filter the same way, so this makes the duplicate
+    // check agree with what the rest of the app treats as gone.
+    .is("deleted_at", null)
     .order("eaten_at", { ascending: false })
     .limit(20);
   if (error) throw new Error(`Could not read recent meals: ${error.message}`);
@@ -98,6 +103,9 @@ export async function findMealByPhotoHashes(
     .select(MEAL_COLUMNS)
     .overlaps("photo_hashes", wanted)
     .gte("eaten_at", since.toISOString())
+    // See `fetchRecentMeals`: a meal that was deleted must not match, or the banner reports a
+    // meal that is no longer on the record.
+    .is("deleted_at", null)
     .order("eaten_at", { ascending: false })
     .limit(1);
   if (error) throw new Error(`Could not check for a repeat photo: ${error.message}`);
