@@ -62,6 +62,32 @@ Supabase, Recharts.
    drive the edit: clear the field, type one character at a time, blur it, and assert the whole
    chain of values rather than the final one. An intermediate value can be saved, so an
    intermediate value is a real state.
+9. **A soft delete is only correct if every reader agrees, so enumerate every query rather than
+   the ones that look relevant.** `meals.deleted_at` means nothing unless the readers that decide
+   whether a meal exists apply it. Three did — `daily_summaries`, `meals_for_day` and the day
+   backfill in `20260917120000` — and three did not: the two duplicate readers in
+   `src/lib/duplicates-repo.ts`, and both lookups in `save_meal`. Each omission looked locally
+   reasonable, and all three were bugs: the duplicate banner named a lunch the person had already
+   deleted, pressing "It is a new meal" found the same hash again and sent no request at all, and
+   `save_meal` returned a deleted meal as `{created: false}` so a save reported success and wrote
+   nothing. None was found by reading the code that seemed related; all three came from
+   enumerating every `from("meals")` in `src/` and `server/` and every `public.meals` in
+   `supabase/migrations/`. Do that enumeration again whenever you touch `deleted_at`.
+
+   The sweeper (`server/src/sweep.ts`) is the one reader that is deliberately unscoped, and it is
+   not an exception to this rule: it asks a different question. Not "does this meal exist?" but
+   "is this photo still named by any row, deleted or not?" — the undo has to be able to put a
+   deleted meal back, so its photos must stay referenced, and the sweep is account-wide because a
+   per-user view would read every other user's references as missing and delete their photos. A
+   divergence is a bug unless it is a different question.
+
+   The same rule reaches into the schema, where a partial unique index is a reader too: both
+   unique indexes on `meals` are `where deleted_at is null`, because filtering `save_meal`'s
+   lookups without them would have swapped a silent no-save for a unique violation
+   (`20260919140000`). One consequence is worth knowing. Restoring a deleted meal, which is what
+   the timeline's undo does, now collides if a live meal shares its fingerprint — the same
+   photo, the same text, the same ten-minute bucket. `restoreMeal` surfaces it as a raw
+   constraint error.
 
 ## Commands
 
