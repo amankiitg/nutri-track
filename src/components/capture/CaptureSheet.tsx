@@ -382,10 +382,16 @@ export function CaptureSheet({
 
     // The names are only known now, so this is the first point at which a meal can be
     // recognised by what was in it rather than by which photo was taken.
-    await checkForSimilarMeal(
-      parsed.items.map((item) => item.name),
-      when,
-    );
+    //
+    // Not asked at all when the person has said this is a new meal. Re-raising the banner
+    // immediately after that answer would be the same dead end as the photo check, one step
+    // later. A fresh capture that collides will still raise it.
+    if (distinct === null) {
+      await checkForSimilarMeal(
+        parsed.items.map((item) => item.name),
+        when,
+      );
+    }
   }
 
   /**
@@ -478,7 +484,16 @@ export function CaptureSheet({
 
       // Checked before the model is called: a matching hash means the items are
       // already on record, so the whole round trip can be skipped.
-      const known = await findMealByPhotoHashes(hashes, new Date(eatenAt)).catch(() => null);
+      //
+      // Skipped entirely when the person has said this is a new meal. That answer means "do not
+      // treat this as a duplicate", and honouring it here is the difference between the button
+      // working and looping: the same hash would be found again, the banner set again, and the
+      // request never sent. The marker also reaches the fingerprint, so `save_meal` will not call
+      // it a repeat either.
+      const known =
+        options.distinct == null
+          ? await findMealByPhotoHashes(hashes, new Date(eatenAt)).catch(() => null)
+          : null;
       if (known) {
         const items = await fetchMealItems(known.id).catch(() => []);
         setExistingItems(items);
