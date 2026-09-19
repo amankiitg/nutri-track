@@ -61,7 +61,12 @@ Supabase, Recharts.
    neither by calling the function with tidy arguments. So when the report involves *editing*,
    drive the edit: clear the field, type one character at a time, blur it, and assert the whole
    chain of values rather than the final one. An intermediate value can be saved, so an
-   intermediate value is a real state.
+   intermediate value is a real state. An empty day is the same trap in the other direction: the
+   review footer's remaining line read the day's *target* where it needed the day's *remainder*,
+   and on a day with nothing logged those are the same number, so every test passed while the
+   screen was wrong from the first meal onwards. A fixture that is clean in the dimension being
+   tested cannot see a defect that lives in that dimension — 408 left of a 1,771 target is not
+   1,771.
 9. **A soft delete is only correct if every reader agrees, so enumerate every query rather than
    the ones that look relevant.** `meals.deleted_at` means nothing unless the readers that decide
    whether a meal exists apply it. Three did — `daily_summaries`, `meals_for_day` and the day
