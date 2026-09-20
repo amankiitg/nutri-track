@@ -220,6 +220,14 @@ npm test
 - Charts use Recharts directly. **A `Line` inside a `BarChart` typechecks and is silently
   not drawn**; mixing bars with a line needs `ComposedChart`. This shipped broken for one
   round of review because the target line simply did not appear.
+- **A y-axis is a fixed width that clips rather than making room, so it is sized from its own
+  labels.** `axisWidth` in `src/lib/trends.ts` derives the width from the widest value the axis
+  can print, plus a character for the rounding of the top tick. Two things bit us here. The
+  charts carried `margin.left: -18`, which adds no room — it slides the label band out past the
+  SVG's left edge, so the ticks lost their *leading* digits (`3200` drawn from x=-7.8 read as
+  `200`). And a constant cannot be right, because the same axis reads `3200` on a daily bucket
+  and `12600` on a weekly one. jsdom has no layout engine, so this class of bug cannot be
+  caught by a test: measure it in a browser, checking each label's box against the SVG's.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
 - `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's
