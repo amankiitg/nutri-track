@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { ChartCard } from "@/components/trends/StatTiles";
 import {
+  axisWidth,
   bucketTick,
   macroShares,
   type Bucket,
@@ -72,6 +73,9 @@ export function MacroSplit({
     fat: Math.round(entry.fat_kcal),
     logged: entry.meal_count > 0,
   }));
+
+  // The stack's own height per bucket, which is what the axis labels.
+  const macroAxisWidth = axisWidth(stacked.map((entry) => entry.protein + entry.carbs + entry.fat));
 
   if (shares === null) {
     return (
@@ -143,7 +147,7 @@ export function MacroSplit({
       >
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stacked} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+            <BarChart data={stacked} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />
               <XAxis
                 dataKey="tick"
@@ -155,7 +159,7 @@ export function MacroSplit({
               <YAxis
                 tickLine={false}
                 axisLine={false}
-                width={44}
+                width={macroAxisWidth}
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               />
               <Tooltip

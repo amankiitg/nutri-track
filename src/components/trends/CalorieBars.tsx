@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Bucket, PeriodBucket } from "@/lib/trends";
-import { bucketTick } from "@/lib/trends";
+import { axisWidth, bucketTick } from "@/lib/trends";
 
 /**
  * Daily (or weekly) calories as bars, with the target drawn across them.
@@ -35,13 +35,19 @@ export function CalorieBars({ buckets, bucket }: { buckets: PeriodBucket[]; buck
     logged: entry.meal_count > 0,
   }));
 
+  // Both series: the target line can sit above every bar, and its label has to fit too.
+  const yAxisWidth = axisWidth([
+    ...chartData.map((entry) => entry.calories),
+    ...chartData.map((entry) => entry.target ?? 0),
+  ]);
+
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
         {/* ComposedChart, not BarChart. A `Line` inside a `BarChart` is accepted by the
             type definitions and silently not drawn, so the target simply would not
             appear — which is how this shipped for one round of review. */}
-        <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} stroke="var(--border)" />
           <XAxis
             dataKey="tick"
@@ -53,7 +59,7 @@ export function CalorieBars({ buckets, bucket }: { buckets: PeriodBucket[]; buck
           <YAxis
             tickLine={false}
             axisLine={false}
-            width={44}
+            width={yAxisWidth}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
           />
           <Tooltip

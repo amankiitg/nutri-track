@@ -330,3 +330,36 @@ export function macroShares(
     { key: "fat", kcal: fat, share: fat / total },
   ];
 }
+
+/**
+ * How wide a y-axis has to be for its own labels, in px.
+ *
+ * Recharts takes a fixed width and then clips to the SVG instead of making room, and because
+ * the ticks are right-aligned against the plot, the label that does not fit loses its
+ * *leading* digits: at a 390px viewport "3200" was drawn from x=-7.8 and read "200".
+ *
+ * A constant cannot be correct here, because the label is as wide as the number is long, and
+ * the same axis reads differently depending on the bucket: a daily bar is one day, a weekly
+ * bar is seven, so the calories axis reads "3200" one way and "12600" the other. This follows
+ * the widest label the axis can produce — the largest value as it will be written, plus one
+ * character, since the top tick rounds up to a nice number above the data (9,500 becomes
+ * 10,000, and 3,200 can become 4,000).
+ *
+ * `AXIS_CHAR_WIDTH` is measured off a rendered chart rather than guessed: at `fontSize: 11`,
+ * "3200" occupies 25.8px, which is 6.45px per character, and this leaves margin over that.
+ * `String`, not `toLocaleString`, because that is what the axis draws — the measured tick
+ * reads "3200", with no thousands separator.
+ */
+const AXIS_CHAR_WIDTH = 7.2;
+const AXIS_LABEL_PADDING = 6;
+
+export function axisWidth(values: readonly number[], fontSize = 11): number {
+  let widest = 0;
+  for (const value of values) {
+    if (Number.isFinite(value)) widest = Math.max(widest, Math.abs(value));
+  }
+
+  const characters = String(widest).length + 1;
+  const perCharacter = (fontSize / 11) * AXIS_CHAR_WIDTH;
+  return Math.ceil(characters * perCharacter + AXIS_LABEL_PADDING);
+}

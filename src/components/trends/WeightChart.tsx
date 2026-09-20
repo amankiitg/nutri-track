@@ -11,6 +11,7 @@ import {
 import { ChartCard } from "@/components/trends/StatTiles";
 import { cmToIn, kgToLb, type UnitSystem } from "@/lib/units";
 import type { WeightPoint } from "@/lib/trends";
+import { axisWidth } from "@/lib/trends";
 
 const TOOLTIP_STYLE = {
   background: "var(--card)",
@@ -62,6 +63,13 @@ export function WeightChart({
 
   const hasWaist = data.some((point) => point.waist !== null);
 
+  // Weight is a small number but not a short one: a decimal such as "87.2" is four
+  // characters, and the same axis reads "119.5" for someone heavier. Waist is narrower by a
+  // hair, and being on the right it sits inside the SVG already — it gets the same treatment
+  // so that neither side depends on a number that happened to fit.
+  const weightAxisWidth = axisWidth(data.flatMap((point) => [point.weight, point.average ?? 0]));
+  const waistAxisWidth = axisWidth(data.map((point) => point.waist ?? 0));
+
   if (data.length === 0) {
     return (
       <ChartCard title="Weight and waist" description="No weigh-ins in this period.">
@@ -83,7 +91,7 @@ export function WeightChart({
     >
       <div className="h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+          <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" />
             <XAxis
               dataKey="tick"
@@ -97,7 +105,7 @@ export function WeightChart({
               domain={["dataMin - 1", "dataMax + 1"]}
               tickLine={false}
               axisLine={false}
-              width={44}
+              width={weightAxisWidth}
               tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             />
             {hasWaist && (
@@ -107,7 +115,7 @@ export function WeightChart({
                 domain={["dataMin - 2", "dataMax + 2"]}
                 tickLine={false}
                 axisLine={false}
-                width={40}
+                width={waistAxisWidth}
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               />
             )}

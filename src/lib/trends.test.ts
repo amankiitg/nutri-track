@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  axisWidth,
   bucketFor,
   bucketTick,
   clampEnd,
@@ -264,5 +265,38 @@ describe("macroShares", () => {
 
   it("keeps the order protein, carbs, fat so the colours stay put", () => {
     expect(macroShares(totals({}))?.map((s) => s.key)).toEqual(["protein", "carbs", "fat"]);
+  });
+});
+
+describe("axisWidth", () => {
+  // Geometry itself cannot be asserted here — jsdom has no layout engine, so a test cannot
+  // see a clipped label. What can be pinned is the rule the width follows, which is what a
+  // constant could not express: it grows with the number of digits. The rendered sizes these
+  // numbers come from were measured in a browser and are quoted in the function's comment.
+  it("leaves room for the widest label as it is written", () => {
+    // "3200" is 25.8px across at 11px, and the axis also spends ~8px between text and plot.
+    expect(axisWidth([0, 800, 1600, 2400, 3200])).toBeGreaterThan(25.8 + 8);
+  });
+
+  it("grows with the digits rather than being a number that happens to fit", () => {
+    const three = axisWidth([900]);
+    const four = axisWidth([3200]);
+    const five = axisWidth([40000]);
+
+    expect(four).toBeGreaterThan(three);
+    expect(five).toBeGreaterThan(four);
+    // A weekly bucket is seven days in one bar, which is where five digits come from.
+    expect(five).toBeGreaterThan(32.3 + 8);
+  });
+
+  it("counts a decimal as its own width, not its integer part", () => {
+    // The trap this file guards: rounding the value first would size the weight axis for
+    // "87" and clip "87.2", which is exactly the shape of the reported bug.
+    expect(axisWidth([87.2])).toBeGreaterThan(axisWidth([87]));
+  });
+
+  it("has a floor for an empty series and ignores values that are not finite", () => {
+    expect(axisWidth([])).toBeGreaterThan(0);
+    expect(axisWidth([Number.NaN, Number.POSITIVE_INFINITY])).toBe(axisWidth([]));
   });
 });
