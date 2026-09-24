@@ -48,7 +48,19 @@ Supabase, Recharts.
    email are one request, drafted first, so a failure grants nobody access.
 
 5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
-   RLS is a bug.
+   RLS is a bug. **A migration that creates a table also grants on it, beside its policies** —
+   a grant and a policy are different things and both are required. The grant says the role may
+   touch the table at all; the policy says which rows it may touch. A policy on a table no role
+   may touch is never consulted: PostgREST answers `permission denied for table meals` and the
+   policy is not reached, which means RLS does **not** cover this and it is easy to assume it
+   does. This was invisible until now because the platform granted `all` on every new table in
+   `public` to `anon`, `authenticated` and `service_role` by default; Supabase withdraws that on
+   2026-10-30, so from then on the migration is the only thing that makes a table reachable.
+   `20260924120000_explicit_grants_for_the_data_api.sql` states the grants for every table that
+   exists and is the list to copy — `authenticated` gets only the verbs the app uses,
+   `service_role` gets `all` because the sweeper is not RLS-scoped, and `anon` gets nothing,
+   since every route needs a session. Do not re-create a blanket default privilege in its place:
+   it is invisible, and it hands a table access before anyone has decided it should have any.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
    Zod — including anything a model returns.
 7. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
