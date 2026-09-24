@@ -61,6 +61,10 @@ Supabase, Recharts.
    `service_role` gets `all` because the sweeper is not RLS-scoped, and `anon` gets nothing,
    since every route needs a session. Do not re-create a blanket default privilege in its place:
    it is invisible, and it hands a table access before anyone has decided it should have any.
+   `20260924150000_revoke_anon_table_access.sql` then removed what the default had already
+   granted `anon` on the existing tables, leaving it USAGE on the schema and EXECUTE on
+   `check_email_allowed` — which is `security definer`, so the sign-in screen's "is this address
+   invited?" needs no privilege on `allowed_emails` from the person asking.
 6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
    Zod — including anything a model returns.
 7. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
