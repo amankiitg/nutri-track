@@ -76,6 +76,33 @@ export function displayValue(base: number, units: UnitSystem, quantity: Quantity
   return units === "metric" ? base : cmToIn(base);
 }
 
+function roundTo(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * The number to show for a stored value, rounded to the precision the store can actually
+ * support — which is not always the precision the column has.
+ *
+ * Mass is stored in kilograms, and the column holds two decimals, so 0.01 kg is 0.022 lb. A
+ * two-decimal kilogram value pins pounds to about ±0.011 lb, which means a second decimal of
+ * pounds is finer than the stored number: 174.6 lb goes to the database as 79.20 kg and comes
+ * back as 174.606, and printing that to two decimals says 174.61. The digit is not noise the
+ * round trip added; it is the display claiming a resolution nothing in the chain has.
+ *
+ * So pounds get one decimal and kilograms get two — in kilograms the stored value *is* the
+ * answer, because that is the unit it was stored in. Lengths go through a unit 2.54 times
+ * smaller and are held to one decimal, so one decimal is right in both systems there.
+ *
+ * The stored value is untouched by any of this: `toBase` still round-trips to two decimals of
+ * kilograms, which is what the column expects.
+ */
+export function displayRounded(base: number, units: UnitSystem, quantity: Quantity): number {
+  const digits = quantity === "mass" ? (units === "imperial" ? 1 : 2) : 1;
+  return roundTo(displayValue(base, units, quantity), digits);
+}
+
 /** A stored value rendered in a system, with its unit. */
 function formatBase(base: number, quantity: Quantity, units: UnitSystem): string {
   return quantity === "mass" ? formatWeight(base, units) : formatLength(base, units);

@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  displayRounded,
   formatLength,
-  kgToLb,
   lbToKg,
   cmToIn,
   inToCm,
@@ -15,7 +15,10 @@ import {
 } from "@/lib/units";
 import { weightDelta, type WeightEntry } from "@/lib/dashboard";
 
-/** Weigh-ins are recorded to two decimals by the column, so do not offer more. */
+/**
+ * What the column stores: two decimals of kilograms. Not what the box shows — see
+ * `displayRounded`, which knows that a second decimal of pounds is finer than this.
+ */
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -51,9 +54,7 @@ export function WeightEntry({
   const latest = entries[0] ?? null;
   const delta = weightDelta(entries);
   const display =
-    latest === null
-      ? ""
-      : String(round(unitSystem === "imperial" ? kgToLb(latest.weight_kg) : latest.weight_kg));
+    latest === null ? "" : String(displayRounded(latest.weight_kg, unitSystem, "mass"));
 
   const [value, setValue] = useState<string | null>(null);
   const [waist, setWaist] = useState("");
@@ -106,8 +107,7 @@ export function WeightEntry({
           <p className="text-sm text-muted-foreground">
             Last recorded{" "}
             <span className="font-medium text-foreground tabular-nums">
-              {round(unitSystem === "imperial" ? kgToLb(latest.weight_kg) : latest.weight_kg)}{" "}
-              {unit}
+              {displayRounded(latest.weight_kg, unitSystem, "mass")} {unit}
             </span>{" "}
             on{" "}
             <time dateTime={latest.logged_on}>
@@ -123,10 +123,7 @@ export function WeightEntry({
                 {" "}
                 <span className={delta > 0 ? "text-amber-600" : "text-emerald-600"}>
                   {delta > 0 ? "+" : "−"}
-                  {round(
-                    Math.abs(unitSystem === "imperial" ? kgToLb(Math.abs(delta)) : delta),
-                  )}{" "}
-                  {unit}
+                  {displayRounded(Math.abs(delta), unitSystem, "mass")} {unit}
                 </span>{" "}
                 since the one before.
               </>
