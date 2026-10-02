@@ -479,6 +479,10 @@ export function toSaveMealArgs(input: SaveMealInput): {
     },
     _items: input.items.map((item) => {
       const row: { [key: string]: JsonValue } = {
+        // Only for an item that came from a row. The RPC matches on this to update the row
+        // rather than insert a new one, and an absent key is how it knows an item is new — the
+        // same reason `llm_raw` is omitted below for a hand-added item.
+        ...(item.existingItemId === null ? {} : { existing_item_id: item.existingItemId }),
         name: item.name.trim() === "" ? "Unnamed item" : item.name.trim(),
         quantity: item.quantity,
         unit: item.unit,

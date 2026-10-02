@@ -283,6 +283,28 @@ describe("converting a saved row for an edit, rather than a copy", () => {
     expect(copied.llmRaw).toBeNull();
     expect(copied.userEdited).toBe(true);
   });
+
+  it("names the row it updates, and leaves the key out entirely for a new item", () => {
+    const args = toSaveMealArgs({
+      items: [
+        { ...blankReviewItem(), id: "a", existingItemId: "row-1" },
+        { ...blankReviewItem(), id: "b", existingItemId: null },
+      ],
+      mealType: "lunch",
+      source: "photo",
+      eatenAt: new Date("2026-10-02T12:00:00Z"),
+      notes: null,
+      photoPaths: [],
+      photoHashes: [],
+      inputFingerprint: "fp",
+      idempotencyKey: "key",
+    });
+
+    expect(args._items[0]?.["existing_item_id"]).toBe("row-1");
+    // Absent rather than null: the RPC distinguishes an item to update from one to insert by
+    // whether the key is there, the same way it does for `llm_raw`.
+    expect(args._items[1]).not.toHaveProperty("existing_item_id");
+  });
 });
 
 describe("canSave", () => {

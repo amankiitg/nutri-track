@@ -11,6 +11,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { PHOTO_WINDOW_HOURS, SIMILAR_WINDOW_MINUTES, type CandidateMeal } from "./duplicates";
+import type { JsonValue } from "./review";
 
 /** The columns every candidate meal needs, in one place so the two queries agree. */
 const MEAL_COLUMNS = "id, eaten_at, meal_type, source, photo_paths, photo_hashes";
@@ -164,4 +165,100 @@ export async function fetchMealItems(mealId: string): Promise<SavedItem[]> {
     confidence: toNumber(row.confidence),
     user_edited: row.user_edited ?? false,
   }));
+}
+
+/** One item of a saved meal, as the edit screen needs it. */
+export interface EditItemRow {
+  /** The `meal_items` row, so the save can update it instead of inserting a new one. */
+  id: string;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  confidence: number | null;
+  user_edited: boolean;
+  /** What the model returned for this item, kept so an edit can leave it alone. */
+  llm_raw: JsonValue | null;
+}
+
+/** A saved meal and its items, for editing rather than creating. */
+export interface MealForEdit {
+  id: string;
+  eaten_at: string;
+  meal_type: string;
+  source: string;
+  notes: string | null;
+  photo_paths: string[];
+  photo_hashes: string[];
+  input_fingerprint: string;
+  items: EditItemRow[];
+}
+
+/**
+ * The meal being edited, with everything the review screen needs to show it.
+ *
+ * `fetchMealItems` looks like it would do and does not: it selects neither `id` nor `llm_raw`.
+ * An edit needs both — the id to update that row rather than insert a new one, and the raw model
+ * output so the update can leave it in place, which is the whole reason it is stored.
+ *
+ * A soft-deleted meal is not editable, so `deleted_at` is filtered here: an edit is a decision
+ * about a meal that is on the record.
+ */
+export async function fetchMealForEdit(mealId: string): Promise<MealForEdit> {
+  const { data: meal, error: mealError } = await supabase
+    .from("meals")
+    .select("id, eaten_at, meal_type, source, notes, photo_paths, photo_hashes, input_fingerprint")
+    .eq("id", mealId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (mealError) throw new Error(`Could not read the meal: ${mealError.message}`);
+  if (!meal) throw new Error("That meal is not on your record.");
+
+  const { data: items, error: itemsError } = await supabase
+    .from("meal_items")
+    .select(
+      "id, name, quantity, unit, grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, confidence, user_edited, llm_raw",
+    )
+    .eq("meal_id", mealId)
+    .order("created_at", { ascending: true });
+  if (itemsError) throw new Error(`Could not read the meal's items: ${itemsError.message}`);
+
+  // numeric columns arrive as strings from PostgREST, as they do in `fetchMealItems`.
+  const toNumber = (value: number | string | null): number | null =>
+    value === null ? null : Number(value);
+
+  return {
+    id: meal.id,
+    eaten_at: meal.eaten_at,
+    meal_type: meal.meal_type,
+    source: meal.source,
+    notes: meal.notes,
+    photo_paths: meal.photo_paths,
+    photo_hashes: meal.photo_hashes,
+    input_fingerprint: meal.input_fingerprint,
+    items: (items ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      quantity: toNumber(row.quantity),
+      unit: row.unit,
+      grams: toNumber(row.grams),
+      calories: toNumber(row.calories) ?? 0,
+      protein_g: toNumber(row.protein_g) ?? 0,
+      carbs_g: toNumber(row.carbs_g) ?? 0,
+      fat_g: toNumber(row.fat_g) ?? 0,
+      fiber_g: toNumber(row.fiber_g),
+      sugar_g: toNumber(row.sugar_g),
+      sodium_mg: toNumber(row.sodium_mg),
+      confidence: toNumber(row.confidence),
+      user_edited: row.user_edited ?? false,
+      llm_raw: (row.llm_raw ?? null) as JsonValue | null,
+    })),
+  };
 }
