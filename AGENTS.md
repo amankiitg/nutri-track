@@ -8,11 +8,26 @@ Supabase, Recharts.
 
 1. **Read before you write.** Never rewrite a file that already works; make the smallest
    change that satisfies the requirement.
-2. **One logical change per commit**, message in the form `feat(parse-meal): ...` or
+2. **A number in a comment is a claim, so measure it or label it as a choice.** A claim that was
+   never measured is worse than no comment at all: it reads to the next person as evidence, and
+   they have no way to tell a measurement from a guess. `COMMIT_TRAVEL = 58` carried "measured with
+   real pointer input in Chromium: 55px springs shut, 60px latches" for a measurement nobody had
+   taken — the rule it described was right and the citation made it look proven. So: if a constant
+   was chosen rather than measured, say that ("60% of the slide, chosen not measured"), and if it
+   was measured, say with what and where. Numbers that cannot be measured in jsdom — a layout, a
+   real pointer gesture — need a browser; note the measurement and then delete the scaffolding.
+3. **Nothing is finished until typecheck, tests and lint have run and their output is shown.**
+   Every completion report carries those three results with their counts, because "done" is a
+   claim about the tree and the tree is where the last broken thing was: `MealTimeline` gained a
+   required `onEdit` that `today.tsx` never passed, and the work was reported as finished while
+   `tsc --noEmit` exited 2. Show the three even when they pass — especially then, since that is
+   the case where the claim is easiest to make carelessly. Capture the exit status explicitly:
+   a check piped through `grep` or `tail` cannot fail the chain and will commit a broken tree.
+4. **One logical change per commit**, message in the form `feat(parse-meal): ...` or
    `fix(dedupe): ...`. Keep the branch in a working state: build, typecheck and tests green.
-3. **Schema changes are always a new timestamped migration** under `supabase/migrations/`.
+5. **Schema changes are always a new timestamped migration** under `supabase/migrations/`.
    Never edit an application migration.
-4. **Secrets stay server-side.** The Gemini key must never appear in any file under
+6. **Secrets stay server-side.** The Gemini key must never appear in any file under
    `src/` or `shared/`. If you find it there, that is a P0 bug — flag it and fix it first.
    Nothing secret may carry a `VITE_` prefix; Vite inlines those into the browser bundle.
    Server-only names live in `.env` locally and in Render's environment panel in
@@ -47,7 +62,7 @@ Supabase, Recharts.
    imports too, so there is one copy of what an invite says. Adding the address and drafting the
    email are one request, drafted first, so a failure grants nobody access.
 
-5. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
+7. **Row Level Security on every table**, policy `user_id = auth.uid()`. A new table without
    RLS is a bug. **A migration that creates a table also grants on it, beside its policies** —
    a grant and a policy are different things and both are required. The grant says the role may
    touch the table at all; the policy says which rows it may touch. A policy on a table no role
@@ -65,10 +80,10 @@ Supabase, Recharts.
    granted `anon` on the existing tables, leaving it USAGE on the schema and EXECUTE on
    `check_email_allowed` — which is `security definer`, so the sign-in screen's "is this address
    invited?" needs no privilege on `allowed_emails` from the person asking.
-6. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
+8. **TypeScript strict mode.** No `any` in new code. Validate every external payload with
    Zod — including anything a model returns.
-7. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
-8. **Reproduce through the real input, and start from an intermediate state if that is where the
+9. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
+10. **Reproduce through the real input, and start from an intermediate state if that is where the
    bug lives.** A reproduction that begins at a clean, valid value cannot see a defect that lives
    *between* two valid values. Twice in this codebase a function behaved correctly when called
    directly while the screen did not: the imperial height pair refused to commit unless its
@@ -83,7 +98,7 @@ Supabase, Recharts.
    screen was wrong from the first meal onwards. A fixture that is clean in the dimension being
    tested cannot see a defect that lives in that dimension — 408 left of a 1,771 target is not
    1,771.
-9. **A soft delete is only correct if every reader agrees, so enumerate every query rather than
+11. **A soft delete is only correct if every reader agrees, so enumerate every query rather than
    the ones that look relevant.** `meals.deleted_at` means nothing unless the readers that decide
    whether a meal exists apply it. Three did — `daily_summaries`, `meals_for_day` and the day
    backfill in `20260917120000` — and three did not: the two duplicate readers in
