@@ -1,5 +1,5 @@
 /**
- * The two duplicate queries, and loading a meal that already exists.
+ * The two duplicate queries, loading a meal that already exists, and writing an edit back to one.
  *
  * Kept apart from `duplicates.ts` so the matching rules stay pure and testable while
  * the queries stay thin.
@@ -8,10 +8,19 @@
  * of ninety minutes for a meal, a day for a photo. That keeps the comparison set small
  * enough to do in the browser, which matters because the fuzzy match is a ratio over
  * pairs of strings and there is no way to express it as an index lookup.
+ *
+ * `fetchMealForEdit` and `updateMeal` are the two halves of one flow and live together for that
+ * reason: the fields the loader has to select are decided by what the writer has to send, and
+ * splitting them across files is how those two lists drift.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { PHOTO_WINDOW_HOURS, SIMILAR_WINDOW_MINUTES, type CandidateMeal } from "./duplicates";
-import type { JsonValue } from "./review";
+import {
+  toUpdateMealArgs,
+  type JsonValue,
+  type UpdateMealInput,
+  type UpdateMealResult,
+} from "./review";
 
 /** The columns every candidate meal needs, in one place so the two queries agree. */
 const MEAL_COLUMNS = "id, eaten_at, meal_type, source, photo_paths, photo_hashes";
@@ -267,4 +276,39 @@ export async function fetchMealForEdit(mealId: string): Promise<MealForEdit> {
       llm_raw: (row.llm_raw ?? null) as JsonValue | null,
     })),
   };
+}
+
+/**
+ * Writes an edit back to a meal that is already on the record.
+ *
+ * The two ways `update_meal` refuses are turned into sentences here rather than shown as Postgres
+ * text, which is the rule `restoreMeal` already follows: the database's words are for a log, and
+ * the person holding the phone gets English. `P0002` is the meal not being there — not this
+ * user's, gone, or soft-deleted, which are one answer to a person who cannot act on the
+ * difference. `22023` is a payload that cannot be honoured: no items at all, or one item named
+ * twice.
+ *
+ * Anything else is rethrown as itself. A genuine failure dressed up as one of these would send
+ * someone looking for a meal that is perfectly fine.
+ */
+export async function updateMeal(
+  mealId: string,
+  input: UpdateMealInput,
+): Promise<UpdateMealResult> {
+  const { data, error } = await supabase.rpc("update_meal", toUpdateMealArgs(mealId, input));
+  if (error) {
+    if (error.code === "P0002") {
+      throw new Error("That meal is no longer on your record.");
+    }
+    if (error.code === "22023") {
+      throw new Error("A meal needs at least one item.");
+    }
+    throw new Error(error.message);
+  }
+
+  const result = data as UpdateMealResult | null;
+  // Same shape the create path checks for: a reply without the id is a reply that did not write,
+  // and saying the change was saved would be the one thing worse than saying it failed.
+  if (!result?.meal_id) throw new Error("The change was not saved.");
+  return result;
 }
