@@ -441,6 +441,31 @@ export function remainingCalories(leftToday: number, totals: MealTotals): number
   return roundTo(leftToday - totals.calories);
 }
 
+/**
+ * What is left of the day once an edit is saved.
+ *
+ * The basis is not the same number, and this is the trap. `leftToday` is what the dashboard's
+ * ring shows, which comes from `daily_summaries` — and that view sums every meal on the day,
+ * *including the one being edited*. Subtracting the new totals from it directly would take this
+ * meal off the day twice: a 130 kcal meal on a day with 408 left, corrected to 200 kcal, would
+ * report 208 left (408 - 200) where the truth is 338, because the day already has the original
+ * 130 counted in the 408.
+ *
+ * So the stored total is added back first, which asks the question the footer is actually about:
+ * what would this day have left if this meal were not on it? Then the new numbers come off.
+ *
+ * `storedCalories` must be the total that `leftToday` was computed with. Passing a stale one —
+ * the meal's calories from before it was corrected by someone else, or from a different day — is
+ * the one way this goes wrong, and the caller is where those two numbers have to agree.
+ */
+export function remainingAfterEdit(
+  leftToday: number,
+  storedCalories: number,
+  totals: MealTotals,
+): number {
+  return roundTo(leftToday + storedCalories - totals.calories);
+}
+
 export interface SaveMealInput {
   items: readonly ReviewItem[];
   mealType: MealType;
@@ -453,6 +478,35 @@ export interface SaveMealInput {
   inputFingerprint: string;
   /** Generated when the review screen mounted, so a double-tap cannot log twice. */
   idempotencyKey: string;
+}
+
+/**
+ * The fields an item payload carries, whether the row is being created or corrected.
+ *
+ * One function for both writers so the field list exists once. A column added to `meal_items` and
+ * sent by only one of them would be written when a meal is logged and silently dropped when it is
+ * edited, which is the kind of gap that shows up as a number that will not stay corrected.
+ */
+function itemRow(item: ReviewItem): { [key: string]: JsonValue } {
+  return {
+    // Only for an item that came from a row. The RPC matches on this to update the row rather
+    // than insert a new one, and an absent key is how it knows an item is new — the same reason
+    // `llm_raw` is omitted below for a hand-added item.
+    ...(item.existingItemId === null ? {} : { existing_item_id: item.existingItemId }),
+    name: item.name.trim() === "" ? "Unnamed item" : item.name.trim(),
+    quantity: item.quantity,
+    unit: item.unit,
+    grams: item.grams,
+    calories: item.calories,
+    protein_g: item.protein_g,
+    carbs_g: item.carbs_g,
+    fat_g: item.fat_g,
+    fiber_g: item.fiber_g,
+    sugar_g: item.sugar_g,
+    sodium_mg: item.sodium_mg,
+    confidence: item.confidence,
+    user_edited: item.userEdited,
+  };
 }
 
 /**
@@ -478,26 +532,57 @@ export function toSaveMealArgs(input: SaveMealInput): {
       idempotency_key: input.idempotencyKey,
     },
     _items: input.items.map((item) => {
-      const row: { [key: string]: JsonValue } = {
-        // Only for an item that came from a row. The RPC matches on this to update the row
-        // rather than insert a new one, and an absent key is how it knows an item is new — the
-        // same reason `llm_raw` is omitted below for a hand-added item.
-        ...(item.existingItemId === null ? {} : { existing_item_id: item.existingItemId }),
-        name: item.name.trim() === "" ? "Unnamed item" : item.name.trim(),
-        quantity: item.quantity,
-        unit: item.unit,
-        grams: item.grams,
-        calories: item.calories,
-        protein_g: item.protein_g,
-        carbs_g: item.carbs_g,
-        fat_g: item.fat_g,
-        fiber_g: item.fiber_g,
-        sugar_g: item.sugar_g,
-        sodium_mg: item.sodium_mg,
-        confidence: item.confidence,
-        user_edited: item.userEdited,
-      };
+      const row = itemRow(item);
       if (item.llmRaw !== null) row["llm_raw"] = item.llmRaw;
+      return row;
+    }),
+  };
+}
+
+/** What an edit may change: the time, the meal type, the notes, and the items. */
+export interface UpdateMealInput {
+  items: readonly ReviewItem[];
+  mealType: MealType;
+  eatenAt: Date;
+  notes: string | null;
+}
+
+/** What `update_meal` returns. */
+export interface UpdateMealResult {
+  meal_id: string;
+  updated: boolean;
+}
+
+/**
+ * The three arguments `update_meal` expects.
+ *
+ * Read `_meal` for what is missing as much as for what is there. No fingerprint, no idempotency
+ * key, no photos and no source: those record how the meal came to exist, and an edit changes what
+ * it says rather than how it was obtained. `update_meal` cannot write them either — its guard
+ * fails if it ever names one — so sending them would describe a write that does not happen.
+ */
+export function toUpdateMealArgs(
+  mealId: string,
+  input: UpdateMealInput,
+): {
+  _meal_id: string;
+  _meal: { [key: string]: JsonValue };
+  _items: Array<{ [key: string]: JsonValue }>;
+} {
+  return {
+    _meal_id: mealId,
+    _meal: {
+      eaten_at: input.eatenAt.toISOString(),
+      meal_type: input.mealType,
+      notes: input.notes,
+    },
+    _items: input.items.map((item) => {
+      const row = itemRow(item);
+      // Sent only with an item that is being inserted. An existing row keeps the reply it already
+      // holds, because `update_meal` does not write that column on an update at all — so this
+      // copy would describe a write that never happens, and it would make the value the column
+      // ends up with a decision taken in two places instead of one.
+      if (item.existingItemId === null && item.llmRaw !== null) row["llm_raw"] = item.llmRaw;
       return row;
     }),
   };

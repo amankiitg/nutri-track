@@ -7,6 +7,7 @@ import {
   mealTotals,
   reviewItemFromExisting,
   reviewItemFromSaved,
+  remainingAfterEdit,
   remainingCalories,
   rescaleForGrams,
   reviewItemFromDraft,
@@ -15,6 +16,7 @@ import {
   setQuantity,
   setText,
   toSaveMealArgs,
+  toUpdateMealArgs,
   type ReviewItem,
 } from "./review";
 
@@ -383,5 +385,105 @@ describe("toSaveMealArgs", () => {
   it("caps the photos at three, as the column does", () => {
     const many = ["a", "b", "c", "d"].map((name) => `user-1/${name}.jpg`);
     expect(toSaveMealArgs({ ...base, photoPaths: many })._meal["photo_paths"]).toHaveLength(3);
+  });
+});
+
+describe("remainingAfterEdit", () => {
+  // The same wrong-basis shape as `remainingCalories`, one step further on. The day's remainder
+  // is computed from `daily_summaries`, which sums every meal on the day *including this one*, so
+  // this meal's stored calories are already inside the 408. Correcting 130 kcal to 200 must leave
+  // 338: 408 + 130 - 200. Subtracting from the remainder directly would say 208.
+  it("takes the correction off a day that already counts the original", () => {
+    expect(remainingAfterEdit(408, 130, mealTotals([item({ calories: 200 })]))).toBe(338);
+  });
+
+  it("leaves the day's remainder alone when the numbers are left alone", () => {
+    // The answer the ring already gives. A basis that forgot to add the stored total back would
+    // produce 278 here, which looks plausible and is wrong.
+    expect(remainingAfterEdit(408, 130, mealTotals([item({ calories: 130 })]))).toBe(408);
+  });
+
+  it("goes negative when the corrected meal is bigger than the day allowed for", () => {
+    expect(remainingAfterEdit(100, 130, mealTotals([item({ calories: 900 })]))).toBe(-670);
+  });
+});
+
+describe("toUpdateMealArgs", () => {
+  /** An item that came from a stored row, which is the only kind an edit is given. */
+  const stored = {
+    ...blankReviewItem(),
+    id: "row-1",
+    existingItemId: "row-1",
+    name: "Chicken salad",
+    calories: 420,
+    llmRaw: { name: "Chicken salad", calories: 420 },
+  };
+
+  const base = {
+    items: [stored],
+    mealType: "lunch" as const,
+    eatenAt: new Date("2026-10-02T12:05:00.000Z"),
+    notes: "half portion",
+  };
+
+  it("names the meal it rewrites, and sends only the fields an edit owns", () => {
+    const args = toUpdateMealArgs("meal-1", base);
+
+    expect(args._meal_id).toBe("meal-1");
+    expect(args._meal).toEqual({
+      eaten_at: "2026-10-02T12:05:00.000Z",
+      meal_type: "lunch",
+      notes: "half portion",
+    });
+  });
+
+  it("carries no fingerprint, key, photos or source: an edit is not a capture", () => {
+    // Asserted on the whole key set rather than field by field, so a field added to this payload
+    // later has to be added here deliberately. These are the columns the RPC refuses to write,
+    // and a payload that sent them would be describing a write that does not happen.
+    expect(Object.keys(toUpdateMealArgs("meal-1", base)._meal).sort()).toEqual([
+      "eaten_at",
+      "meal_type",
+      "notes",
+    ]);
+  });
+
+  it("sends no model output for an item that is being updated", () => {
+    const row = toUpdateMealArgs("meal-1", base)._items[0];
+
+    expect(row?.["existing_item_id"]).toBe("row-1");
+    // The item is holding the model's original reply and does not send it: the column is not
+    // written on an update, so the copy already on the row is what survives.
+    expect(row).not.toHaveProperty("llm_raw");
+  });
+
+  it("sends the model's output for an item that is being added", () => {
+    const fresh = { ...blankReviewItem(), id: "new", name: "Olives", llmRaw: { name: "Olives" } };
+    const row = toUpdateMealArgs("meal-1", { ...base, items: [fresh] })._items[0];
+
+    expect(row).not.toHaveProperty("existing_item_id");
+    expect(row?.["llm_raw"]).toMatchObject({ name: "Olives" });
+  });
+
+  it("describes an item exactly as the create payload does, minus the provenance", () => {
+    // The two writers share one field list through `itemRow`. This is the assertion that fails if
+    // a column is ever added to one of them and not the other, which would be a number that saves
+    // when a meal is logged and quietly drops when it is corrected.
+    const created = toSaveMealArgs({
+      items: [stored],
+      mealType: "lunch",
+      source: "photo",
+      eatenAt: base.eatenAt,
+      notes: null,
+      photoPaths: [],
+      photoHashes: [],
+      inputFingerprint: "fp-1",
+      idempotencyKey: "6f1c2f9e-0000-4000-8000-000000000001",
+    })._items[0];
+
+    const withoutModelOutput = Object.fromEntries(
+      Object.entries(created ?? {}).filter(([key]) => key !== "llm_raw"),
+    );
+    expect(toUpdateMealArgs("meal-1", base)._items[0]).toEqual(withoutModelOutput);
   });
 });
