@@ -5,6 +5,8 @@ import {
   canSave,
   flagsFor,
   mealTotals,
+  reviewItemFromExisting,
+  reviewItemFromSaved,
   remainingCalories,
   rescaleForGrams,
   reviewItemFromDraft,
@@ -234,6 +236,52 @@ describe("remainingCalories", () => {
 
   it("goes negative when the meal is bigger than what is left", () => {
     expect(remainingCalories(100, mealTotals([item({ calories: 250 })]))).toBe(-150);
+  });
+});
+
+describe("converting a saved row for an edit, rather than a copy", () => {
+  const row = {
+    id: "row-1",
+    name: "Chicken salad",
+    quantity: null,
+    unit: null,
+    grams: 300,
+    calories: 420,
+    protein_g: 35,
+    carbs_g: 12,
+    fat_g: 24,
+    fiber_g: 3,
+    sugar_g: 2,
+    sodium_mg: 600,
+    confidence: 0.8,
+    user_edited: false,
+    llm_raw: { name: "Chicken salad", calories: 420 },
+  };
+
+  it("keeps what the model said, which the copy path deliberately drops", () => {
+    const edited = reviewItemFromExisting(row);
+
+    expect(edited.llmRaw).toEqual(row.llm_raw);
+    expect(edited.userEdited).toBe(false);
+  });
+
+  it("remembers the row it came from, so the save can update rather than insert", () => {
+    expect(reviewItemFromExisting(row).existingItemId).toBe("row-1");
+  });
+
+  it("keeps a correction the person made earlier marked as theirs", () => {
+    expect(reviewItemFromExisting({ ...row, user_edited: true }).userEdited).toBe(true);
+  });
+
+  it("claims no row when the meal is being copied into a new one", () => {
+    // The two converters look interchangeable and are not: a copy produces a new meal, so its
+    // items must not name an existing row, and its numbers are the person's rather than the
+    // model's.
+    const copied = reviewItemFromSaved({ ...row, confidence: 0.8 });
+
+    expect(copied.existingItemId).toBeNull();
+    expect(copied.llmRaw).toBeNull();
+    expect(copied.userEdited).toBe(true);
   });
 });
 

@@ -24,6 +24,16 @@ export type JsonValue =
 export interface ReviewItem {
   /** Local to this screen. A stable React key and nothing else. */
   id: string;
+  /**
+   * The `meal_items` row this item came from, when it came from one.
+   *
+   * Its own field rather than overloading `id`, because the two answer different questions: `id`
+   * is a React key that must be unique on this screen, and this is a claim that a row already
+   * exists and should be updated rather than inserted. Null for an item the person has just added,
+   * and for every item of a meal being created — including a meal copied from an earlier one,
+   * which is a new row and not an edit of the old.
+   */
+  existingItemId: string | null;
   name: string;
   quantity: number | null;
   unit: string | null;
@@ -125,6 +135,8 @@ export function reviewItemFromDraft(draft: MealItemDraft): ReviewItem {
     // The draft is a plain object that came out of JSON.parse and was then normalised,
     // so it is JSON by construction; the cast is because its interface is named.
     llmRaw: draft as unknown as JsonValue,
+    // Fresh from the service: nothing of this meal is on record yet.
+    existingItemId: null,
   };
 }
 
@@ -167,6 +179,7 @@ export function blankReviewItem(): ReviewItem {
     confidence: 1,
     userEdited: true,
     llmRaw: null,
+    existingItemId: null,
   };
 }
 
@@ -219,6 +232,54 @@ export function reviewItemFromSaved(saved: {
     confidence: saved.confidence ?? 1,
     userEdited: true,
     llmRaw: null,
+    existingItemId: null,
+  };
+}
+
+/**
+ * A review item built from a row of the meal being edited.
+ *
+ * Deliberately not `reviewItemFromSaved`, which is one function above and looks like it would do:
+ * that one is for *copying* an earlier meal into a new one, so it records `userEdited: true` and
+ * `llmRaw: null`, because those numbers came from a person's earlier review rather than from the
+ * model on this capture. Editing the meal those numbers already belong to is the opposite case —
+ * for most items the model did produce them — so the provenance is carried through unchanged. A
+ * shared converter would relabel every edited item as hand-checked and forget what the model said.
+ */
+export function reviewItemFromExisting(row: {
+  id: string;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  confidence: number | null;
+  user_edited: boolean;
+  llm_raw: JsonValue | null;
+}): ReviewItem {
+  return {
+    id: row.id,
+    existingItemId: row.id,
+    name: row.name,
+    quantity: row.quantity,
+    unit: row.unit,
+    grams: row.grams,
+    calories: row.calories,
+    protein_g: row.protein_g,
+    carbs_g: row.carbs_g,
+    fat_g: row.fat_g,
+    fiber_g: row.fiber_g,
+    sugar_g: row.sugar_g,
+    sodium_mg: row.sodium_mg,
+    confidence: row.confidence ?? 1,
+    userEdited: row.user_edited,
+    llmRaw: row.llm_raw,
   };
 }
 
