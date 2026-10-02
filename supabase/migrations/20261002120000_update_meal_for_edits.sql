@@ -37,15 +37,19 @@
 -- so moving a meal's time across a day boundary moves the day with it — the rule every other
 -- writer follows, and the reason the day is stored rather than derived.
 --
--- The consequence, stated because it is not obvious from the trigger's name: `eaten_at` is in the
--- SET list on every edit, so the trigger fires even when the time did not change. For a meal
--- logged before a timezone change, editing the food on it can therefore move the meal to another
--- day — the one behaviour `local_date` exists to prevent, reintroduced a meal at a time. Writing
--- `eaten_at` in a separate statement, only when the payload's instant differs from the stored one,
--- would avoid it. NOT done here, and left for a decision before this is applied: on a profile
--- that has never changed zone the two behave identically, and the alternative has an edge of its
--- own — a JS `Date` holds milliseconds where the column holds microseconds, so an instant that
--- never moved can look as though it had.
+-- That trigger is also why the time is written in a statement of its own, and only when it moved.
+-- Naming `eaten_at` fires it whether or not the value changed, which would recompute the meal's
+-- day from the profile's zone as it is *now*: on a meal logged before a timezone change, editing
+-- the food on it would move that meal to another day, one meal at a time, through the back door of
+-- a control that has nothing to do with days. Splitting the statement is what makes an edit which
+-- does not touch the time unable to touch the day.
+--
+-- The bound on that claim, stated rather than left implied: a JS `Date` holds milliseconds where
+-- the column holds microseconds, so a stored time with sub-millisecond precision would compare as
+-- changed when it had not, and its day would be recomputed after all. Every meal this app has
+-- written is millisecond precision, because the client sends `Date.prototype.toISOString()`, so
+-- this cannot bite today. Left unsolved deliberately — closing it means deciding which of two
+-- unequal instants is the real one, and the honest answer is that neither was intentional.
 --
 -- `edited_at` is set here and only here. A trigger could not do it: a trigger on `meals` cannot
 -- tell this writer from `save_meal`, so it would mark a meal's creation as an edit of it.
@@ -79,6 +83,7 @@ as $function$
 declare
   _user_id uuid := auth.uid();
   _found uuid;
+  _stored_at timestamptz;
   _keep uuid[];
   _named int;
   _updated int;
@@ -90,7 +95,7 @@ begin
   -- Locked, not merely read. The reconciliation below deletes rows this meal owns, so a
   -- concurrent hard delete or a timeline undo must not land between reading the meal and
   -- rewriting its items.
-  select m.id into _found
+  select m.id, m.eaten_at into _found, _stored_at
     from public.meals m
    where m.id = _meal_id
      and m.user_id = _user_id
@@ -127,12 +132,29 @@ begin
   -- deliberately missing from this list. `notes` is normalised exactly as `save_meal` normalises
   -- it — `nullif` on the empty string — so an emptied box stores SQL NULL rather than an empty
   -- string, and the same meal reads the same however it was written.
+  --
+  -- Note what is absent: the time. It is written separately, immediately below, and only when it
+  -- moved, so that the statement which fires the day trigger is not the statement that runs on
+  -- every edit.
   update public.meals m
-     set eaten_at = coalesce(nullif(_meal ->> 'eaten_at', '')::timestamptz, m.eaten_at),
-         meal_type = coalesce(nullif(_meal ->> 'meal_type', '')::public.meal_type, m.meal_type),
+     set meal_type = coalesce(nullif(_meal ->> 'meal_type', '')::public.meal_type, m.meal_type),
          notes = nullif(_meal ->> 'notes', ''),
          edited_at = now()
    where m.id = _found;
+
+  -- The time, and the only place the day can move. Two conditions, and both matter: the payload
+  -- has to carry a time at all, and it has to be a different instant from the one stored. The
+  -- comparison is between timestamps rather than strings, so `12:05:00Z` and `12:05:00+00:00` are
+  -- recognised as the same moment and neither counts as a change.
+  --
+  -- A payload with no time leaves the stored one alone rather than clearing it: the column is NOT
+  -- NULL, and an omitted key is not a request to unset it.
+  if nullif(_meal ->> 'eaten_at', '') is not null
+     and (_meal ->> 'eaten_at')::timestamptz is distinct from _stored_at then
+    update public.meals m
+       set eaten_at = (_meal ->> 'eaten_at')::timestamptz
+     where m.id = _found;
+  end if;
 
   -- Removing an item on the review screen removes its row. `_keep` is empty when every item was
   -- replaced, and `<> all ('{}')` is true of every row, so a fully replaced meal is emptied here
@@ -295,5 +317,19 @@ begin
   -- 6. The edit is stamped. Without this the column exists and nothing ever fills it.
   if strpos(lower(_body), 'edited_at = now()') = 0 then
     raise exception 'update_meal does not stamp edited_at';
+  end if;
+
+  -- 7. The time is written in a statement of its own, and only when it moved. The failure this
+  --    guards is the one the split exists for and is invisible from outside: putting `eaten_at`
+  --    back into the main SET list would fire the day trigger on every edit, so an edit that
+  --    changes only the food could still move the meal to another day.
+  if strpos(lower(_body), 'set eaten_at') = 0 then
+    raise exception 'update_meal no longer writes the time in its own statement';
+  end if;
+  if strpos(lower(_body), 'is distinct from') = 0 then
+    raise exception 'update_meal no longer compares the time before writing it';
+  end if;
+  if strpos(lower(_body), 'eaten_at = coalesce(') > 0 then
+    raise exception 'update_meal writes eaten_at in the main SET list again';
   end if;
 end $guard$;
