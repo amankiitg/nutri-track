@@ -184,7 +184,9 @@ export interface EditItemRow {
   sodium_mg: number | null;
   confidence: number | null;
   user_edited: boolean;
-  /** What the model returned for this item, kept so an edit can leave it alone. */
+  /**
+   * What the model returned for this item. Carried with the row; an edit does not rewrite it.
+   */
   llm_raw: JsonValue | null;
 }
 
@@ -205,8 +207,12 @@ export interface MealForEdit {
  * The meal being edited, with everything the review screen needs to show it.
  *
  * `fetchMealItems` looks like it would do and does not: it selects neither `id` nor `llm_raw`.
- * An edit needs both — the id to update that row rather than insert a new one, and the raw model
- * output so the update can leave it in place, which is the whole reason it is stored.
+ * The id is the load-bearing one — it is what tells the save to update that row rather than insert
+ * a new one. The model's raw output is carried so the item on screen is the row it came from and
+ * not an approximation of it, but the update does not depend on having it: `update_meal` never
+ * writes that column, which is a stronger guarantee than sending the value back would be. An
+ * earlier version of this comment claimed the opposite, that the value had to be carried or the
+ * update would lose it; that was written before the RPC existed and is not true of it.
  *
  * A soft-deleted meal is not editable, so `deleted_at` is filtered here: an edit is a decision
  * about a meal that is on the record.
