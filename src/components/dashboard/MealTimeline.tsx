@@ -1,6 +1,12 @@
 import { useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatTimeInZone, mealTypeLabel, quantityLabel, type TimelineMeal } from "@/lib/dashboard";
 
 /** How far the row slides to reveal the action. */
@@ -16,6 +22,12 @@ const OPEN_THRESHOLD = ACTION_WIDTH / 2;
  * by a screen reader, and focusing it opens the row so the focus is not invisible. The
  * row itself also answers Delete and Backspace. The hint above the list tells everyone
  * else the gesture exists.
+ *
+ * None of that is *visible* on a desktop, though: the button is behind the row until
+ * something drags it, and a mouse user has no reason to try. So the row also carries an
+ * overflow menu, which is the discoverable path — and the place a second action would go
+ * rather than a second gesture. Delete appears twice by design: once behind the row for
+ * the gesture, once in the menu for everyone who does not know about it.
  */
 function TimelineRow({
   meal,
@@ -100,10 +112,38 @@ function TimelineRow({
               {formatTimeInZone(meal.eaten_at, timeZone)}
             </span>
           </p>
-          <p className="text-sm font-semibold tabular-nums">
-            {Math.round(meal.calories).toLocaleString()}
-            <span className="ml-1 text-xs font-normal text-muted-foreground">kcal</span>
-          </p>
+          <div className="flex shrink-0 items-center gap-1 self-center">
+            <p className="text-sm font-semibold tabular-nums">
+              {Math.round(meal.calories).toLocaleString()}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">kcal</span>
+            </p>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                {/* The row treats a pointerdown on itself as the start of a swipe, and this
+                    button is inside it. Radix opens the menu on pointerdown, so without the
+                    guard the menu would open *and* the row would start to drag — and a drag
+                    that ends over the menu is a swipe that deletes nothing. */}
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Actions for ${mealTypeLabel(meal.meal_type)} at ${formatTimeInZone(meal.eaten_at, timeZone)}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  className="-mr-1 grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => onDelete(meal)}
+                >
+                  <Trash2 className="mr-2 size-4" aria-hidden="true" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {meal.items.length > 0 ? (
@@ -165,7 +205,8 @@ export function MealTimeline({
         ) : (
           <>
             <p className="mb-2 text-[11px] text-muted-foreground">
-              Swipe a meal left, or focus it and press Delete, to remove it. You can undo.
+              Swipe a meal left, use the ⋯ button, or focus a row and press Delete, to remove it.
+              You can undo.
             </p>
             <ul className="space-y-2">
               {meals.map((meal) => (
