@@ -48,42 +48,6 @@ export type Database = {
         };
         Relationships: [];
       };
-      invite_requests: {
-        Row: {
-          email: string;
-          handled_at: string | null;
-          handled_by: string | null;
-          id: string;
-          notify_attempts: number;
-          notified_at: string | null;
-          requested_at: string;
-          requested_by: string;
-          status: string;
-        };
-        Insert: {
-          email?: string;
-          handled_at?: string | null;
-          handled_by?: string | null;
-          id?: string;
-          notify_attempts?: number;
-          notified_at?: string | null;
-          requested_at?: string;
-          requested_by?: string;
-          status?: string;
-        };
-        Update: {
-          email?: string;
-          handled_at?: string | null;
-          handled_by?: string | null;
-          id?: string;
-          notify_attempts?: number;
-          notified_at?: string | null;
-          requested_at?: string;
-          requested_by?: string;
-          status?: string;
-        };
-        Relationships: [];
-      };
       allowed_emails: {
         Row: {
           added_by: string | null;
@@ -99,6 +63,42 @@ export type Database = {
           added_by?: string | null;
           created_at?: string;
           email?: string;
+        };
+        Relationships: [];
+      };
+      invite_requests: {
+        Row: {
+          email: string;
+          handled_at: string | null;
+          handled_by: string | null;
+          id: string;
+          notified_at: string | null;
+          notify_attempts: number;
+          requested_at: string;
+          requested_by: string;
+          status: string;
+        };
+        Insert: {
+          email?: string;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          notified_at?: string | null;
+          notify_attempts?: number;
+          requested_at?: string;
+          requested_by?: string;
+          status?: string;
+        };
+        Update: {
+          email?: string;
+          handled_at?: string | null;
+          handled_by?: string | null;
+          id?: string;
+          notified_at?: string | null;
+          notify_attempts?: number;
+          requested_at?: string;
+          requested_by?: string;
+          status?: string;
         };
         Relationships: [];
       };
@@ -208,9 +208,11 @@ export type Database = {
           created_at: string;
           deleted_at: string | null;
           eaten_at: string;
+          edited_at: string | null;
           id: string;
           idempotency_key: string | null;
           input_fingerprint: string;
+          local_date: string;
           meal_type: Database["public"]["Enums"]["meal_type"];
           notes: string | null;
           photo_hashes: string[];
@@ -222,9 +224,11 @@ export type Database = {
           created_at?: string;
           deleted_at?: string | null;
           eaten_at?: string;
+          edited_at?: string | null;
           id?: string;
           idempotency_key?: string | null;
           input_fingerprint: string;
+          local_date: string;
           meal_type: Database["public"]["Enums"]["meal_type"];
           notes?: string | null;
           photo_hashes?: string[];
@@ -236,9 +240,11 @@ export type Database = {
           created_at?: string;
           deleted_at?: string | null;
           eaten_at?: string;
+          edited_at?: string | null;
           id?: string;
           idempotency_key?: string | null;
           input_fingerprint?: string;
+          local_date?: string;
           meal_type?: Database["public"]["Enums"]["meal_type"];
           notes?: string | null;
           photo_hashes?: string[];
@@ -399,29 +405,26 @@ export type Database = {
       };
     };
     Functions: {
-      admin_approve_request: {
-        Args: { p_request: string };
-        Returns: string;
-      };
+      admin_approve_request: { Args: { p_request: string }; Returns: string };
       admin_invites: {
-        Args: Record<PropertyKey, never>;
+        Args: never;
         Returns: {
-          added_by: string | null;
+          added_by: string;
           created_at: string;
           email: string;
           is_admin: boolean;
-          signed_up_at: string | null;
-          user_id: string | null;
+          signed_up_at: string;
+          user_id: string;
         }[];
       };
       admin_spend: {
-        Args: Record<PropertyKey, never>;
+        Args: never;
         Returns: {
           calls_month: number;
           calls_today: number;
           calls_total: number;
           email: string;
-          last_call_at: string | null;
+          last_call_at: string;
           resets_today: string;
           timezone: string;
           tokens_month: number;
@@ -469,20 +472,17 @@ export type Database = {
       };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
-      local_day_start: {
-        Args: { p_at: string; p_tz: string };
-        Returns: string;
-      };
-      local_day_start_offset: {
-        Args: { p_at: string; p_days: number; p_tz: string };
-        Returns: string;
-      };
       llm_call_budget: {
-        Args: Record<PropertyKey, never>;
+        Args: never;
         Returns: {
           resets_at: string;
           used: number;
         }[];
+      };
+      local_day_start: { Args: { p_at: string; p_tz: string }; Returns: string };
+      local_day_start_offset: {
+        Args: { p_at: string; p_days: number; p_tz: string };
+        Returns: string;
       };
       meals_for_day: { Args: { p_date: string }; Returns: Json };
       save_meal: { Args: { _items: Json; _meal: Json }; Returns: Json };
@@ -533,6 +533,10 @@ export type Database = {
           target_calories: number;
           target_protein_g: number;
         }[];
+      };
+      update_meal: {
+        Args: { _items: Json; _meal: Json; _meal_id: string };
+        Returns: Json;
       };
       week_verdict: {
         Args: { p_days?: number; p_end_date: string };
