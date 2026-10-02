@@ -7,6 +7,11 @@
  *
  * Discard and Cancel delete the photos this capture uploaded. So does closing the
  * sheet without saving: see the effect in `CaptureSheet`.
+ *
+ * The same screen serves an edit, which is why it takes an `edit` context rather than being
+ * copied: an edit shows the meal's own items, writes them back through `update_meal`, and has no
+ * photos of its own to upload or discard. Every difference is marked in place, and
+ * `ReviewEditContext` is where the ones that change behaviour are decided.
  */
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
@@ -21,7 +26,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { updateMeal } from "@/lib/duplicates-repo";
 import type { MealType } from "@shared/meal-parse";
 import type { ParseResponse } from "@/lib/capture";
 import { formatMealTime } from "@/lib/duplicates";
@@ -29,11 +36,13 @@ import {
   blankReviewItem,
   canSave,
   mealTotals,
+  remainingAfterEdit,
   remainingCalories,
   toSaveMealArgs,
   type ReviewItem,
   type ReviewMeta,
   type SaveMealResult,
+  type UpdateMealResult,
 } from "@/lib/review";
 import { MealItemCard } from "./MealItemCard";
 
@@ -49,6 +58,29 @@ const MACRO_LABELS: Array<{ key: "protein_g" | "carbs_g" | "fat_g"; label: strin
   { key: "carbs_g", label: "Carbs" },
   { key: "fat_g", label: "Fat" },
 ];
+
+/**
+ * What the review screen needs in order to rewrite a meal rather than create one.
+ *
+ * An object rather than a few optional props, so "editing" cannot arrive half-configured.
+ *
+ * Deliberately absent: the meal's stored calorie total. The footer needs it, and the screen takes
+ * it from `initialItems` rather than being told, because those items *are* the stored rows. That
+ * is one source of truth; a prop would be a second one, and a caller passing a stale or wrong
+ * number is exactly the failure the type could not have caught.
+ */
+export interface ReviewEditContext {
+  /** The `meals` row being corrected. */
+  mealId: string;
+  /**
+   * Whether there is anything left to re-read. A meal logged from a description has no photos, so
+   * there is no second reading to be had, and offering the button would offer a request that
+   * cannot be built.
+   */
+  canReanalyze: boolean;
+  /** Called once the change is saved. The caller closes the sheet. */
+  onUpdated: (result: UpdateMealResult) => void;
+}
 
 export interface ReviewScreenProps {
   meta: ReviewMeta;
@@ -80,6 +112,11 @@ export interface ReviewScreenProps {
   /** Re-runs the parse with a hint, reusing the same photos. */
   onReanalyze: (hint: string) => Promise<void>;
   isReanalyzing: boolean;
+  /**
+   * Present only when this screen is correcting a meal that is already on record. Its presence is
+   * what makes the screen an edit; there is no separate mode flag that could disagree with it.
+   */
+  edit?: ReviewEditContext | undefined;
 }
 
 export function ReviewScreen({
@@ -100,10 +137,19 @@ export function ReviewScreen({
   onDiscard,
   onReanalyze,
   isReanalyzing,
+  edit,
 }: ReviewScreenProps) {
   const [items, setItems] = useState<ReviewItem[]>(() => [...initialItems]);
   const [type, setType] = useState<MealType>(mealType);
   const [when, setWhen] = useState(() => eatenAt);
+  /**
+   * The notes box, which only an edit has.
+   *
+   * In a capture the notes were typed before the model was called, so this screen shows them back
+   * rather than offering to change them. An edit never passed through that step, so without a box
+   * here a meal's note could never be corrected at all.
+   */
+  const [notesText, setNotesText] = useState(notes ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hintOpen, setHintOpen] = useState(false);
@@ -116,9 +162,27 @@ export function ReviewScreen({
    */
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
+  const isEdit = edit !== undefined;
+
   const totals = useMemo(() => mealTotals(items), [items]);
-  // Against what is left of today, not against the day's target. See `remainingCalories`.
-  const remaining = remainingToday === null ? null : remainingCalories(remainingToday, totals);
+  /**
+   * The meal's calories as they are stored, which is the number `remainingToday` already counts.
+   * Taken from `initialItems` rather than a prop: those items are the rows, so this is the number
+   * the day was summed with, and it does not move as the person edits.
+   */
+  const storedCalories = useMemo(() => mealTotals(initialItems).calories, [initialItems]);
+
+  /**
+   * Against what is left of today, not against the day's target — and, when editing, with the
+   * stored total added back first, because the day's remainder already counts it. Both rules live
+   * in `remainingCalories` and `remainingAfterEdit`.
+   */
+  const remaining =
+    remainingToday === null
+      ? null
+      : edit === undefined
+        ? remainingCalories(remainingToday, totals)
+        : remainingAfterEdit(remainingToday, storedCalories, totals);
 
   /** How many items the user has changed, which a re-analysis would replace. */
   const editedCount = items.filter((item) => item.userEdited).length;
@@ -135,6 +199,20 @@ export function ReviewScreen({
     setIsSaving(true);
     setError(null);
     try {
+      // The whole of the difference between creating and correcting. `update_meal` takes no
+      // fingerprint, key or photos: those are how the meal came to exist, and this screen changes
+      // what it says rather than how it was obtained.
+      if (edit !== undefined) {
+        const saved = await updateMeal(edit.mealId, {
+          items,
+          mealType: type,
+          eatenAt: when,
+          notes: notesText.trim() === "" ? null : notesText.trim(),
+        });
+        edit.onUpdated(saved);
+        return;
+      }
+
       const args = toSaveMealArgs({
         items,
         mealType: type,
@@ -175,7 +253,19 @@ export function ReviewScreen({
   return (
     <div className="mt-4 space-y-4">
       <div className="rounded-2xl border border-border bg-muted/30 p-3">
-        {photoPreviews.length > 0 ? (
+        {isEdit ? (
+          // No photos and no transcript to show, because an edit did not come through a capture.
+          // The one thing a person may want to change that is not an item is the note.
+          <label className="block space-y-1.5 text-sm">
+            <span className="text-muted-foreground">Notes</span>
+            <Textarea
+              value={notesText}
+              onChange={(event) => setNotesText(event.target.value)}
+              rows={2}
+              placeholder="Anything worth remembering about this meal"
+            />
+          </label>
+        ) : photoPreviews.length > 0 ? (
           <ul className="flex gap-2">
             {photoPreviews.map((url, index) => (
               <li key={url}>
@@ -229,17 +319,27 @@ export function ReviewScreen({
         <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
           <span>
             {items.length} item{items.length === 1 ? "" : "s"}
-            {meta.model === null ? " · copied from an earlier meal" : ` · ${meta.model}`}
-            {meta.attempts > 1 ? " · retried" : ""}
+            {isEdit
+              ? " · editing a saved meal"
+              : meta.model === null
+                ? " · copied from an earlier meal"
+                : ` · ${meta.model}`}
+            {!isEdit && meta.attempts > 1 ? " · retried" : ""}
           </span>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 underline"
-            onClick={() => setHintOpen((open) => !open)}
-          >
-            <Sparkles className="size-3.5" aria-hidden="true" />
-            Re-analyze with a hint
-          </button>
+          {isEdit && !edit.canReanalyze ? (
+            // An explanation rather than a disabled button: a control that cannot be used and
+            // does not say why is the same dead end as no control at all.
+            <span className="text-right">Logged from a description — no photos to read again.</span>
+          ) : (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 underline"
+              onClick={() => setHintOpen((open) => !open)}
+            >
+              <Sparkles className="size-3.5" aria-hidden="true" />
+              Re-analyze with a hint
+            </button>
+          )}
         </div>
 
         {hintOpen && (
@@ -258,9 +358,13 @@ export function ReviewScreen({
                 className="rounded-full"
                 disabled={hint.trim() === "" || isReanalyzing}
                 onClick={() => {
-                  // Re-analyzing throws away whatever was typed. When there is
-                  // nothing to lose it just runs; when there is, it asks first.
-                  if (editedCount > 0) setConfirmReanalyze(true);
+                  // Re-analyzing throws away whatever was typed. When there is nothing to lose it
+                  // just runs; when there is, it asks first.
+                  //
+                  // An edit always has something to lose, even with no edits on screen: the items
+                  // came from rows, and re-analyzing deletes those rows and inserts new ones, so
+                  // the model's original reply for them goes with them. One tap is worth that.
+                  if (editedCount > 0 || isEdit) setConfirmReanalyze(true);
                   else void onReanalyze(hint.trim());
                 }}
               >
@@ -278,6 +382,9 @@ export function ReviewScreen({
                   ? "1 item has been edited by you."
                   : `${editedCount} items have been edited by you.`}{" "}
                 Re-analyzing will replace them.
+                {isEdit
+                  ? " The model's original numbers for the items it replaces will not be kept."
+                  : ""}
               </p>
             )}
           </div>
@@ -361,8 +468,16 @@ export function ReviewScreen({
             disabled={isSaving}
             onClick={onDiscard}
           >
-            <Trash2 className="mr-1.5 size-4" aria-hidden="true" />
-            Discard
+            {isEdit ? (
+              // Not "Discard": an edit has no photos of its own to throw away, and the meal stays
+              // on the day exactly as it is until Save changes is pressed.
+              "Cancel"
+            ) : (
+              <>
+                <Trash2 className="mr-1.5 size-4" aria-hidden="true" />
+                Discard
+              </>
+            )}
           </Button>
           <Button
             type="button"
@@ -375,6 +490,8 @@ export function ReviewScreen({
                 <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
                 Saving…
               </>
+            ) : isEdit ? (
+              "Save changes"
             ) : (
               "Save meal"
             )}
@@ -389,11 +506,29 @@ export function ReviewScreen({
       <AlertDialog open={confirmReanalyze} onOpenChange={setConfirmReanalyze}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Re-analyze and lose your edits?</AlertDialogTitle>
+            {/*
+              In an edit the question is not only about the person's own changes, so the title
+              does not assume there are any.
+            */}
+            <AlertDialogTitle>
+              {editedCount === 0 ? "Re-analyze this meal?" : "Re-analyze and lose your edits?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {editedCount === 1
-                ? "1 item has been changed by you. Re-analyzing replaces all the items with what the model returns."
-                : `${editedCount} items have been changed by you. Re-analyzing replaces all the items with what the model returns.`}
+              {editedCount === 0
+                ? "Re-analyzing replaces all the items with what the model returns."
+                : `${
+                    editedCount === 1
+                      ? "1 item has been changed by you."
+                      : `${editedCount} items have been changed by you.`
+                  } Re-analyzing replaces all the items with what the model returns.`}
+              {
+                // The provenance warning, and the reason an edit confirms here even when the
+                // person has changed nothing themselves: the items on screen are rows, and
+                // replacing them replaces what the model originally said about this meal.
+                isEdit
+                  ? " The model's original numbers for the items it replaces will not be kept."
+                  : ""
+              }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
