@@ -7,6 +7,7 @@ import { CalorieRing } from "@/components/dashboard/CalorieRing";
 import { MacroBars, VerdictLine } from "@/components/dashboard/MacroBars";
 import { MealTimeline } from "@/components/dashboard/MealTimeline";
 import { WeightEntry } from "@/components/dashboard/WeightEntry";
+import { EditMealSheet } from "@/components/review/EditMealSheet";
 import { localDateString, refreshTargetIfStale } from "@/lib/profile";
 import {
   VERDICT_DAYS,
@@ -38,6 +39,12 @@ function TodayPage() {
   // agree about which day "today" is.
   const today = localDateString(timeZone);
   const [busyMealId, setBusyMealId] = useState<string | null>(null);
+  /**
+   * The meal being edited, or null. The sheet is mounted only while this is set, so opening it
+   * loads that meal's rows and closing it throws the loaded state away rather than showing a
+   * previous meal's items for a frame.
+   */
+  const [editingMeal, setEditingMeal] = useState<TimelineMeal | null>(null);
   const queryClient = useQueryClient();
 
   const enabled = userId !== "";
@@ -70,6 +77,17 @@ function TodayPage() {
     void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
     void queryClient.invalidateQueries({ queryKey: ["timeline"] });
     void queryClient.invalidateQueries({ queryKey: ["week-verdict"] });
+  }
+
+  /**
+   * An edit landed. Only the day's own numbers can have moved — the meal keeps its photos, its
+   * source and its place in the day — so this refetches the day's three queries rather than
+   * everything, which is what the capture sheet has to do because it stands on every screen.
+   */
+  function handleMealEdited(): void {
+    setEditingMeal(null);
+    refreshDay();
+    toast.success("Meal updated");
   }
 
   const remove = useMutation({
@@ -202,6 +220,27 @@ function TodayPage() {
           timeZone={timeZone}
           busyId={busyMealId}
           onDelete={(meal) => remove.mutate(meal)}
+          onEdit={(meal) => setEditingMeal(meal)}
+        />
+      )}
+
+      {/*
+        Mounted only while a meal is being edited, so the sheet starts empty every time and there
+        is no stale meal to flash. Its `remainingToday` is the day's remainder as stored, which
+        already counts this meal; the screen adds that meal back itself before subtracting what the
+        edit changed it to.
+      */}
+      {editingMeal !== null && (
+        <EditMealSheet
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditingMeal(null);
+          }}
+          mealId={editingMeal.id}
+          timeZone={timeZone}
+          targetCalories={totals.data?.target_calories ?? null}
+          remainingToday={totals.data?.remaining_calories ?? null}
+          onSaved={handleMealEdited}
         />
       )}
     </div>
