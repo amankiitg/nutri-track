@@ -7,6 +7,9 @@ Primary input is a photo of the food; second is voice; typed text is the fallbac
 vision/text LLM parses the input into structured food items, and you always review and
 edit before anything is saved.
 
+**Running at <https://tracknutri.app>.** Sign-in is invite-only, so a visitor meets the sign-in
+screen rather than a dashboard; <https://tracknutri.app/privacy> is readable without an account.
+
 **Stack:** React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui, TanStack Start/Router,
 Supabase (auth, Postgres, storage), Recharts, and a small Express service on Render that
 parses meals with Google Gemini's structured output.
@@ -29,16 +32,21 @@ cp .env.example .env   # then fill in the values
 
 ### Environment variables
 
-There is one `.env`, and every name in it is documented and commented in `.env.example`.
+There is **one** `.env`, and every name in it is documented and commented in `.env.example`.
 `.env` is gitignored — never commit it.
 
-The **prefix decides which of two consumers reads a name**:
+There are **three** consumers of it, and the prefix is the thing to look at, because it decides how
+far a value travels:
 
 - **`VITE_*` is read by the browser.** Vite substitutes these into the client bundle at
   build time, so a `VITE_` name must never hold a secret.
 - **Everything else is read by the `server/` Node service** from `process.env` — locally
   from `.env`, in production from Render's environment panel. `server/src/config.ts`
   validates them at boot and refuses to start if one is missing.
+- **Two Gmail names are read only by the local invite tool** in `tools/invite`, which runs on a
+  laptop, is part of no deployed service, and creates a draft rather than sending. It is the one
+  consumer that is not a deploy target, which is why its credential has its own block in
+  `.env.example` rather than sharing the server's.
 
 Client-exposed:
 
@@ -64,11 +72,16 @@ Server-only. Copy exactly these into Render's environment panel:
 - `PORT` — local development only. Render injects its own; the default is 8787
 - `ALLOWED_ORIGINS` — a comma-separated CORS allow-list. Locally `http://localhost:8080`
 
-`SUPABASE_SERVICE_ROLE_KEY` is deliberately **absent from both `.env.example` and the
-service's configuration**. The service never bypasses RLS: it verifies the caller's JWT and
-uses that same token for every database and storage call, so RLS is what authorises. A key
-that is never read cannot leak. (The only module that would read it,
+`SUPABASE_SERVICE_ROLE_KEY` is deliberately **absent from the parse-meal service's
+configuration**. That service never bypasses RLS: it verifies the caller's JWT and uses that
+same token for every database and storage call, so RLS is what authorises. A key it never reads
+cannot leak from it. (The one module in the frontend that would read it,
 `src/integrations/supabase/client.server.ts`, is imported by nothing.)
+
+It **is** in `.env.example`, in its own `--- Sweeper-only ---` block, because the orphan-photo
+sweeper genuinely needs it — see [the sweeper](#the-orphan-photo-sweeper). One credential, one
+reader, in its own config file, so that "is this key in play on this service?" is answered by a
+file rather than by a guess.
 
 **Never** put a secret behind a `VITE_` prefix: Vite substitutes those values into the
 client bundle at build time, so they end up readable in the browser.
@@ -105,23 +118,44 @@ To work against a local stack instead, run `npx supabase start` and use
 Every table must have Row Level Security enabled and a policy of the form
 `user_id = auth.uid()`. A new table without RLS is a bug.
 
+**A migration that creates a table also grants on it, beside its policies**, because a grant and a
+policy are different things and both are required. The grant says a role may touch the table at
+all; the policy says which rows it may touch. A policy on a table no role may touch is never
+consulted — PostgREST answers `permission denied for table meals` and the policy is not reached —
+so RLS does **not** cover this, and it is easy to assume it does. It was invisible until recently
+because the platform granted `all` on every new table in `public` to `anon`, `authenticated` and
+`service_role` for you, and **Supabase withdraws that default on 2026-10-30**: from then on, the
+migration is the only thing that makes a table reachable.
+
+`20260924120000_explicit_grants_for_the_data_api.sql` states the grants for every table that
+exists and is the list to copy — `authenticated` gets only the verbs the app uses, `service_role`
+gets `all` because the sweeper is not RLS-scoped, and `anon` gets nothing, since every route needs
+a session. `20260924150000_revoke_anon_table_access.sql` then removed what the default had already
+granted `anon`. It keeps `USAGE` on the schema and `EXECUTE` on `check_email_allowed` — which is
+`security definer`, so the sign-in screen's "is this address invited?" needs no privilege on
+`allowed_emails` from the person asking.
+
 ## Everyday commands
 
-| Command                      | What it does                                         |
-| ---------------------------- | ---------------------------------------------------- |
-| `npm run dev`                | Dev server on <http://localhost:8080>                |
-| `npm run build`              | Production build (client + SSR bundle via Nitro)     |
-| `npm run build:cloudflare`   | Production build with the deployed parse-meal URL    |
-| `npm run deploy`             | Build for production, then `wrangler deploy`         |
-| `npm run preview:cloudflare` | Serve the built Worker locally under workerd         |
-| `npm run typecheck`          | `tsc --noEmit` — TypeScript strict mode              |
-| `npm test`                   | Vitest (unit + component tests, jsdom)               |
-| `npm run test:server`        | Vitest (node) for the `server/` service              |
-| `npm run smoke`              | One real Gemini call on a real image (spends tokens) |
-| `npm run sweep`              | Orphan-photo sweeper, dry run                        |
-| `npm run sweep:live`         | Orphan-photo sweeper, actually deleting              |
-| `npm run lint`               | ESLint                                               |
-| `npm run format`             | Prettier across the repo                             |
+| Command                      | What it does                                                      |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                | Dev server on <http://localhost:8080>                             |
+| `npm run build`              | Production build (client + SSR bundle via Nitro)                  |
+| `npm run build:cloudflare`   | Production build with the deployed parse-meal URL                 |
+| `npm run deploy`             | Build for production, then `wrangler deploy`                      |
+| `npm run preview:cloudflare` | Serve the built Worker locally under workerd                      |
+| `npm run typecheck`          | `tsc --noEmit` — TypeScript strict mode                           |
+| `npm test`                   | Vitest (unit + component tests, jsdom)                            |
+| `npm run test:server`        | Vitest (node) for the `server/` service                           |
+| `npm run test:invite`        | The invite tool's own tests (node:test)                           |
+| `npm run invite`             | Local only: creates a Gmail draft of the invite, never sends      |
+| `npm run invite:check`       | Reports whether the mailbox credential works, and creates nothing |
+| `npm run invite:preview`     | Regenerates `docs/invite-email.html` from the invite source       |
+| `npm run smoke`              | One real Gemini call on a real image (spends tokens)              |
+| `npm run sweep`              | Orphan-photo sweeper, dry run                                     |
+| `npm run sweep:live`         | Orphan-photo sweeper, actually deleting                           |
+| `npm run lint`               | ESLint                                                            |
+| `npm run format`             | Prettier across the repo                                          |
 
 The build targets **Cloudflare Workers** by default (Nitro's `cloudflare-module` preset,
 configured in `vite.config.ts`). To self-host the SSR bundle instead, change the preset to
@@ -141,9 +175,20 @@ Meal parsing uses Gemini's **native structured output**. The response schema is 
 from the Zod contract in `shared/meal-parse.ts` rather than written out a second time, so
 the prompt, the model's contract and the validator are one description. The reply is
 validated against that contract anyway and the sanity checks (Atwater, calorie and gram
-bounds) still run: a schema-constrained model is a strong guarantee, not a proof. The
-single retry is kept for the cases where the model returns nothing at all — a safety
-refusal or a truncated reply — which is why that branch is live rather than dead code.
+bounds) still run: a schema-constrained model is a strong guarantee, not a proof.
+
+**The single retry covers a malformed reply, and never a refusal.** A refusal — `SAFETY`,
+`RECITATION`, `IMAGE_SAFETY` and the rest of the list in `server/src/parse-meal.ts` — is
+deterministic: asked again in the same words it produces the same refusal, so retrying it spends a
+second call out of the user's sixty to arrive at the same place. It also gets its own message,
+because the ordinary advice ("add a short note about what it was") describes a note that would be
+refused for exactly the same reason. A reply that fails the contract is the opposite case: worth
+one more go, told precisely what was wrong with the first.
+
+**Analyses are capped at sixty per user per local day**, counted in Postgres rather than in the
+browser. The number is defined once, in `shared/meal-parse.ts`, because three things have to agree
+about it: the service that enforces it, the `llm_call_budget()` function that reports it, and the
+Settings card that shows it.
 
 ```sh
 cd server
@@ -153,7 +198,12 @@ npm test           # the model is mocked, so the suite cannot spend a token
 npm run typecheck
 npm run build      # bundles to dist/index.js with the shared contract inlined
 npm start          # runs the built bundle
+npm run gmail:consent  # once, on a laptop: the refresh token the deployed /invite route needs
 ```
+
+No model call needs a Gmail credential. `/invite` is the only route that does, it creates drafts
+and never sends, and the service starts without those variables — the route just answers that the
+feature is not set up.
 
 The frontend reaches it through `VITE_PARSE_MEAL_URL`.
 
@@ -237,13 +287,24 @@ lives in the dashboard and never in the file).
 
 **Web service — `nutritrack-parse-meal`**
 
-| Key                        | Value                                      | Differs from local `.env`?                |
-| -------------------------- | ------------------------------------------ | ----------------------------------------- |
-| `SUPABASE_URL`             | `https://luxomuhczhtczfxwornl.supabase.co` | No                                        |
-| `SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value               | No — public by design                     |
-| `GEMINI_API_KEY`           | your AI Studio key                         | No                                        |
-| `GEMINI_VISION_MODEL`      | `gemini-3.8-flash`                         | No                                        |
-| `ALLOWED_ORIGINS`          | **the deployed frontend origin**           | **Yes** — locally `http://localhost:8080` |
+| Key                         | Value                                      | Differs from local `.env`?                |
+| --------------------------- | ------------------------------------------ | ----------------------------------------- |
+| `SUPABASE_URL`              | `https://luxomuhczhtczfxwornl.supabase.co` | No                                        |
+| `SUPABASE_PUBLISHABLE_KEY`  | the `sb_publishable_…` value               | No — public by design                     |
+| `GEMINI_API_KEY`            | your AI Studio key                         | No                                        |
+| `GEMINI_VISION_MODEL`       | `gemini-3.8-flash`                         | No                                        |
+| `ALLOWED_ORIGINS`           | **the deployed frontend origin**           | **Yes** — locally `http://localhost:8080` |
+| `GMAIL_OAUTH_CLIENT_ID`     | the OAuth client from Google Cloud         | **Yes** — not filled in locally           |
+| `GMAIL_OAUTH_CLIENT_SECRET` | as above                                   | **Yes**                                   |
+| `GMAIL_OAUTH_REFRESH_TOKEN` | from `npm run gmail:consent` in `server/`  | **Yes**                                   |
+| `INVITE_SENDER_ADDRESS`     | the mailbox the drafts are created in      | **Yes** — not a secret                    |
+
+The four Gmail ones are **optional to the service and not to the feature**: with any of them
+missing it still starts and serves `/parse-meal`, and `/invite` answers that invites are not set up.
+They are a refresh token rather than an app password because this credential lives on Render, where
+it has to be revocable on its own and scoped to `gmail.compose` rather than the whole mailbox.
+`npm run gmail:consent` is the one-time step that produces the token, run on a laptop; it writes the
+token outside this repository.
 
 **Cron job — `nutritrack-sweep-orphan-photos`**
 
@@ -403,51 +464,147 @@ never appears under `src/` or `shared/`.
 ```
 src/                           The browser app
   routes/                      TanStack Router file-based routes
-    _authenticated/            Session-gated shell (today, trends, settings)
-    auth.tsx                   Sign in / sign up
+    privacy.tsx                Public, and readable with no session: OAuth review fetches it
+    auth.tsx                   Sign in / sign up (invite-only)
     auth_.callback.tsx         OAuth + email-verification return handler
     onboarding.tsx             First-run wizard
+    _authenticated/            Session-gated shell
+      today.tsx                The dashboard: ring, macros, timeline, weight
+      trends.tsx               The charts over a week / month / year
+      settings.tsx             Targets, units, and today's analysis count
+      admin.tsx                Invites, requests and per-user spend (admins only)
   components/
+    capture/                   Capture sheet, duplicate banner, the add-a-meal dock
+    review/                    Review screen, the item card, and the edit sheet
+    dashboard/                 Ring, macro bars, timeline, weight entry
+    trends/                    The charts
+    admin/                     Invite, request and spend panels, and the not-on-the-list card
     onboarding/                Wizard, field components and settings form
     ui/                        shadcn/ui primitives
+    app/, pwa/                 Brand mark; install prompt
   lib/
     targets.ts                 BMR/TDEE/macro maths (pure, unit-tested)
     dashboard.ts               Today's RPC calls and its presentation logic
+    trends.ts                  The Trends screen: which dates, and how to say them
+    review.ts                  The review screen's model: items, arithmetic, the payload
+    capture.ts                 Upload, the parse request, failure messages
+    duplicates.ts              Photo-hash and name-similarity matching (pure)
+    duplicates-repo.ts         The thin queries: duplicates, loading a meal, writing an edit
+    admin.ts                   Invites, requests, spend, and their presentation
+    calls.ts                   The analysis budget for the signed-in user
+    units.ts                   Metric/imperial conversion, and display rounding
     profile.ts                 Profile + target persistence
     onboarding.ts              Form state, Zod validation, draft persistence
+    speech.ts, pwa.ts          Dictation; service worker registration
   integrations/supabase/       Supabase clients (browser, server, auth middleware)
 
-shared/meal-parse.ts           The parse-meal contract: prompt, Zod schemas, sanity
-                               checks, meal fingerprint. Imported by the browser as
-                               @shared/* and by the service relatively. Must stay free
-                               of browser- and Node-only APIs, since both run it.
+public/                        manifest.webmanifest, sw.js, icons
+
+shared/
+  meal-parse.ts                The parse-meal contract: prompt, Zod schemas, sanity checks,
+                               the meal fingerprint and the daily call limit. Imported by the
+                               browser as @shared/* and by the service relatively. Must stay
+                               free of browser- and Node-only APIs, since both run it.
+  invite-email.ts              The one copy of what an invite says
 
 server/                        The parse-meal service (Express 5, deployed to Render)
   src/config.ts                Zod-validated process.env, checked at boot
   src/app.ts                   Routes, CORS, error handling
-  src/parse-meal.ts            Rate limit, prompt assembly, the single retry
+  src/parse-meal.ts            Rate limit, prompt assembly, and the retry-or-not decision
   src/llm.ts                   The provider-neutral model interface
   src/gemini.ts                The Gemini client: structured output, inline images
   src/response-schema.ts       Derives the response schema from the Zod contract
   src/caller-store.ts          Every Supabase read and write, scoped to the caller
+  src/gmail.ts                 The deployed invite sender: creates drafts, never sends
+  src/invite.ts                The invite route, and who is allowed to call it
   src/sweep.ts                 Orphan-photo sweep rules (pure), store and planner
   src/sweep-config.ts          The sweeper's own config: the service role key, and
                                nothing the web service ever loads
-  scripts/sweep-orphan-photos.ts  The cron entry point
-  scripts/smoke-gemini.ts      One real model call, run by hand
+  scripts/                     The cron entry point, the Gemini smoke test, gmail:consent
 
-supabase/migrations/           Postgres schema, RLS, views and the dashboard functions
+supabase/migrations/           Postgres schema, RLS, grants, views and the RPCs
+render.yaml                    The Render Blueprint for the two server/ services
 ```
+
+## Logging a meal
+
+One capture, three ways in — a photo, a voice note, or typed text — and the same review screen at
+the end of all three.
+
+**The photos are uploaded before the meal exists.** They have to be: the model reads them, and it
+is called before anything is written. That ordering is why the orphan-photo sweeper exists, and why
+the capture sheet deletes its own uploads when it is closed or discarded. The gap between
+"uploaded" and "saved" is real, and something has to cover it.
+
+**A capture is recognised before it is parsed.** A photo whose SHA-256 matches one used in the last
+24 hours, or a meal with similar names within ninety minutes, raises the duplicate banner before
+any model call happens — the round trip, and one of the user's sixty analyses, avoided. The banner
+offers the earlier meal rather than deciding for the user: "it is a new meal" is a real answer,
+because a second helping looks exactly like a repeat. Taking that answer sets a marker which skips
+the hash check _and_ reaches the meal's fingerprint, so the save is not swallowed as a repeat
+either.
+
+**`save_meal` is idempotent in two ways.** A repeated client key returns the original meal
+untouched, and a fingerprint that already exists returns that meal instead of raising, so the UI can
+say "you have already logged this" rather than showing a constraint error. Both are scoped to meals
+that still exist, which is what makes delete-then-re-log work.
+
+The review screen is where the numbers stop being the model's and become the user's. It owns the
+idempotency key from the moment it mounts, so a double tap on Save cannot log two meals, and it is
+the only route from a capture to a saved meal.
+
+## Editing a saved meal
+
+A meal can be corrected after it is saved, and this is the one place the schema is deliberately
+cautious about what a write may touch.
+
+**Two ways in, because a gesture cannot be the only one.** Swipe left reveals Delete, swipe right
+reveals Edit, and both live in the row's `⋯` menu as well — the only path that is visible without
+knowing a gesture, since a mouse user has no reason to drag a meal sideways. The two directions are
+deliberately hard to confuse: letting go latches an action only when one direction travelled far
+enough _and_ beat the other by a margin, so a drag that goes out one way and comes back springs shut
+rather than guessing between an edit and a delete. Delete keeps its undo. Edit has none, because
+closing it unsaved changes nothing.
+
+**An edit may change the time, the meal type, the notes and the items, and nothing else.**
+`update_meal` writes exactly that list, and a guard in the migration fails it if the function ever
+so much as names the fingerprint, the idempotency key, the photos, the source or `deleted_at`.
+Those record how the meal came to exist; an edit changes what it says, not how it was obtained.
+Items are reconciled rather than appended: an item that names a row is updated in place, one that
+does not is inserted, and a row the payload no longer names is deleted. A named row that turns out
+not to belong to this meal aborts the whole call, because the silent alternative is that the item
+vanishes while the payload still carries its numbers and the person is told it saved.
+
+**The model's original reply is written only by the insert**, so `llm_raw` for an existing item
+survives any number of corrections — which is the reason the column exists. Re-analysing during an
+edit is the exception, and the confirmation says so in as many words: the rows on screen are
+replaced, and what the model originally said about them goes with them.
+
+**`meals.edited_at` marks an edit and only an edit.** A trigger could not do it, because a trigger
+cannot tell `update_meal` from `save_meal`, so it would stamp a creation as an edit.
+
+The remaining-calories line needed a rule of its own here, and it is the same trap the dashboard's
+footer had. The day's remainder already counts this meal, so subtracting the corrected total from it
+would take the meal off the day twice: 408 left with a 130 kcal meal in it must read 408, and a
+correction to 200 must read 338. The stored total is added back first (`remainingAfterEdit`), and it
+is derived from the loaded items rather than passed in, so there is one source of truth for the
+number the footer subtracts from.
+
+One gap, stated rather than hidden: that basis is _today's_ remainder, so it means something for a
+meal on the day being asked about and nothing for one on another day. The sheet is reached from
+today's timeline, so it is true for every meal that can currently be edited, and a meal edited from
+a past day would need that day's remainder instead.
 
 ## The Today dashboard
 
-A calorie ring, macro bars, a trailing-7-day verdict and the day's meal timeline with
-swipe-to-delete and undo, plus a quick weight entry.
+A calorie ring, macro bars, a trailing-7-day verdict and the day's meal timeline — swipe left to
+delete with an undo, swipe right to edit, and a `⋯` menu holding both — plus a quick weight entry.
 
-**Every number comes from a Postgres function**, not from the browser. A "day" is a day in
-the _profile's_ timezone, and the trailing window has to include the days on which nothing
-was logged — which is exactly what summing "the rows that came back" gets wrong. The
-functions read `daily_summaries` and keep RLS in force (`security invoker`):
+**Every number comes from a Postgres function**, not from the browser. The trailing window has to
+include the days on which nothing was logged, which is exactly what summing "the rows that came
+back" gets wrong. A day is the day a meal was written on: see
+[the day a meal belongs to](#the-day-a-meal-belongs-to) below. The functions read `daily_summaries`
+and keep RLS in force (`security invoker`):
 
 | Function                    | Returns                                                        |
 | --------------------------- | -------------------------------------------------------------- |
@@ -465,6 +622,26 @@ Two things about it are deliberate and easy to mistake for bugs:
   spans, and on a new account that produced a confident `on_track` from four days of food
   and one day of target. `days_judged` is reported separately from `days_logged` so the
   sentence can be honest about its own sample, and too small a sample says so.
+
+### The day a meal belongs to
+
+**`meals.local_date` is written when the meal is written, and never derived when it is read.** A
+trigger on `meals` computes it from the profile's timezone at that moment, and every reader —
+`daily_summaries`, `meals_for_day`, the trends functions — uses that column and nothing else.
+
+The obvious design is the other one, and it is worth saying why it was abandoned. Deriving the day
+at read time from the _current_ timezone makes the day boundary a function of a setting: change the
+timezone and every historical day is re-cut, so last Tuesday can stop being Tuesday. That is why the
+app has never followed the device. With the day stored, changing the zone means "from now on"
+instead of "always has been", and a meal keeps the day it was logged on. Changing a meal's _time_
+across a day boundary still moves the day with it, which is the rule every other writer follows.
+
+The backfill that introduced the column used the profile's _current_ zone — the same expression the
+old view evaluated — **because that is the only value that cannot invent history**. The residual
+cost, stated rather than hidden: if a zone changed in the past, those meals are dated as of today's
+zone rather than the zone at the time. That is what the app already showed, so nothing moved on
+screen. It must not be "fixed" by guessing from `profiles.updated_at`, which moves for weight,
+protein and goals too, so it is not evidence of a zone change.
 
 Deleting from the timeline is a **soft delete** (`meals.deleted_at`), which is what makes
 undo possible and what takes the meal out of every total, since `daily_summaries` filters
@@ -520,6 +697,81 @@ Dates cross this boundary as `YYYY-MM-DD` strings, never as `Date` objects. The 
 label is rendered with `Intl` rather than date-fns, because date-fns gives "Sep" where the
 rest of the app shows "Sept".
 
+## Invites, requests and the admin page
+
+The app is invite-only, and three different things are called "invite". They are easy to confuse,
+so:
+
+| What               | For whom          | What it does                                                                          |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------------- |
+| `/admin`           | an admin, in app  | adds an address to `allowed_emails`, drafts the email, approves requests, shows spend |
+| `tools/invite`     | an admin, laptop  | the same invite over IMAP, for when the mailbox credential lives on the machine       |
+| the sign-in screen | someone uninvited | one write and nothing else: a row in `invite_requests` saying "let me in"             |
+
+**An address has to be on `allowed_emails` before the app will do anything with it.** The sign-in
+screen asks `check_email_allowed` and every insert policy checks `is_email_allowed()`, so an
+uninvited person who signs in is told they are not on the list and offered the request button. The
+first admin comes from `bootstrap_first_admin()`: the earliest account on the allow list is promoted,
+and only while `admins` is still empty — gating it on the allow list being empty, as it first was,
+would have disabled it permanently the moment anyone was invited.
+
+**Access to the admin page is decided three times over, and only the last one matters.** The tab is
+hidden for non-admins, the route redirects unless `is_admin()` says true, and every read and write
+behind it is refused by RLS. The third is the control; the first two exist so a normal user does not
+see a door they cannot open, and so a mistake in the page cannot become a leak — the worst it could
+do is render a page of errors. A second admin cannot be created from the page: the `admins` table
+has no insert policy, so nobody can promote an account with their own token.
+
+**An invite address is normalised to `lower(trim(email))` before it is stored**, in the browser and
+again by a trigger on `allowed_emails`. An invite that looks added and can never match is worse than
+no invite at all.
+
+**`invite_requests` is the only write an uninvited person can cause.** The row's address comes from
+the `email` claim of their signed JWT and never from the request body, one row per address is
+enforced by a unique index, and a trigger skips repeats. `authenticated` has no update or delete
+policy on that table, so a request cannot be rewritten or withdrawn — which is also why nothing in
+the browser can put an address into that body.
+
+### The two invite senders, neither of which can send
+
+Both create a **draft**, and the safety property is what makes that safe to say twice: the only
+Gmail endpoint either reaches is `drafts.create`, and `server/test/gmail.test.ts` reads the source
+and fails if a send path is ever named in it, including in a comment. Read the draft, then send it
+yourself.
+
+- **The local tool** (`tools/invite`, `npm run invite`) is a two-box page on
+  <http://127.0.0.1:8788> that talks to Gmail over IMAP with an app password from the repo's `.env`.
+  It binds to `127.0.0.1` and not `0.0.0.0` because the credential is a password to a mailbox, not a
+  row in a table — serving it from the app would mean shipping that password somewhere or holding a
+  session that can write to the mailbox. Its credential must never be printed, logged or put in an
+  error message, which is what `tools/invite/src/redact.ts` exists for, including `imapflow`'s
+  unhandled `error` event — an uncaught exception that prints a stack.
+- **The deployed service** (`POST /invite`) uses a Gmail OAuth refresh token so an admin can invite
+  someone from a phone. A refresh token rather than an app password because this one lives on
+  Render: revocable on its own, scoped to `gmail.compose`, and attributed to a named app in the
+  account's third-party access list. That scope is _restricted_, which for a public app would mean
+  Google's verification plus an annual security assessment; this app is personal use under Google's
+  under-100-users exemption, so it needs neither and the reader clicks through one unverified-app
+  screen. Passing 100 users would change that.
+
+The invite body is `shared/invite-email.ts`, which `tools/invite` imports too, so there is one copy
+of what an invite says. `docs/invite-email.html` is generated from it by `npm run invite:preview`
+and is not edited by hand: two copies of an email drift, and the copy that drifts is the one you
+send. Adding the address and drafting the email are one request, drafted first, so a failure grants
+nobody access.
+
+## Privacy and account deletion
+
+`/privacy` is a real page rather than a placeholder, and it is deliberately **outside** the
+authenticated shell: Google's OAuth reviewers fetch that URL while verifying the consent screen, so
+it has to render for a signed-out visitor with no session and no data of its own.
+
+It describes what the code actually does, which is why it names the soft delete — a deleted meal
+keeps its photos so the undo can work — and says plainly that **account deletion is not built yet**.
+That is a gap, not a claim: a privacy page that promises a capability the app does not have is worse
+than a short one, because it is the page someone believes. Deleting an account means cascading rows
+across meals, items, weight, targets and the storage bucket, and none of that exists yet.
+
 ## Conventions
 
 - One logical change per commit, e.g. `feat(parse-meal): ...` or `fix(dedupe): ...`
@@ -528,6 +780,10 @@ rest of the app shows "Sept".
 - The parse-meal service never uses the service role key — it forwards the caller's JWT
 - The orphan-photo sweeper is the one place `SUPABASE_SERVICE_ROLE_KEY` is read, from its own
   config, because it must see every user's meals to know which photos are referenced
-- Row Level Security on every table, policy `user_id = auth.uid()`
+- Row Level Security on every table, policy `user_id = auth.uid()`, **and an explicit grant beside
+  it** — a grant and a policy are different things, and a table needs both
 - Aggregations belong in Postgres, not in the browser
-- Day boundaries are resolved in the profile's timezone, never the device's
+- The day a meal belongs to is **stored when the meal is written** (`meals.local_date`) and never
+  derived at read time, so a timezone change means "from now on" rather than re-cutting history
+- Neither invite path can send: both put the message in Drafts rather than sending it, and the
+  deployed one is checked by a test that fails if a send path is ever named in its source
