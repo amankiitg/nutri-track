@@ -12,6 +12,7 @@
  * failure being tested is the only thing in the way.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -120,6 +121,98 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+/**
+ * The time a capture is for.
+ *
+ * The sheet is mounted once by the shell and shown later, so its "Eaten at" default was the time
+the app loaded rather than the time it opened: a phone that had been sitting there since lunch
+offered 13:03 at half past three, and guessed lunch with it. These pin the two halves of the rule —
+fresh on every open, and the person's own edit kept while the sheet stays open.
+ */
+describe("the time a capture is for", () => {
+  /** Opens and closes the sheet from outside it, the way the capture button does. */
+  function Harness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(false)}>
+          close-sheet
+        </button>
+        <button type="button" onClick={() => setOpen(true)}>
+          open-sheet
+        </button>
+        <CaptureSheet
+          open={open}
+          onOpenChange={setOpen}
+          userId="user-1"
+          // The device's own zone, so local time in the fixture and the meal-type guess agree
+          // whatever machine runs this.
+          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          targetCalories={2000}
+          remainingToday={2000}
+        />
+      </>
+    );
+  }
+
+  function renderHarness() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+  }
+
+  const eatenAt = () => screen.getByLabelText(/eaten at/i) as HTMLInputElement;
+  const mealType = () => screen.getByLabelText("Meal");
+
+  it("is the time it opened, not the time the app loaded", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-06T13:03:00"));
+    renderHarness();
+
+    expect(eatenAt().value).toBe("2026-11-06T13:03");
+    expect(mealType()).toHaveValue("lunch");
+
+    fireEvent.click(screen.getByText("close-sheet"));
+    vi.setSystemTime(new Date("2026-11-06T15:30:00"));
+    fireEvent.click(screen.getByText("open-sheet"));
+
+    expect(eatenAt().value).toBe("2026-11-06T15:30");
+    // Half past three is a snack, not a lunch, and the guess has to move with the time.
+    expect(mealType()).toHaveValue("snack");
+  });
+
+  it("keeps the person's own edit while the sheet stays open", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-06T13:03:00"));
+    renderHarness();
+
+    // They ate earlier than they are logging it.
+    fireEvent.change(eatenAt(), { target: { value: "2026-11-06T12:15" } });
+    act(() => {
+      vi.advanceTimersByTime(90 * 60 * 1000);
+    });
+
+    expect(eatenAt().value).toBe("2026-11-06T12:15");
+    expect(mealType()).toHaveValue("lunch");
+  });
+
+  it("starts from now again on the next open, discarding that edit", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-06T13:03:00"));
+    renderHarness();
+    fireEvent.change(eatenAt(), { target: { value: "2026-11-06T12:15" } });
+
+    fireEvent.click(screen.getByText("close-sheet"));
+    vi.setSystemTime(new Date("2026-11-06T15:30:00"));
+    fireEvent.click(screen.getByText("open-sheet"));
+
+    expect(eatenAt().value).toBe("2026-11-06T15:30");
+  });
 });
 
 describe("when the meal service cannot be reached", () => {

@@ -235,6 +235,20 @@ export function CaptureSheet({
     }
   }, [open, dictation]);
 
+  /**
+   * The time this capture is for, taken again every time the sheet opens.
+   *
+   * It used to be captured once, when the app loaded, so a sheet opened at 15:30 on a phone that
+   * had been sitting there since lunch offered 13:03 and guessed lunch with it. The open
+   * transition is the only moment that can be stale: while the sheet is open the person's own edit
+   * is the truth, and the next open starts from now again.
+   */
+  useEffect(() => {
+    if (!open) return;
+    setEatenAt(toLocalInputValue(new Date()));
+    setMealType(null);
+  }, [open]);
+
   function reset(): void {
     releasePhotos(photos);
     setPhotos([]);

@@ -12,6 +12,7 @@ import { EditMealSheet } from "@/components/review/EditMealSheet";
 import { localDateString, refreshTargetIfStale, saveProfileWithTargets } from "@/lib/profile";
 import { formFromProfile, toProfileInsert } from "@/lib/onboarding";
 import { targetReached } from "@/lib/targets";
+import { useToday } from "@/hooks/use-today";
 import {
   VERDICT_DAYS,
   deleteMeal,
@@ -39,8 +40,9 @@ function TodayPage() {
 
   // The profile's local date, not the device's. Every function on the other side
   // resolves the day the same way, so the totals, the verdict and the timeline all
-  // agree about which day "today" is.
-  const today = localDateString(timeZone);
+  // agree about which day "today" is. It is re-read while the screen is open, so a phone
+  // left on it overnight turns over at midnight instead of showing yesterday.
+  const today = useToday(timeZone);
   const [busyMealId, setBusyMealId] = useState<string | null>(null);
   /**
    * The meal being edited, or null. The sheet is mounted only while this is set, so opening it
