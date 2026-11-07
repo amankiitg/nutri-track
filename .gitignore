@@ -40,3 +40,8 @@ supabase/.temp/
 *.sln
 *.sw?
 fixtures/
+
+# Contact lists for a Resend broadcast: addresses are other people's data, and the
+# template is the only part of an email that belongs in git.
+emails/*.csv
+email/*.csv

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Happy Diwali from NutriTrack</title>
+    <!--
+      Diwali 2026, for a Resend broadcast.
+
+      Same look as the invite email in shared/invite-email.ts: cream #f0ece4, card #fffdf9, ink
+      #192217, quiet ink #5e6657, leaf green #195c2e, border #e2ded2, panel #f4f0e6. Table layout
+      with every style inline, and no <link> to a web font at all: the font stacks name Fraunces
+      and Manrope and fall back to Georgia and Arial, so nothing waits on a network request that
+      Gmail or Outlook would refuse.
+
+      Two placeholders are Resend's own and are kept verbatim: the recipient's first name in the
+      greeting, with a fallback, and its unsubscribe URL in the footer.
+    -->
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f0ece4">
+    <!-- Preheader: shown in the inbox next to the subject, hidden in the body. -->
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        max-width: 0;
+        overflow: hidden;
+        opacity: 0;
+        font-size: 1px;
+        line-height: 1px;
+        color: #f0ece4;
+      "
+    >
+      A happy Diwali to you and yours. Light, good food, and the people you love.
+      &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+    </div>
+
+    <table
+      role="presentation"
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      width="100%"
+      style="background-color: #f0ece4"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            border="0"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width: 100%;
+              max-width: 600px;
+              background-color: #fffdf9;
+              border: 1px solid #e2ded2;
+              border-radius: 20px;
+            "
+          >
+            <tr>
+              <td style="padding: 40px 40px 8px 40px">
+                <!-- Brand row -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="40" valign="middle">
+                      <img
+                        src="https://tracknutri.app/icons/icon-192.png"
+                        width="40"
+                        height="40"
+                        alt="NutriTrack"
+                        style="display: block; width: 40px; height: 40px; border-radius: 10px"
+                      />
+                    </td>
+                    <td valign="middle" style="padding-left: 12px">
+                      <span
+                        style="
+                          font-family:
+                            &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                          font-size: 19px;
+                          font-weight: 700;
+                          letter-spacing: -0.01em;
+                          color: #192217;
+                        "
+                        >NutriTrack</span
+                      >
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Headline -->
+                <p
+                  style="
+                    margin: 28px 0 0 0;
+                    font-family: &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 34px;
+                    line-height: 1.05;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
+                    color: #192217;
+                  "
+                >
+                  Happy <em style="color: #195c2e">Diwali</em>.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 24px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0 0 16px 0">Hi {{{contact.first_name|there}}},</p>
+
+                <p style="margin: 0 0 16px 0">
+                  A very happy Diwali to you and your family. I hope the week is full of light, good
+                  food, and time with the people you love.
+                </p>
+
+                <p style="margin: 0">
+                  Enjoy the mithai guilt-free this week. The tracking can wait until Monday.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 24px 40px 0 40px">
+                <table
+                  role="presentation"
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="background-color: #f4f0e6; border: 1px solid #e2ded2; border-radius: 14px"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding: 16px 18px;
+                        font-family:
+                          &quot;Manrope&quot;,
+                          -apple-system,
+                          BlinkMacSystemFont,
+                          &quot;Segoe UI&quot;,
+                          Roboto,
+                          Helvetica,
+                          Arial,
+                          sans-serif;
+                        font-size: 15px;
+                        line-height: 1.55;
+                        color: #5e6657;
+                      "
+                    >
+                      If you haven&apos;t tried NutriTrack yet, your invite is still open at
+                      <a
+                        href="https://tracknutri.app/auth?tab=signup"
+                        style="color: #195c2e; text-decoration: underline"
+                        >tracknutri.app</a
+                      >.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 26px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0 0 4px 0">Warmly,</p>
+                <p style="margin: 0">Aman</p>
+              </td>
+            </tr>
+
+            <!-- Close -->
+            <tr>
+              <td style="padding: 28px 40px 40px 40px">
+                <table
+                  role="presentation"
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="border-top: 1px solid #e2ded2"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding-top: 18px;
+                        font-family:
+                          &quot;Manrope&quot;,
+                          -apple-system,
+                          BlinkMacSystemFont,
+                          &quot;Segoe UI&quot;,
+                          Roboto,
+                          Helvetica,
+                          Arial,
+                          sans-serif;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        color: #5e6657;
+                      "
+                    >
+                      You&apos;re getting this because you joined or asked to join NutriTrack.<br />
+                      <a
+                        href="{{{RESEND_UNSUBSCRIBE_URL}}}"
+                        style="color: #195c2e; text-decoration: underline"
+                        >Unsubscribe</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+Hi {{{contact.first_name|there}}},
+
+A very happy Diwali to you and your family. I hope the week is full of light, good food, and
+time with the people you love.
+
+Enjoy the mithai guilt-free this week. The tracking can wait until Monday.
+
+If you haven't tried NutriTrack yet, your invite is still open at
+https://tracknutri.app/auth?tab=signup
+
+Warmly,
+Aman
+
+You're getting this because you joined or asked to join NutriTrack.
+Unsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}
