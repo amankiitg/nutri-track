@@ -59,6 +59,11 @@ export type Verdict = (typeof VERDICTS)[number];
 
 const weekVerdictRow = z.object({
   window_days: numeric,
+  // The window is the complete days *before* the date asked about, so `window_end` is yesterday and
+  // `window_start` is `window_end - window_days + 1`. They are carried rather than derived because the
+  // day boundary is the profile's timezone, and the browser must not re-cut it.
+  window_start: z.string(),
+  window_end: z.string(),
   days_logged: numeric,
   days_judged: numeric,
   days_on_track: numeric,
@@ -346,6 +351,33 @@ function kcal(value: number | null): string {
   return value === null ? "—" : Math.round(value).toLocaleString();
 }
 
+/** "31 Oct" for a `YYYY-MM-DD` calendar date, read as that date and nothing else. */
+function dayMonth(localDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (!match) return "";
+  const [, year, month, day] = match;
+  const at = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (Number.isNaN(at.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(at);
+}
+
+/**
+ * "31 Oct – 6 Nov": the days a verdict actually covers, for the card's subtitle.
+ *
+ * Carried rather than derived. `window_end` is yesterday in the profile's timezone, and working out
+ * yesterday in the browser is where a timezone bug gets made; the database already decided it.
+ */
+export function verdictWindowLabel(verdict: WeekVerdict): string {
+  const from = dayMonth(verdict.window_start);
+  const to = dayMonth(verdict.window_end);
+  if (from === "" || to === "") return "";
+  return `${from} – ${to}`;
+}
+
 /**
  * The verdict line, as one sentence.
  *
@@ -370,12 +402,15 @@ export function verdictSentence(verdict: WeekVerdict): string {
       // right and "1 of the last 7 day has" does not.
       return `Only ${judged} of the last ${window} days ${judged === 1 ? "has" : "have"} both meals and a target. A few more and this becomes a real trend.`;
     }
+    // "not counting today" is not decoration. The window is the complete days before today, so a
+    // meal logged this morning changes nothing here — and without the parenthetical the number reads
+    // as an average that already includes it, which is what made the card look wrong at 8am.
     case "on_track":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days, against ${kcal(verdict.avg_target_calories)} — on target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — on target.`;
     case "under":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days, against ${kcal(verdict.avg_target_calories)} — under target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — under target.`;
     case "over":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days, against ${kcal(verdict.avg_target_calories)} — over target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — over target.`;
   }
 }
 

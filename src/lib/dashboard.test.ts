@@ -9,6 +9,7 @@ import {
   targetZone,
   verdictHasNumbers,
   verdictSentence,
+  verdictWindowLabel,
   weekdayName,
   weightDelta,
   weightLogRow,
@@ -41,6 +42,8 @@ describe("targetZone", () => {
 
 const verdict = (over: Partial<WeekVerdict> = {}): WeekVerdict => ({
   window_days: 7,
+  window_start: "2026-10-31",
+  window_end: "2026-11-06",
   days_logged: 0,
   days_judged: 0,
   days_on_track: 0,
@@ -174,7 +177,50 @@ describe("verdictSentence", () => {
       }),
     );
     expect(sentence).toBe(
-      "Averaging 1,450 kcal over 5 of the last 7 days, against 1,636 — under target.",
+      "Averaging 1,450 kcal over 5 of the last 7 days (not counting today), against 1,636 — under target.",
+    );
+  });
+
+  it("counts only the days that were judged, and says today is not one of them", () => {
+    // The case from the request: three days of food and a target in the window. The row's
+    // `window_end` is yesterday, so today's part-day cannot be in these numbers — and the sentence
+    // has to say so, or the figure reads as an average that already includes this morning.
+    const sentence = verdictSentence(
+      verdict({
+        verdict: "under",
+        days_logged: 3,
+        days_judged: 3,
+        avg_calories: 1690,
+        avg_target_calories: 1771,
+      }),
+    );
+    expect(sentence).toContain("over 3 of the last 7 days");
+    expect(sentence).toContain("(not counting today)");
+    expect(sentence).not.toContain("over 4 of");
+  });
+
+  it("puts the parenthetical in when it is over target too", () => {
+    expect(
+      verdictSentence(
+        verdict({
+          verdict: "over",
+          days_logged: 4,
+          days_judged: 4,
+          avg_calories: 2000,
+          avg_target_calories: 1771,
+        }),
+      ),
+    ).toContain("(not counting today)");
+  });
+
+  it("names the days it counted, so the window is not an article of faith", () => {
+    expect(verdictWindowLabel(verdict())).toBe("31 Oct – 6 Nov");
+    // A single day on both ends, and a year boundary, formatted without slipping a day.
+    expect(
+      verdictWindowLabel(verdict({ window_start: "2026-12-31", window_end: "2026-12-31" })),
+    ).toBe("31 Dec – 31 Dec");
+    expect(verdictWindowLabel(verdict({ window_start: "nope", window_end: "2026-11-06" }))).toBe(
+      "",
     );
   });
 

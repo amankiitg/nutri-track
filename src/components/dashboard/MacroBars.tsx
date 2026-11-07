@@ -1,10 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   VERDICT_DAYS,
   macroFraction,
   targetZone,
   verdictHasNumbers,
   verdictSentence,
+  verdictWindowLabel,
   type DailyTotals,
   type WeekVerdict,
 } from "@/lib/dashboard";
@@ -105,11 +106,19 @@ export function MacroBars({ totals }: { totals: DailyTotals }) {
  */
 export function VerdictLine({ verdict }: { verdict: WeekVerdict }) {
   const confident = verdictHasNumbers(verdict.verdict);
+  const window = verdictWindowLabel(verdict);
 
   return (
     <Card className="card-soft animate-rise">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">The last {VERDICT_DAYS} days</CardTitle>
+        {/* "Complete" is the whole point: the window ends yesterday, so nothing here moves
+            when today's first meal is logged. The dates underneath say which days they were,
+            because "the last 7 days" is not a date and the person reading it may be owed a
+            better answer than an implicit one. */}
+        <CardTitle className="text-base">The last {VERDICT_DAYS} complete days</CardTitle>
+        {window === "" ? null : (
+          <CardDescription className="tabular-nums">{window} · not counting today</CardDescription>
+        )}
       </CardHeader>
       <CardContent className="space-y-2">
         <p className={confident ? "text-sm" : "text-sm text-muted-foreground"}>
