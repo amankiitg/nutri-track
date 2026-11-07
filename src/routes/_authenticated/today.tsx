@@ -11,7 +11,7 @@ import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import { EditMealSheet } from "@/components/review/EditMealSheet";
 import { localDateString, refreshTargetIfStale, saveProfileWithTargets } from "@/lib/profile";
 import { formFromProfile, toProfileInsert } from "@/lib/onboarding";
-import { targetReached } from "@/lib/targets";
+import { targetProximity } from "@/lib/targets";
 import { useToday } from "@/hooks/use-today";
 import {
   VERDICT_DAYS,
@@ -80,18 +80,19 @@ function TodayPage() {
   });
 
   /**
-   * Whether the goal's target is already behind this person, so the screen can say so instead of
+   * How near the goal's target this person is, so the screen can say they have arrived instead of
    * quietly keeping a deficit they no longer need.
    *
    * The latest weigh-in answers it when there is one, because that is the number the app uses
    * everywhere else; the profile's stored weight is the fallback for somebody who has never logged
-   * one.
+   * one. A target on the wrong side is an error the settings form has to fix, not a notice: it is
+   * not this screen's to report, and saying "at your target" next to it was the bug.
    */
   const latestWeightKg = weights.data?.[0]?.weight_kg ?? profile?.weight_kg ?? null;
-  const atTarget =
+  const proximity =
     profile === null || profile === undefined
       ? null
-      : targetReached(profile.goal, latestWeightKg, profile.target_weight_kg ?? null);
+      : targetProximity(profile.goal, latestWeightKg, profile.target_weight_kg ?? null);
 
   function refreshDay(): void {
     void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
@@ -248,7 +249,7 @@ function TodayPage() {
           </Card>
 
           {/* Under the ring, because that is the number the deficit is baked into. */}
-          {atTarget === true && (
+          {proximity === "at_target" && (
             <TargetReachedNotice
               pending={switchToMaintain.isPending}
               onSwitch={() => switchToMaintain.mutate()}

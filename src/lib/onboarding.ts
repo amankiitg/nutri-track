@@ -14,6 +14,7 @@ import {
   ageFromDob,
   bmi,
   minSafeWeightKg,
+  targetProximity,
   type ActivityLevel,
   type Goal,
   type Pace,
@@ -205,31 +206,29 @@ export const CHOOSE_ONE = "Please choose one.";
  * The target a goal cannot reach, in the words of the goal the person chose.
  *
  * Checked in kilograms, after any unit conversion: the boxes hold feet, pounds or kilos, and this
- * question is about the body rather than about the field. A target equal to the current weight is
- * not a direction at all, so it gets its own sentence pointing at Maintain.
+ * question is about the body rather than about the field.
  *
- * The tolerance is 0.05 kg, chosen rather than measured: a pound-to-kilogram round trip lands
- * within a few grams of where it started, and a form that rejected 72 kg as "above your current
- * 72 kg" would be unusable.
+ * Only a target on the wrong side *by more than a kilogram* is a mistake. Inside that kilogram the
+ * person is at their target, which is a different sentence and belongs to the screens that know
+ * their weight has moved (Settings and Today) rather than to onboarding. Both messages used to fire
+ * on the same numbers; distance is what decides which one is true.
  */
 export function targetDirectionMessage(value: {
   goal: Goal | null;
   weight_kg: number | null;
   target_weight_kg: number | null;
 }): string | null {
-  if (value.goal === null || value.goal === "maintain") return null;
-  if (value.weight_kg === null || value.target_weight_kg === null) return null;
-
-  if (Math.abs(value.target_weight_kg - value.weight_kg) <= 0.05) {
-    return "Your target is your current weight. Choose Maintain to stay where you are.";
+  if (targetProximity(value.goal, value.weight_kg, value.target_weight_kg) !== "wrong_side") {
+    return null;
   }
-  if (value.goal === "lose" && value.target_weight_kg > value.weight_kg) {
+  // Narrowed by the proximity check above, which returns null unless both weights are present.
+  const { goal, weight_kg: weight, target_weight_kg: target } = value;
+  if (goal === null || weight === null || target === null) return null;
+
+  if (goal === "lose") {
     return "Your target is above your current weight. Choose Gain weight, or lower the target.";
   }
-  if (value.goal === "gain" && value.target_weight_kg < value.weight_kg) {
-    return "Your target is below your current weight. Choose Lose weight, or raise the target.";
-  }
-  return null;
+  return "Your target is below your current weight. Choose Lose weight, or raise the target.";
 }
 
 const activityLevelSchema = z.custom<ActivityLevel>(

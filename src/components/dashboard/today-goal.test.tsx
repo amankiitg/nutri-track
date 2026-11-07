@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lbToKg } from "@/lib/units";
 
 const h = vi.hoisted(() => ({
   saveProfile: vi.fn(),
@@ -21,7 +22,8 @@ const h = vi.hoisted(() => ({
 /** The latest weigh-in, which is what the notice is decided from. */
 let latestWeight = 69.5;
 
-const PROFILE = {
+/** The profile the route hands the screen. Mutable, because the numbers are the test. */
+let PROFILE = {
   user_id: "user-1",
   timezone: "UTC",
   units: "metric" as const,
@@ -100,6 +102,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.saveProfile.mockResolvedValue(undefined);
   latestWeight = 69.5;
+  PROFILE = {
+    user_id: "user-1",
+    timezone: "UTC",
+    units: "metric",
+    display_name: "Aman",
+    goal: "lose",
+    weight_kg: 72,
+    target_weight_kg: 70,
+    pace_kg_per_week: 0.5,
+  };
 });
 
 describe("the target already being behind you", () => {
@@ -118,6 +130,28 @@ describe("the target already being behind you", () => {
     // Wait for the screen to have drawn its numbers, then check the notice never arrived.
     expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
     expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
+  });
+
+  it("stays quiet when the target is on the wrong side, which is the form's error to report", async () => {
+    // 77 kg against an 85 kg lose target: this screen has no business saying "at your target"
+    // next to it, which is the pair of messages the distance rule separated.
+    latestWeight = 77;
+    PROFILE = { ...PROFILE, target_weight_kg: 85 };
+
+    renderToday();
+
+    expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
+    expect(screen.queryByText(/your target is above your current weight/i)).toBeNull();
+  });
+
+  it("says so for 169.8 lb against a 170 lb target, a pound that is 90 g", async () => {
+    latestWeight = lbToKg(169.8);
+    PROFILE = { ...PROFILE, target_weight_kg: lbToKg(170) };
+
+    renderToday();
+
+    expect(await screen.findByText(/you're at your target weight/i)).toBeInTheDocument();
   });
 
   it("saves Maintain on one tap, because there is no Save button on this screen", async () => {

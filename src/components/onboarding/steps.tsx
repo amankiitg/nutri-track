@@ -11,7 +11,7 @@ import {
   ACTIVITY_MULTIPLIERS,
   PACE_OPTIONS,
   projectionFor,
-  targetReached,
+  targetProximity,
 } from "@/lib/targets";
 import { DIETARY_TAG_OPTIONS } from "@/lib/profile";
 import { formatPace, formatWeight } from "@/lib/units";
@@ -134,9 +134,24 @@ export function ActivityStep({ form, setField }: StepProps) {
   );
 }
 
-export function GoalStep({ form, errors, setField }: StepProps) {
-  const reached =
-    form.goal === null ? null : targetReached(form.goal, form.weight_kg, form.target_weight_kg);
+export function GoalStep({
+  form,
+  errors,
+  setField,
+  showReachedNotice = false,
+}: StepProps & {
+  /**
+   * Whether this copy of the step may say the target has been reached.
+   *
+   * Off in onboarding, on in Settings. A new user has no weigh-ins, so "you're at your target"
+   * would be a claim about history they do not have; Settings is where the weight has actually
+   * moved and the notice is the point.
+   */
+  showReachedNotice?: boolean;
+}) {
+  const atTarget =
+    showReachedNotice &&
+    targetProximity(form.goal, form.weight_kg, form.target_weight_kg) === "at_target";
   // Null whenever there is nothing honest to print, including a target already passed.
   const projectedOn =
     form.goal === null
@@ -198,9 +213,7 @@ export function GoalStep({ form, errors, setField }: StepProps) {
             </div>
           </fieldset>
 
-          {reached === true && (
-            <TargetReachedNotice onSwitch={() => setField("goal", "maintain")} />
-          )}
+          {atTarget && <TargetReachedNotice onSwitch={() => setField("goal", "maintain")} />}
 
           {projectedOn && (
             <p className="text-sm text-muted-foreground">

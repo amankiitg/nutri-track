@@ -1,11 +1,16 @@
 /**
- * The notice a goal shows once its target is behind you.
+ * The notice a goal shows once its target is within reach.
  *
- * One component for the two screens that need it: the goal group in settings and onboarding, where
- * the button only changes the form so the next Save writes it, and Today, where the tap is the
- * save. The sentence is the same in both, and so is the reason it exists: a deficit that has
- * already done its job is now just an appetite, and the app should say so rather than keeping
- * quiet and letting somebody keep losing weight they did not mean to.
+ * One component for the two screens that need it: the goal group in settings, where the button only
+ * changes the form so the next Save writes it, and Today, where the tap is the save. The sentence
+ * is the same in both, and so is the reason it exists: a deficit that has already done its job is
+ * now just an appetite, and the app should say so rather than keeping quiet and letting somebody
+ * keep losing weight they did not mean to.
+ *
+ * Never onboarding. A new user has no weigh-ins behind them, so "you're at your target weight" would
+ * be a claim about history they do not have; and on a form where the target can be typed above the
+ * current weight it is the other half of a contradiction, which is what this notice and the
+ * direction error used to be.
  */
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";

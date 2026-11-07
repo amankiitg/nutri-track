@@ -8,9 +8,10 @@ import {
   minSafeWeightKg,
   projectionFor,
   projectedTargetDate,
-  targetReached,
+  targetProximity,
   tdee,
 } from "./targets";
+import { lbToKg } from "./units";
 
 describe("Mifflin-St Jeor", () => {
   it("computes female BMR from the worked example", () => {
@@ -147,23 +148,47 @@ describe("helpers", () => {
   });
 });
 
-describe("targetReached", () => {
-  it("is true only in the direction the goal points", () => {
-    // Losing means at or below; gaining means at or above. The same pair of numbers answers
-    // differently for the two goals, which is why direction cannot be read off the distance.
-    expect(targetReached("lose", 70, 72)).toBe(true);
-    expect(targetReached("lose", 75, 72)).toBe(false);
-    expect(targetReached("gain", 72, 70)).toBe(true);
-    expect(targetReached("gain", 68, 70)).toBe(false);
-    // Landing exactly on it counts as arrived.
-    expect(targetReached("lose", 72, 72)).toBe(true);
-    expect(targetReached("gain", 70, 70)).toBe(true);
+describe("targetProximity", () => {
+  it("reads the direction, not the distance: the same pair answers differently per goal", () => {
+    expect(targetProximity("lose", 75, 72)).toBe("away");
+    expect(targetProximity("gain", 72, 70)).toBe("wrong_side");
+    expect(targetProximity("gain", 68, 70)).toBe("away");
+    expect(targetProximity("lose", 77, 85)).toBe("wrong_side");
+  });
+
+  it("counts a kilogram either side of the target as being there", () => {
+    // The same weight answers "at target" whether it is just short, exactly on it, or just past.
+    expect(targetProximity("lose", 70.5, 70)).toBe("at_target");
+    expect(targetProximity("lose", 70, 70)).toBe("at_target");
+    expect(targetProximity("lose", 69.5, 70)).toBe("at_target");
+    // And the tolerance is a full kilogram, so exactly one is still there and a tenth more is not.
+    expect(targetProximity("lose", 69, 70)).toBe("at_target");
+    expect(targetProximity("lose", 70, 71)).toBe("at_target");
+    expect(targetProximity("lose", 70, 71.1)).toBe("wrong_side");
+  });
+
+  it("calls a target the weight has gone well past a wrong side too", () => {
+    // 68.9 kg aiming at 70, and 77 kg aiming at 85, are the same numbers seen from two directions:
+    // a form holds no history to tell somebody who overshot from somebody who mistyped.
+    expect(targetProximity("lose", 68.9, 70)).toBe("wrong_side");
+    expect(targetProximity("gain", 71.1, 70)).toBe("wrong_side");
+  });
+
+  it("reads 169.8 lb against a 170 lb target as being there, because it is 0.09 kg", () => {
+    // The pair from the bug report: 1 lb apart in the boxes, 90 g apart in kilograms.
+    expect(targetProximity("lose", lbToKg(169.8), lbToKg(170))).toBe("at_target");
+  });
+
+  it("calls 77 kg against an 85 kg lose target the wrong side, and it is 8 kg", () => {
+    expect(targetProximity("lose", 77, 85)).toBe("wrong_side");
+    expect(targetProximity("gain", 77, 69)).toBe("wrong_side");
   });
 
   it("does not apply to maintain, or when a number is missing", () => {
-    expect(targetReached("maintain", 70, 72)).toBeNull();
-    expect(targetReached("lose", null, 72)).toBeNull();
-    expect(targetReached("lose", 70, null)).toBeNull();
+    expect(targetProximity("maintain", 70, 72)).toBeNull();
+    expect(targetProximity(null, 70, 72)).toBeNull();
+    expect(targetProximity("lose", null, 72)).toBeNull();
+    expect(targetProximity("lose", 70, null)).toBeNull();
   });
 });
 

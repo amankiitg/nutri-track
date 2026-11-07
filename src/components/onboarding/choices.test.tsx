@@ -155,18 +155,16 @@ describe("a target on the wrong side of the current weight", () => {
     expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
   });
 
-  it("points at Maintain when the target is the weight they already are", () => {
+  it("says nothing when the target is the weight they already are, and never the notice", () => {
     toGoal("70");
     chooseRadio(/^lose weight/i);
     setInput(/target weight/i, "70");
     continueStep();
 
-    expect(
-      screen.getByText(
-        "Your target is your current weight. Choose Maintain to stay where you are.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
+    // Onboarding has no history to have reached anything, so the at-target notice is not its to
+    // show; and being at the target is not a direction error either.
+    expect(screen.queryByText(/you're at your target weight/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
   });
 
   it("moves on once the target is on the right side", () => {

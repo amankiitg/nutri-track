@@ -75,7 +75,8 @@ export function ProfileForm({
         <ActivityStep {...stepProps} />
       </FieldGroup>
       <FieldGroup title="Your goal">
-        <GoalStep {...stepProps} />
+        {/* Settings is where the weight has moved, so this is the copy that may say so. */}
+        <GoalStep {...stepProps} showReachedNotice />
       </FieldGroup>
       <FieldGroup title="Preferences">
         <PreferencesStep {...stepProps} />

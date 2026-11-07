@@ -23,6 +23,7 @@ import {
   validateStep,
   type OnboardingForm,
 } from "./onboarding";
+import { targetProximity } from "./targets";
 
 /** Everything but the two choices, so a test can add one and watch what the other does. */
 const FILLED: OnboardingForm = {
@@ -35,7 +36,6 @@ const FILLED: OnboardingForm = {
 
 const ABOVE = "Your target is above your current weight. Choose Gain weight, or lower the target.";
 const BELOW = "Your target is below your current weight. Choose Lose weight, or raise the target.";
-const SAME = "Your target is your current weight. Choose Maintain to stay where you are.";
 
 describe("a target on the wrong side of the current weight", () => {
   it("asks a losing goal to lower the target rather than raise it", () => {
@@ -50,14 +50,28 @@ describe("a target on the wrong side of the current weight", () => {
     );
   });
 
-  it("points at Maintain when the target is the weight they already are", () => {
-    // Neither direction was chosen: the answer to "lose above your weight" is not a loss, it is
-    // the goal they meant.
-    expect(targetDirectionMessage({ goal: "lose", weight_kg: 72, target_weight_kg: 72 })).toBe(
-      SAME,
-    );
-    expect(targetDirectionMessage({ goal: "gain", weight_kg: 72, target_weight_kg: 72 })).toBe(
-      SAME,
+  it("says nothing when the target is the weight they already are", () => {
+    // Being at your target is not a direction error. The sentence that used to live here pointed at
+    // Maintain, and it fired next to "you're at your target weight", which is the pair this split.
+    // The advice now belongs to the notice, on the two screens that show it.
+    expect(
+      targetDirectionMessage({ goal: "lose", weight_kg: 72, target_weight_kg: 72 }),
+    ).toBeNull();
+    expect(
+      targetDirectionMessage({ goal: "gain", weight_kg: 72, target_weight_kg: 72 }),
+    ).toBeNull();
+    expect(targetProximity("lose", 72, 72)).toBe("at_target");
+    expect(targetProximity("gain", 72, 72)).toBe("at_target");
+  });
+
+  it("still refuses a target a whole kilogram past the weight", () => {
+    // The tolerance is what separates the two messages, so its edge is worth pinning: 1 kg is
+    // "there", 1.1 kg is the wrong side.
+    expect(
+      targetDirectionMessage({ goal: "lose", weight_kg: 77, target_weight_kg: 78 }),
+    ).toBeNull();
+    expect(targetDirectionMessage({ goal: "lose", weight_kg: 77, target_weight_kg: 78.1 })).toBe(
+      ABOVE,
     );
   });
 
@@ -86,12 +100,13 @@ describe("a target on the wrong side of the current weight", () => {
     ).toBeNull();
   });
 
-  it("treats a few grams either way as the same weight", () => {
-    // 160 lb is 72.5748 kg. A round trip through pounds must not read as "above your current
-    // weight" and send somebody back to the unit select for a 25 g difference.
+  it("says nothing when the target is within a kilogram, which is the round-trip case", () => {
+    // 160 lb is 72.5748 kg, and a target typed as 160 lb comes back as 72.6 kg. A difference of
+    // 25 g must not read as "above your current weight" and send somebody back to the unit select;
+    // that is what the kilogram of tolerance is for.
     expect(
       targetDirectionMessage({ goal: "lose", weight_kg: 72.5748, target_weight_kg: 72.6 }),
-    ).toBe(SAME);
+    ).toBeNull();
   });
 
   it("stops a whole form being saved with the target on the wrong side", () => {

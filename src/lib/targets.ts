@@ -191,31 +191,55 @@ export function projectedTargetDate(
 }
 
 /**
- * Whether the target has already been passed, in the direction the goal points.
+ * How near the target the current weight is, which decides which sentence can be true.
  *
- * `null` means the question does not apply: maintain has no destination, and a missing weight or
- * target is not a reached one. The direction is the whole point — somebody losing weight who is
- * *below* their target has passed it, while somebody gaining who is below theirs has not — and
- * getting it backwards turns "2 kg to go" into "you have already arrived".
+ * Two messages used to fire on the same numbers: "your target is above your current weight" and
+ * "you're at your target weight". They cannot both be right, and distance is what separates them.
+ * One kilogram either side of the target counts as being there, or as having just passed it. The
+ * kilogram is the brief's number rather than a measurement ("about 2 lb"): scales read in 0.1 lb
+ * steps and a target typed in pounds comes back in kilograms, so an exact match is not something
+ * that happens, and refusing a target a hundred grams above the current weight would be refusing a
+ * rounding error.
+ *
+ * `wrong_side` therefore covers both a target typed past the weight and a target the weight has gone
+ * past: with goal "lose", 77 kg aiming at 85 and 68.9 kg aiming at 70 are the same numbers seen
+ * from two directions, and a form holds no history to tell them apart. Beyond a kilogram the error
+ * is the honest answer for both; inside it, the two screens that know the weight has moved say the
+ * person has arrived.
+ *
+ * `null` when the question does not apply: maintain has no destination, and a missing weight or
+ * target is not a distance.
  */
-export function targetReached(
-  goal: Goal,
+export const AT_TARGET_KG = 1;
+
+export type TargetProximity = "at_target" | "wrong_side" | "away";
+
+/**
+ * `null` when the question does not apply: maintain has no destination, and a missing weight or
+ * target is not a distance.
+ */
+export function targetProximity(
+  goal: Goal | null,
   currentKg: number | null,
   targetKg: number | null,
-): boolean | null {
-  if (goal === "maintain") return null;
+): TargetProximity | null {
+  if (goal === null || goal === "maintain") return null;
   if (currentKg === null || targetKg === null) return null;
-  if (goal === "lose") return currentKg <= targetKg;
-  return currentKg >= targetKg;
+
+  // Positive means the target is on the side the goal is heading away from. A target on the right
+  // side is ahead however far; one just behind is somebody who has arrived.
+  const overshoot = goal === "lose" ? targetKg - currentKg : currentKg - targetKg;
+  if (overshoot > AT_TARGET_KG) return "wrong_side";
+  if (Math.abs(targetKg - currentKg) <= AT_TARGET_KG) return "at_target";
+  return "away";
 }
 
 /**
  * The date to show for a goal, or null when there is nothing honest to show.
  *
  * This is the one place that decides, so no screen can print a date for a target that is already
- * behind the person. `projectedTargetDate` on its own cannot know: it is handed a distance, and a
- * distance has no direction. Anything that is not a goal still to be reached gets no date, which
- * is why both "does not apply" and "already there" come back null.
+ * behind the person, or for one they have arrived at within the tolerance. `projectedTargetDate`
+ * on its own cannot know: it is handed a distance, and a distance has no direction.
  */
 export function projectionFor(input: {
   goal: Goal;
@@ -224,7 +248,9 @@ export function projectionFor(input: {
   paceKgPerWeek: number | null;
   from?: Date;
 }): Date | null {
-  if (targetReached(input.goal, input.currentKg, input.targetKg) !== false) return null;
+  const proximity = targetProximity(input.goal, input.currentKg, input.targetKg);
+  // Only a target that is ahead and worth walking to gets a date.
+  if (proximity !== "away") return null;
   if (input.currentKg === null || input.targetKg === null || input.paceKgPerWeek === null) {
     return null;
   }
