@@ -210,9 +210,8 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                 </p>
 
                 <p style="margin: 0 0 16px 0">
-                  A month in, I'm steadily closing in on my target weight. My protein is up, the
-                  evening grazing is mostly gone, and I feel noticeably better. Even moving around
-                  feels easier.
+                  I'm steadily closing in on my target weight. My protein is up, the evening grazing
+                  is mostly gone, and I feel noticeably better. Even moving around feels easier.
                 </p>
 
                 <p style="margin: 0">
@@ -433,7 +432,7 @@ export function renderInviteText({ firstName, invitedEmail }: InviteRecipient): 
 
 I've been tracking what I eat for over a month now, and it has quietly changed how I eat.
 
-A month in, I'm steadily closing in on my target weight. My protein is up, the evening grazing
+I'm steadily closing in on my target weight. My protein is up, the evening grazing
 is mostly gone, and I feel noticeably better. Even moving around feels easier.
 
 I built NutriTrack to do the tracking. You photograph your plate, it reads what's on it, you
