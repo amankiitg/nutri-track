@@ -51,26 +51,44 @@ export interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizardProps) {
-  const [resume] = useState(resumeFromDraft);
-  const [form, setForm] = useState<OnboardingForm>(resume.form);
+  /**
+   * Everything the draft holds starts at its default and is replaced once the browser can be asked.
+   *
+   * `sessionStorage` is not readable while rendering if the page is ever server-rendered: the server
+   * would paint the welcome and the client would paint the draft, and React reports the two as a
+   * hydration mismatch. Reading it in an effect makes the first paint the same on both sides, which
+   * is why the wizard holds a loading state until that effect has run: the draft is a fact about
+   * this tab, and there is nothing honest to show until it is known.
+   */
+  const [resumed, setResumed] = useState(false);
+  const [form, setForm] = useState<OnboardingForm>(DEFAULT_ONBOARDING_FORM);
   /**
    * Whether the welcome has been dismissed. A saved draft means they were already inside, so it is
    * not shown again to somebody resuming.
    */
-  const [started, setStarted] = useState(resume.started);
-  const [stepIndex, setStepIndex] = useState(resume.stepIndex);
-  const [errors, setErrors] = useState<FieldErrors>(resume.errors);
+  const [started, setStarted] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const step: OnboardingStep = ONBOARDING_STEPS[stepIndex] ?? "about";
 
   useEffect(() => {
-    // Nothing is written until they have started, so opening the welcome and leaving does not
-    // leave a draft behind that skips it next time.
-    if (!started) return;
+    const restored = resumeFromDraft();
+    setForm(restored.form);
+    setStarted(restored.started);
+    setStepIndex(restored.stepIndex);
+    setErrors(restored.errors);
+    setResumed(true);
+  }, []);
+
+  useEffect(() => {
+    // Nothing is written until the draft has been read and they have started, so saving cannot
+    // overwrite the stored answers with the defaults this component renders first.
+    if (!resumed || !started) return;
     saveOnboardingDraft({ step, form });
-  }, [started, step, form]);
+  }, [resumed, started, step, form]);
 
   function setField<K extends keyof OnboardingForm>(key: K, value: OnboardingForm[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -143,6 +161,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
    */
   const reviewProblem = step === "review" ? firstInvalidStep(form, ONBOARDING_ONLY) : null;
 
+  if (!resumed) return <WizardLoading />;
   if (!started) return <Welcome onStart={() => setStarted(true)} />;
 
   return (
@@ -356,6 +375,26 @@ function sexLabel(sex: Sex | null): string {
   if (sex === "female") return "Female";
   if (sex === "male") return "Male";
   return "Not chosen";
+}
+
+/**
+ * The first paint, while the draft is being read.
+ *
+ * Not a skeleton of the questions: which questions to draw is exactly what is not known yet. A
+ * spinner in the middle of an empty column is the whole truth, and it is the same markup on the
+ * server as on the client, which is what keeps hydration quiet.
+ */
+function WizardLoading() {
+  return (
+    <div
+      className="flex min-h-[60dvh] items-center justify-center"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
+      <span className="sr-only">Loading your answers</span>
+    </div>
+  );
 }
 
 /**

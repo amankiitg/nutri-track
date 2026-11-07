@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { saveProfileWithTargets, type ProfileInsert } from "@/lib/profile";
 import {
@@ -81,6 +82,45 @@ function fillToReview() {
   continueStep();
   return screen.getByRole("heading", { name: "Review" });
 }
+
+describe("the first paint", () => {
+  it("is the loading state, not the draft, so the server and the client agree", () => {
+    // The draft lives in sessionStorage, which a server render cannot read. Painting the resume
+    // before it has been read is the hydration mismatch recorded in AGENTS.md, so the wizard draws
+    // a spinner until the effect that reads it has run.
+    saveOnboardingDraft({
+      step: "about",
+      form: { ...DEFAULT_ONBOARDING_FORM, display_name: "Ada" },
+    });
+
+    const html = renderToString(
+      <OnboardingWizard userId="user-1" onConfirm={vi.fn()} onSaved={vi.fn()} />,
+    );
+
+    expect(html).toContain("Loading your answers");
+    // Neither the welcome nor a question, which are the two things the first paint could have
+    // claimed to know before it could know them.
+    expect(html).not.toContain("A few questions");
+    expect(html).not.toContain("About you");
+  });
+
+  it("reads the draft once mounted, and resumes where it was left", () => {
+    saveOnboardingDraft({
+      step: "body",
+      form: {
+        ...DEFAULT_ONBOARDING_FORM,
+        display_name: "Ada",
+        dob: WORKED_EXAMPLE_DOB,
+        sex: "female",
+      },
+    });
+
+    renderWizard();
+
+    expect(screen.getByRole("heading", { name: "Your body" })).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
 
 describe("onboarding — age validation", () => {
   it("blocks a date of birth below the age of 13", () => {

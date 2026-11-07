@@ -166,16 +166,20 @@ npm test
 
 ## Known issues
 
-- **`/auth` hydration mismatch, and it is not dev-only.** Arriving at `/auth` via the redirect
-  from a guarded route (`/onboarding`, `/today`, `/settings`, `/trends` while signed out) logs
-  `Hydration failed because the server rendered HTML didn't match the client` — the server
-  emitted the Suspense fallback where the client emitted the page. React recovers, the page
-  renders correctly, and a direct load of `/auth` is clean. This was recorded as a dev-only
-  curiosity; it is not. Measured on 2026-11-06 against the deployed Worker: opening
-  `/settings` signed out redirects to `/auth?redirect=%2Fsettings` and that load throws
-  minified React error #418 in the production bundle, which is this mismatch. It stays a
-  console error rather than a broken screen, because React re-renders the tree, but the cause
-  is worth finding rather than filing again as harmless.
+- **The `/auth` hydration mismatch, and how it was fixed.** Arriving at `/auth` through the
+  redirect from a guarded route (`/onboarding`, `/today`, `/settings`, `/trends` while signed
+  out) logged `Hydration failed because the server rendered HTML didn't match the client`, and
+  the deployed Worker threw minified React error #418. The cause: the session lives in
+  localStorage, so the server that rendered `/settings` could not know nobody was signed in. It
+  sent the empty shell of a client-only (`ssr: false`) route; the client's guard then redirected
+  and rendered the sign-in page _inside that shell_, before hydration had committed, so React
+  compared two different trees. React re-rendered and the page was correct, which is why it read
+  as harmless. **The redirect is now a document navigation** — `redirect({ to, search,
+reloadDocument: true })` in `_authenticated/route.tsx` and `onboarding.tsx` — so the server
+  renders `/auth` itself and both sides agree. Measured 2026-11-07 in Chromium against all four
+  guarded paths: no `pageerror` after the change, and `?redirect=` still carries the original
+  path. Do not turn those two redirects back into router navigations; a client-only route cannot
+  swap itself for another route during the first render without this error.
 - **A height box that would not accept typing on a metric profile (unexplained).**
   Reported once: a metric height showing `160` where typing produced nothing usable, and
   what was typed cleared itself. Not reproducible on the metric path in any sequence tried
@@ -276,6 +280,12 @@ npm test
   on the capture call; the real check is a browser with a real pointer.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
+- `src/components/onboarding/OnboardingWizard.tsx` — the step machine, and the one place that
+  reads this tab's saved answers. **It does that in an effect, never during the first render**,
+  and draws a spinner until the effect has run: `sessionStorage` is not readable while rendering
+  when the page is also server-rendered, and painting the draft on one side and the welcome on the
+  other is a hydration mismatch. The same rule covers anything else that reads a browser store to
+  decide what to draw; the first paint has to be the same on both sides.
 - `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's
   reply is validated against, the sanity checks and the meal fingerprint. Imported by the
   browser as `@shared/*` and by the service as `../../shared/meal-parse`. It must stay free

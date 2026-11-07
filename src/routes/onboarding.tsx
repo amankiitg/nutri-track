@@ -9,7 +9,10 @@ export const Route = createFileRoute("/onboarding")({
   beforeLoad: async ({ location }) => {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) {
-      throw redirect({ to: "/auth", search: { redirect: location.href } });
+      // A document navigation, for the reason spelled out in `_authenticated/route.tsx`: the page
+      // is client-only, so the server sent an empty shell, and swapping that for the sign-in page
+      // inside the first render is a hydration mismatch rather than a redirect.
+      throw redirect({ to: "/auth", search: { redirect: location.href }, reloadDocument: true });
     }
 
     // Onboarding runs once; a user who already has a profile belongs on Today.

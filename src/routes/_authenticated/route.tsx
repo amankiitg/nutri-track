@@ -17,7 +17,18 @@ export const Route = createFileRoute("/_authenticated")({
       // The path they asked for travels through sign-in with them, so a link to /trends lands on
       // /trends rather than on /today. `safeRedirect` on the other side is what makes it safe to
       // trust: this value is attacker-controlled and ends up in a navigation.
-      throw redirect({ to: "/auth", search: { redirect: location.href } });
+      //
+      // `reloadDocument` rather than a router navigation. The session lives in localStorage, so the
+      // server rendering this page could not know there is none; it sent the empty shell of a
+      // client-only route. Swapping that shell for the sign-in page inside the same render is what
+      // React reported as "the server rendered HTML didn't match the client", the mismatch recorded
+      // in AGENTS.md. Asking the server for /auth means it is rendered and hydrated from scratch,
+      // and both sides agree.
+      throw redirect({
+        to: "/auth",
+        search: { redirect: location.href },
+        reloadDocument: true,
+      });
     }
 
     // Invite-list gate: a user who is not allowed never reaches onboarding.
