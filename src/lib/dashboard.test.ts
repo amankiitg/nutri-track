@@ -5,6 +5,7 @@ import {
   mealTypeLabel,
   quantityLabel,
   ringGeometry,
+  sortTimeline,
   targetZone,
   verdictHasNumbers,
   verdictSentence,
@@ -12,6 +13,7 @@ import {
   weightDelta,
   weightLogRow,
   type TimelineItem,
+  type TimelineMeal,
   type WeekVerdict,
 } from "./dashboard";
 
@@ -252,6 +254,89 @@ const item = (over: Partial<TimelineItem> = {}): TimelineItem => ({
   confidence: 0.8,
   user_edited: false,
   ...over,
+});
+
+const meal = (over: Partial<TimelineMeal> = {}): TimelineMeal => ({
+  id: "m1",
+  eaten_at: "2026-11-06T20:08:00Z",
+  meal_type: "dinner",
+  source: "photo",
+  notes: null,
+  photo_count: 1,
+  calories: 420,
+  protein_g: 30,
+  carbs_g: 40,
+  fat_g: 12,
+  item_count: 0,
+  items: [],
+  ...over,
+});
+
+describe("sortTimeline", () => {
+  it("orders meals by when they were eaten, whatever order they arrived in", () => {
+    const morning = meal({ id: "m-morning", eaten_at: "2026-11-06T08:00:00Z" });
+    const evening = meal({ id: "m-evening", eaten_at: "2026-11-06T20:08:00Z" });
+
+    expect(sortTimeline([evening, morning]).map((entry) => entry.id)).toEqual([
+      "m-morning",
+      "m-evening",
+    ]);
+  });
+
+  it("breaks a tie with created_at, so two meals at one time keep the order they were logged", () => {
+    // The same clock time is exactly when a list starts moving on its own.
+    const first = meal({ id: "m-first", created_at: "2026-11-06T20:09:00Z" });
+    const second = meal({ id: "m-second", created_at: "2026-11-06T20:10:00Z" });
+
+    expect(sortTimeline([second, first]).map((entry) => entry.id)).toEqual(["m-first", "m-second"]);
+  });
+
+  it("falls back to the id when there is no created_at, which today's payload does not carry", () => {
+    const later = meal({ id: "m-b" });
+    const earlier = meal({ id: "m-a" });
+
+    // Not the order it arrived in: the same two rows come back the same way every load.
+    expect(sortTimeline([later, earlier]).map((entry) => entry.id)).toEqual(["m-a", "m-b"]);
+  });
+
+  it("orders items that share a created_at by id, so a meal does not shuffle inside itself", () => {
+    const shared = "2026-11-06T20:08:05Z";
+    const dinner = meal({
+      items: [
+        item({ id: "i-c", name: "Kombucha", created_at: shared }),
+        item({ id: "i-a", name: "Bhel puri", created_at: shared }),
+        item({ id: "i-b", name: "Arugula", created_at: shared }),
+      ],
+    });
+
+    expect(sortTimeline([dinner])[0]?.items.map((entry) => entry.id)).toEqual([
+      "i-a",
+      "i-b",
+      "i-c",
+    ]);
+  });
+
+  it("keeps an item logged earlier ahead of one logged later in the same meal", () => {
+    const dinner = meal({
+      items: [
+        item({ id: "i-later", created_at: "2026-11-06T20:09:00Z" }),
+        item({ id: "i-earlier", created_at: "2026-11-06T20:08:30Z" }),
+      ],
+    });
+
+    expect(sortTimeline([dinner])[0]?.items.map((entry) => entry.id)).toEqual([
+      "i-earlier",
+      "i-later",
+    ]);
+  });
+
+  it("does not mutate what it was given", () => {
+    const input = [meal({ id: "m-b" }), meal({ id: "m-a" })];
+
+    sortTimeline(input);
+
+    expect(input.map((entry) => entry.id)).toEqual(["m-b", "m-a"]);
+  });
 });
 
 describe("weightLogRow", () => {

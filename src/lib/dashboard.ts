@@ -73,6 +73,13 @@ export type WeekVerdict = z.infer<typeof weekVerdictRow>;
 
 const timelineItem = z.object({
   id: z.string(),
+  /**
+   * When the row was written. Optional because today's payload does not carry it: `meals_for_day`
+   * builds its JSON from a fixed key list and that list has no `created_at`. Declared anyway so
+   * the ordering rule below can use it the moment the function starts sending it, rather than a
+   * second place having to change with it.
+   */
+  created_at: z.string().optional(),
   name: z.string(),
   quantity: numericOrNull,
   unit: z.string().nullable(),
@@ -90,6 +97,8 @@ export type TimelineItem = z.infer<typeof timelineItem>;
 
 const timelineMeal = z.object({
   id: z.string(),
+  /** See `timelineItem.created_at`: declared for the ordering rule, absent from today's rows. */
+  created_at: z.string().optional(),
   eaten_at: z.string(),
   meal_type: z.string(),
   source: z.string(),
@@ -154,12 +163,61 @@ export async function fetchWeekVerdict(
   return row;
 }
 
-/** The day's meals, each with its items and its own totals. */
+/** The day's meals, each with its items and its own totals, in a stable order. */
 export async function fetchTimeline(date: string): Promise<TimelineMeal[]> {
   const { data, error } = await supabase.rpc("meals_for_day", { p_date: date });
   if (error) throw error;
 
-  return parseOrThrow(z.array(timelineMeal), data, "meals_for_day");
+  return sortTimeline(parseOrThrow(z.array(timelineMeal), data, "meals_for_day"));
+}
+
+/**
+ * Orders two timestamps.
+ *
+ * Parsed rather than compared as text: the same instant can be written two ways (`Z` and
+ * `+00:00`), and text order would then put one of them a day out. A value that is not a date at
+ * all sorts by its text instead of poisoning the comparison with a NaN — nothing here can
+ * validate a timestamp the database sent, but nothing here should scramble the list over it
+ * either. A missing timestamp sorts last, so a row that carries a real one wins the tie.
+ */
+function compareTime(a: string | undefined, b: string | undefined): number {
+  if (a === undefined || b === undefined) {
+    return a === b ? 0 : a === undefined ? 1 : -1;
+  }
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  if (Number.isNaN(left) || Number.isNaN(right)) return a < b ? -1 : a > b ? 1 : 0;
+  return left - right;
+}
+
+/** Logged order first, then the row itself, which never ties. */
+function compareLogged<T extends { id: string; created_at?: string | undefined }>(
+  a: T,
+  b: T,
+): number {
+  const created = compareTime(a.created_at, b.created_at);
+  if (created !== 0) return created;
+  return a.id === b.id ? 0 : a.id < b.id ? -1 : 1;
+}
+
+/**
+ * The order the timeline draws a day in, decided here and not by the database.
+ *
+ * `meals_for_day` does order its rows, but an order only the SQL knows is one the screen cannot
+ * be held to, and every tie in it is resolved by whatever the planner does that day — which is
+ * how a list of meals at the same clock time came to move between loads. Sorting where the list is
+ * drawn makes the rule readable and puts the id last, so two rows that are equal in every other
+ * way still come back in the same order. Items follow their meal for the same reason: they are
+ * one list on the screen, and a meal with two items logged in the same statement had no order at
+ * all.
+ *
+ * This does not replace the SQL: the day, the totals and the join all stay where they were, since
+ * a browser cannot sum a day it was only sent part of.
+ */
+export function sortTimeline(meals: TimelineMeal[]): TimelineMeal[] {
+  return [...meals]
+    .sort((a, b) => compareTime(a.eaten_at, b.eaten_at) || compareLogged(a, b))
+    .map((meal) => ({ ...meal, items: [...meal.items].sort(compareLogged) }));
 }
 
 /**
