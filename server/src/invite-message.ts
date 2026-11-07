@@ -8,9 +8,24 @@
  * it is worse than a plain one.
  */
 import MailComposer from "nodemailer/lib/mail-composer";
-import { inviteMessageFields, type InviteRecipient } from "../../shared/invite-email";
+import {
+  approvedMessageFields,
+  inviteMessageFields,
+  type InviteRecipient,
+} from "../../shared/invite-email";
 
 export async function buildInviteMime(recipient: InviteRecipient): Promise<Buffer> {
   const composer = new MailComposer(inviteMessageFields(recipient));
+  return composer.compile().build();
+}
+
+/**
+ * The approval, for somebody who asked and is now on the list.
+ *
+ * A separate function rather than a flag on the one above: the two emails say different things, and
+ * a builder that can produce either is a builder that can be called with the wrong one.
+ */
+export async function buildApprovedMime(recipient: InviteRecipient): Promise<Buffer> {
+  const composer = new MailComposer(approvedMessageFields(recipient));
   return composer.compile().build();
 }

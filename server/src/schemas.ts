@@ -57,6 +57,11 @@ export type ParseMealRequest = z.infer<typeof parseMealRequestSchema>;
  * The admin invite form. Two fields, and the address is checked here only for shape: what makes
  * an address usable is whether it matches the JWT of the person signing in, which is decided by
  * the database, not by this regex.
+ *
+ * `kind` picks the message. `invite` is the personal note that goes out with a new address, and
+ * `approved` is the short one for somebody who asked to be let in: that person is already on the
+ * list, so the route drafts and writes nothing else. The default keeps every existing caller
+ * working without knowing this field exists.
  */
 export const inviteRequestSchema = z.object({
   email: z
@@ -64,7 +69,9 @@ export const inviteRequestSchema = z.object({
     .min(3)
     .max(200)
     .refine((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()), "must be an email address"),
-  firstName: z.string().min(1).max(60),
+  // Optional for an approval: a request only has a name if the person typed one or Google had it.
+  firstName: z.string().max(60).default(""),
+  kind: z.enum(["invite", "approved"]).default("invite"),
 });
 
 export type InviteRequestPayload = z.infer<typeof inviteRequestSchema>;

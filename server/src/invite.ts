@@ -11,11 +11,13 @@
  */
 import type { CallerStore } from "./caller-store";
 import type { GmailDraftClient } from "./gmail";
-import { buildInviteMime } from "./invite-message";
+import { buildApprovedMime, buildInviteMime } from "./invite-message";
 
 export interface InviteRequest {
   email: string;
   firstName: string;
+  /** Which email to draft. `approved` is somebody who asked and is already on the list. */
+  kind?: "invite" | "approved";
 }
 
 export interface InviteOutcome {
@@ -46,6 +48,21 @@ function normaliseAddress(email: string): string {
 export async function invite(request: InviteRequest, deps: InviteDeps): Promise<InviteOutcome> {
   const email = normaliseAddress(request.email);
   const firstName = request.firstName.trim();
+
+  /**
+   * The approval: draft only, and no write to the list.
+   *
+   * The admin approves through `admin_approve_request`, which adds the address and marks the
+   * request inside one transaction. Writing the list again here would be a second way to grant
+   * access, and the point of having one is that the other cannot disagree with it. Ordering is the
+   * reverse of an invite on purpose: the person is already in, so a failed draft takes nothing
+   * away and the admin can retry it.
+   */
+  if (request.kind === "approved") {
+    const mime = await buildApprovedMime({ firstName, invitedEmail: email });
+    const draftId = await deps.gmail.createDraft(mime);
+    return { email, firstName, draftId, alreadyInvited: true };
+  }
 
   const alreadyInvited = await deps.store.hasAllowedEmail(email);
   // The From is the app's verified alias (see `INVITE_FROM`), not the mailbox the draft sits in.

@@ -291,6 +291,60 @@ describe("POST /invite", () => {
     expect(addedEmails).toEqual([]);
     expect(draftedMime).toEqual([]);
   });
+
+  describe("the approved variant", () => {
+    // Approving somebody writes the list row in Postgres, in the same request that
+    // decides it. This call exists only to tell them, so it must never write again.
+    const approved = { email: "friend@example.com", firstName: "Hope", kind: "approved" };
+
+    it("drafts the welcome instead, and touches nothing else", async () => {
+      const { app, addedEmails, draftedMime, order } = buildHarness({ isAdmin: true });
+
+      const response = await request(app)
+        .post("/invite")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send(approved);
+
+      expect(response.status).toBe(200);
+      expect(order).toEqual(["draft"]);
+      expect(addedEmails).toEqual([]);
+      expect(response.body).toEqual({
+        email: "friend@example.com",
+        firstName: "Hope",
+        draftId: "draft-1",
+        alreadyInvited: true,
+      });
+      const mime = draftedMime[0] ?? "";
+      expect(mime).toContain("You're in: welcome to NutriTrack");
+      expect(mime).toContain("Hi Hope,");
+      expect(mime).toContain("From: NutriTrack <invites@tracknutri.app>");
+    });
+
+    it("says Hi there when the request came in without a name", async () => {
+      const { app, draftedMime } = buildHarness({ isAdmin: true });
+
+      await request(app)
+        .post("/invite")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ email: "friend@example.com", firstName: "", kind: "approved" });
+
+      const mime = draftedMime[0] ?? "";
+      expect(mime).toContain("Hi there,");
+      expect(mime).not.toContain("Hi ,");
+    });
+
+    it("still needs an admin, because it is the same route", async () => {
+      const { app, draftedMime } = buildHarness({ isAdmin: false });
+
+      const response = await request(app)
+        .post("/invite")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send(approved);
+
+      expect(response.status).toBe(403);
+      expect(draftedMime).toEqual([]);
+    });
+  });
 });
 
 const post = (app: ReturnType<typeof createApp>, body: unknown, token: string | null = TOKEN) => {

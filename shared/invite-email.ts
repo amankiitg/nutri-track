@@ -59,6 +59,37 @@ export const PREVIEW: InviteRecipient = {
 export const INVITE_FROM = { name: "NutriTrack", address: "invites@tracknutri.app" } as const;
 
 /**
+ * Escaping for the two values a person controls: the name they typed and the address they typed.
+ *
+ * Both end up inside an HTML body, and an address is a string anybody can make up. Without this, a
+ * name of `<script>` or a stray `<` in an address is markup in somebody's inbox, and a `&` in an
+ * address is an entity waiting to be interpreted. The five replacements are the whole of what a text
+ * node needs.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * A value for a header or a link: no line breaks, and no quotes that could close the name.
+ *
+ * A header is line-based, so a name containing a newline is how a second header gets added. The
+ * quotes matter for the same reason one line later: `"Name" <address>` is the format, and a quote in
+ * the name ends the field early.
+ */
+function headerText(value: string): string {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/"/g, "")
+    .trim();
+}
+
+/**
  * The message fields both transports hand to their composer.
  *
  * The content is assembled here so that the local tool and the service cannot disagree about
@@ -73,7 +104,7 @@ export function inviteMessageFields(recipient: InviteRecipient): {
 } {
   return {
     from: { ...INVITE_FROM },
-    to: { name: recipient.firstName, address: recipient.invitedEmail },
+    to: { name: headerText(recipient.firstName), address: headerText(recipient.invitedEmail) },
     subject: SUBJECT,
     text: renderInviteText(recipient),
     html: renderInviteHtml(recipient),
@@ -202,7 +233,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                   color: #192217;
                 "
               >
-                <p style="margin: 0 0 16px 0">Hi ${firstName},</p>
+                <p style="margin: 0 0 16px 0">Hi ${escapeHtml(firstName)},</p>
 
                 <p style="margin: 0 0 16px 0">
                   I've been tracking what I eat for over a month now, and it has quietly changed how
@@ -252,7 +283,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                       "
                     >
                       Your invite is tied to
-                      <strong style="color: #192217">${invitedEmail}</strong>. Sign in with Google
+                      <strong style="color: #192217">${escapeHtml(invitedEmail)}</strong>. Sign in with Google
                       using that address, or create an account with it.
                     </td>
                   </tr>
@@ -443,6 +474,376 @@ Your invite is tied to ${invitedEmail}. Sign in with Google using that address, 
 account with it.
 
 https://tracknutri.app
+
+One honest thing: the numbers come from a photo, so they're estimates, and portions of
+calorie-dense foods are the roughest part. A bowl of hummus can be out by more than you'd
+guess. Nothing saves until you've checked it, which is what that screen is for.
+
+On an iPhone, add it to your home screen and it behaves like an app. That part is Safari only:
+open tracknutri.app in Safari, tap Share, then Add to Home Screen. And if something breaks or
+reads wrong, reply to this. I want to know.
+
+${SENDER_NAME}
+`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The approval: what somebody gets when the admin lets them in.               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The subject of the approval. Unlike the invite's, this one says what it is: by the time it lands
+ * the person has already asked, and "you're in" is the whole message.
+ */
+export const APPROVED_SUBJECT = "You're in: welcome to NutriTrack";
+
+/**
+ * The greeting, which is the one place this email can be personal without a human writing it.
+ *
+ * A blank name is common (the Google path only has one if the profile does), so it becomes "there"
+ * rather than an empty space before the comma.
+ */
+function approvedGreeting(firstName: string): string {
+  const name = firstName.trim();
+  return name === "" ? "there" : name;
+}
+
+/** The message fields for the approval, in the same shape as the invite's. */
+export function approvedMessageFields(recipient: InviteRecipient): {
+  from: { name: string; address: string };
+  to: { name: string; address: string };
+  subject: string;
+  text: string;
+  html: string;
+} {
+  return {
+    from: { ...INVITE_FROM },
+    to: { name: headerText(recipient.firstName), address: headerText(recipient.invitedEmail) },
+    subject: APPROVED_SUBJECT,
+    text: renderApprovedText(recipient),
+    html: renderApprovedHtml(recipient),
+  };
+}
+
+/**
+ * The HTML part of the approval.
+ *
+ * The same frame as the invite: cream page, 600px card, the brand row, Fraunces headline, Manrope
+ * body, the leaf-green pill, and the rule above the close. Kept as its own template rather than
+ * bolted onto the invite's three-branch function, because the two say different things and a shared
+ * function with a flag in it is how the wrong variant gets sent. **The frame is duplicated on
+ * purpose; if the look changes, it changes here too.**
+ */
+export function renderApprovedHtml({ firstName, invitedEmail }: InviteRecipient): string {
+  /**
+   * Where the button goes: the sign-in page, carrying the address.
+   *
+   * The address makes the page continue by itself, so the person lands on the form their account
+   * needs rather than on an empty field they have to retype. Percent-encoded because an address is
+   * not a URL: a `+` in a tag is a space to a query parser, and an `&` would start a new parameter.
+   */
+  const signInUrl = `https://tracknutri.app/auth?email=${encodeURIComponent(invitedEmail)}`;
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>You're in: welcome to NutriTrack</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f0ece4">
+    <!-- Preheader: shown in the inbox next to the subject, hidden in the body. -->
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        max-width: 0;
+        overflow: hidden;
+        opacity: 0;
+        font-size: 1px;
+        line-height: 1px;
+        color: #f0ece4;
+      "
+    >
+      Your invite is approved. Sign in at tracknutri.app with ${escapeHtml(invitedEmail)}.
+      &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+    </div>
+
+    <table
+      role="presentation"
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      width="100%"
+      style="background-color: #f0ece4"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            border="0"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width: 100%;
+              max-width: 600px;
+              background-color: #fffdf9;
+              border: 1px solid #e2ded2;
+              border-radius: 20px;
+            "
+          >
+            <tr>
+              <td style="padding: 40px 40px 8px 40px">
+                <!-- Brand row -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="40" valign="middle">
+                      <img
+                        src="https://tracknutri.app/icons/icon-192.png"
+                        width="40"
+                        height="40"
+                        alt="NutriTrack"
+                        style="display: block; width: 40px; height: 40px; border-radius: 10px"
+                      />
+                    </td>
+                    <td valign="middle" style="padding-left: 12px">
+                      <span
+                        style="
+                          font-family:
+                            &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                          font-size: 19px;
+                          font-weight: 700;
+                          letter-spacing: -0.01em;
+                          color: #192217;
+                        "
+                        >NutriTrack</span
+                      >
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Headline -->
+                <p
+                  style="
+                    margin: 28px 0 0 0;
+                    font-family: &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 34px;
+                    line-height: 1.05;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
+                    color: #192217;
+                  "
+                >
+                  You're <em style="color: #195c2e">in</em>.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 24px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0 0 16px 0">Hi ${escapeHtml(approvedGreeting(firstName))},</p>
+
+                <p style="margin: 0 0 16px 0">
+                  Thanks for asking to join NutriTrack. You're in.
+                </p>
+
+                <p style="margin: 0">
+                  Sign in with ${escapeHtml(invitedEmail)}: use Continue with Google if it's a Google
+                  account, or set a password when you sign in.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Call to action -->
+            <tr>
+              <td align="center" style="padding: 28px 40px 0 40px">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td
+                      align="center"
+                      bgcolor="#195c2e"
+                      style="background-color: #195c2e; border-radius: 999px"
+                    >
+                      <a
+                        href="${signInUrl}"
+                        style="
+                          display: inline-block;
+                          padding: 16px 34px;
+                          font-family:
+                            &quot;Manrope&quot;,
+                            -apple-system,
+                            BlinkMacSystemFont,
+                            &quot;Segoe UI&quot;,
+                            Roboto,
+                            Helvetica,
+                            Arial,
+                            sans-serif;
+                          font-size: 16px;
+                          font-weight: 700;
+                          color: #fbf8f1;
+                          text-decoration: none;
+                          border-radius: 999px;
+                        "
+                        >Open NutriTrack</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+                <p
+                  style="
+                    margin: 12px 0 0 0;
+                    font-family:
+                      &quot;Manrope&quot;,
+                      -apple-system,
+                      BlinkMacSystemFont,
+                      &quot;Segoe UI&quot;,
+                      Roboto,
+                      Helvetica,
+                      Arial,
+                      sans-serif;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    color: #5e6657;
+                  "
+                >
+                  or paste this in: <span style="color: #195c2e">tracknutri.app</span>
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 26px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0 0 16px 0">
+                  One honest thing: the numbers come from a photo, so they're estimates, and
+                  portions of calorie-dense foods are the roughest part. A bowl of hummus can be out
+                  by more than you'd guess. Nothing saves until you've checked it, which is what
+                  that screen is for.
+                </p>
+
+                <p style="margin: 0">
+                  On an iPhone, add it to your home screen and it behaves like an app. That part is
+                  Safari only: open tracknutri.app in Safari, tap Share, then Add to Home Screen.
+                  And if something breaks or reads wrong, reply to this. I want to know.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 24px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0">${SENDER_NAME}</p>
+              </td>
+            </tr>
+
+            <!-- Close -->
+            <tr>
+              <td style="padding: 28px 40px 40px 40px">
+                <table
+                  role="presentation"
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="border-top: 1px solid #e2ded2"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding-top: 18px;
+                        font-family:
+                          &quot;Manrope&quot;,
+                          -apple-system,
+                          BlinkMacSystemFont,
+                          &quot;Segoe UI&quot;,
+                          Roboto,
+                          Helvetica,
+                          Arial,
+                          sans-serif;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        color: #5e6657;
+                      "
+                    >
+                      <a
+                        href="https://tracknutri.app"
+                        style="color: #195c2e; text-decoration: underline"
+                        >tracknutri.app</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`;
+}
+
+/** The plain-text part of the approval, written out rather than stripped from the HTML. */
+export function renderApprovedText({ firstName, invitedEmail }: InviteRecipient): string {
+  // The same link as the button above, built the same way. A plain-text reader gets one too: a
+  // message whose only link exists in the part the reader cannot render is a message with no link.
+  const signInUrl = `https://tracknutri.app/auth?email=${encodeURIComponent(invitedEmail)}`;
+  return `Hi ${approvedGreeting(firstName)},
+
+Thanks for asking to join NutriTrack. You're in.
+
+Sign in with ${invitedEmail}: use Continue with Google if it's a Google account, or set a
+password when you sign in.
+
+${signInUrl}
 
 One honest thing: the numbers come from a photo, so they're estimates, and portions of
 calorie-dense foods are the roughest part. A bowl of hummus can be out by more than you'd
