@@ -45,7 +45,7 @@ export function loadSweepConfig(env: NodeJS.ProcessEnv = process.env): SweepConf
       .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
       .join("\n");
     throw new Error(
-      `Invalid sweep configuration:\n${problems}\n\nExpected:\n${EXPECTED.map((name) => `  ${name}`).join("\n")}\n\nSUPABASE_SERVICE_ROLE_KEY comes from Supabase's dashboard under Project Settings -> API. It is read by the sweeper only — never by the parse-meal service.`,
+      `Invalid sweep configuration:\n${problems}\n\nExpected:\n${EXPECTED.map((name) => `  ${name}`).join("\n")}\n\nSUPABASE_SERVICE_ROLE_KEY is set in Render's environment, where this job runs on a schedule, and is deliberately not kept in the local .env. It is read by the sweeper only — never by the parse-meal service. The sweep is account-wide by design: it has to see every user's meals to know which photos are still referenced, so it cannot be narrowed to rows named one by one. That is why it runs on Render and not on a laptop — see the privacy rule at the top of AGENTS.md.`,
     );
   }
   return parsed.data;

@@ -1,5 +1,24 @@
 # Agent notes for NutriTrack
 
+## Privacy rule (permanent, and it outranks everything below)
+
+**Never read, query or modify another user's rows, with the service-role key or any other admin
+credential, for any reason — including testing, measuring and debugging.** Meals, `daily_summaries`,
+profiles, weights, photos, LLM usage: all of it. This app holds what two people ate; a number read out
+of their day is still theirs even when the name is not attached, and "it was only a SELECT" is the
+reason there is a rule instead of a judgement call.
+
+So: measure with unit tests and synthetic data, or look at your own account through the app the way a
+user would. When a claim needs a number from real data and it cannot come from a fixture, the honest
+output is that the claim is unverified — not one query as an exception. If a check seems to require
+reading someone else's rows, stop and say so.
+
+`SUPABASE_SERVICE_ROLE_KEY` lives only in Render's environment, for the cron sweeper
+(`server/src/sweep.ts`) and nothing else. It is not in the local `.env`; the local file carries a
+commented placeholder instead. A local script that believes it needs it must prompt first and touch
+only rows named one by one — and the sweeper is account-wide by design, which is exactly why it runs
+on Render and not on a laptop.
+
 Mobile-first PWA for tracking calories and nutrients for two users, extending to friends
 later. React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui, TanStack Start/Router,
 Supabase, Recharts.
@@ -31,12 +50,17 @@ Supabase, Recharts.
    `src/` or `shared/`. If you find it there, that is a P0 bug — flag it and fix it first.
    Nothing secret may carry a `VITE_` prefix; Vite inlines those into the browser bundle.
    Server-only names live in `.env` locally and in Render's environment panel in
-   production — one file, one place to look. `SUPABASE_SERVICE_ROLE_KEY` is not read by the
+   production — one file, one place to look, with one exception: `SUPABASE_SERVICE_ROLE_KEY` is not
+   read by the
    parse-meal service at all; it forwards the caller's JWT instead. Exactly one thing reads
    it: the orphan-photo sweeper (`server/src/sweep.ts`, scheduled by the `type: cron`
    service in `render.yaml`), which needs it because it must see every user's meals to know
    which photos are still referenced. It reads it from `server/src/sweep-config.ts`, which
-   the web service never loads. Never add that key to `server/src/config.ts`.
+   the web service never loads. Never add that key to `server/src/config.ts`. **It is also not in
+   the local `.env`**, which carries a commented placeholder: the sweep is account-wide, so it
+   cannot be narrowed to rows named one by one, and that is why it runs on Render. Running it from
+   a laptop means exporting the key for that one command — which is the thing the privacy rule at
+   the top of this file forbids without asking.
 
    `.env` has a **third** reader: the local invite tool in `tools/invite/`, which is the only
    thing that reads `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`. It runs on a laptop, is part of no
