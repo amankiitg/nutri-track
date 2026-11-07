@@ -5,10 +5,10 @@
  * reads them on load and the page therefore has a session by the time this mounts; there is no
  * token handling here, which is the point of `redirectTo` being this route.
  *
- * Two failure states, and they are different things. A link that was never valid (navigating here
- * directly, or an expired fragment) shows the "expired" screen with a way to ask for another. A
- * failure from `updateUser` is reported as itself, because only a dead link deserves the expired
- * sentence.
+ * Three states, and keeping the first two apart is the point. Opening this page without following a
+ * link says so and offers a way to ask for one. A link that arrived and was rejected — an expired
+ * fragment, or a recovery session that died while the form was open — gets the expired sentence,
+ * because that is what happened. Everything else is the form.
  *
  * A Google-only account that finishes this gets a password on the same account rather than a
  * second one. That is deliberate: the address is the identity, and somebody who joined with
@@ -24,8 +24,17 @@ import { BrandMark } from "@/components/app/BrandMark";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { authErrorText, friendlyAuthError } from "@/lib/auth-errors";
 
-/** Said for a link that cannot be used, in the one place both paths reach it. */
+/** Said for a link that was present and is no longer usable. */
 export const EXPIRED_LINK = "That link has expired. Request a new one.";
+
+/**
+ * Said when there was no link in the first place.
+ *
+ * Telling somebody their link expired when they simply opened the page is a small lie that sends
+ * them looking for an email they never asked for. The two are one state apart and the screen can
+ * tell them apart, so it does.
+ */
+export const NO_LINK = "This page needs a reset link from your email.";
 
 /** The same minimum the create-account form uses, so the two cannot disagree. */
 const MIN_PASSWORD = 8;
@@ -65,7 +74,7 @@ function isDeadLink(caught: unknown): boolean {
 
 function ResetPasswordPage() {
   const router = useRouter();
-  const [state, setState] = useState<"checking" | "ready" | "expired">("checking");
+  const [state, setState] = useState<"checking" | "ready" | "no-link" | "expired">("checking");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   /**
@@ -79,6 +88,7 @@ function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // A reason in the fragment means a link arrived and was rejected: that is the expired case.
     if (linkFailure() !== null) {
       setState("expired");
       return;
@@ -86,7 +96,8 @@ function ResetPasswordPage() {
     let cancelled = false;
     void supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
-      setState(data.session === null ? "expired" : "ready");
+      // No session and no failure means nobody followed a link here at all.
+      setState(data.session === null ? "no-link" : "ready");
     });
     return () => {
       cancelled = true;
@@ -108,6 +119,7 @@ function ResetPasswordPage() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
     setBusy(false);
     if (updateError) {
+      // A session that has gone while the form was open is a link that was present and died.
       if (isDeadLink(updateError)) setState("expired");
       else setError(friendlyAuthError(updateError));
       return;
@@ -132,10 +144,10 @@ function ResetPasswordPage() {
             </p>
           )}
 
-          {state === "expired" && (
+          {(state === "expired" || state === "no-link") && (
             <>
               <p role="alert" className="mt-2 text-muted-foreground">
-                {EXPIRED_LINK}
+                {state === "expired" ? EXPIRED_LINK : NO_LINK}
               </p>
               <Button asChild className="mt-6 w-fit rounded-full">
                 {/* Straight to the reset step, which is the thing "request a new one" means. */}

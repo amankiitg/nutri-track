@@ -118,14 +118,16 @@ describe("a usable reset link", () => {
 });
 
 describe("a link that cannot be used", () => {
-  it("says so and offers to request another, when there is no session", async () => {
+  it("asks for a link instead of claiming one expired, when the page was opened cold", async () => {
     h.getSession.mockResolvedValue({ data: { session: null } });
 
     render(<Page />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "That link has expired. Request a new one.",
-    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("This page needs a reset link from your email.");
+    // "Expired" is reserved for a link that arrived and was rejected; saying it here would send
+    // somebody looking for an email they never asked for.
+    expect(alert).not.toHaveTextContent(/expired/i);
     // Straight to the reset step, which is what "request a new one" means in practice.
     expect(screen.getByRole("link", { name: /request a new link/i })).toHaveAttribute(
       "href",
