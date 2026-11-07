@@ -166,12 +166,16 @@ npm test
 
 ## Known issues
 
-- **`/auth` hydration mismatch (dev only).** Arriving at `/auth` via the redirect from a
-  guarded route (`/onboarding`, `/today`, `/settings`, `/trends` while signed out) logs
+- **`/auth` hydration mismatch, and it is not dev-only.** Arriving at `/auth` via the redirect
+  from a guarded route (`/onboarding`, `/today`, `/settings`, `/trends` while signed out) logs
   `Hydration failed because the server rendered HTML didn't match the client` — the server
   emitted the Suspense fallback where the client emitted the page. React recovers, the page
-  renders correctly, and a direct load of `/auth` is clean. Revisit when the Wrangler
-  preview is set up, to confirm whether it also occurs in a production build.
+  renders correctly, and a direct load of `/auth` is clean. This was recorded as a dev-only
+  curiosity; it is not. Measured on 2026-11-06 against the deployed Worker: opening
+  `/settings` signed out redirects to `/auth?redirect=%2Fsettings` and that load throws
+  minified React error #418 in the production bundle, which is this mismatch. It stays a
+  console error rather than a broken screen, because React re-renders the tree, but the cause
+  is worth finding rather than filing again as harmless.
 - **A height box that would not accept typing on a metric profile (unexplained).**
   Reported once: a metric height showing `160` where typing produced nothing usable, and
   what was typed cleared itself. Not reproducible on the metric path in any sequence tried
