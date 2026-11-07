@@ -2,6 +2,7 @@
  * Daily calorie and macro target calculation.
  * Pure functions, unit-tested in targets.test.ts.
  */
+import { formatPace, type UnitSystem } from "./units";
 
 export const ACTIVITY_MULTIPLIERS = {
   sedentary: 1.2,
@@ -233,6 +234,27 @@ export function projectionFor(input: {
     input.paceKgPerWeek,
     input.from ?? new Date(),
   );
+}
+
+/**
+ * One line under the calorie number, saying where the number came from.
+ *
+ * The whole sum, in the units the person chose: "Maintenance ≈ 2,398 kcal − 550 kcal for 0.5
+ * kg/week". A target that appears from nowhere is the thing people ask about, and the answer is
+ * three numbers they have already seen on other screens.
+ */
+export function calorieExplanation(
+  result: Pick<TargetResult, "tdee" | "adjustment" | "requestedPace">,
+  goal: Goal,
+  units: UnitSystem,
+): string {
+  const maintenance = Math.round(result.tdee).toLocaleString("en-US");
+  if (goal === "maintain" || result.adjustment === 0) {
+    return `Maintenance ≈ ${maintenance} kcal, with no adjustment.`;
+  }
+  const step = Math.round(Math.abs(result.adjustment)).toLocaleString("en-US");
+  const sign = result.adjustment < 0 ? "\u2212" : "+";
+  return `Maintenance ≈ ${maintenance} kcal ${sign} ${step} kcal for ${formatPace(result.requestedPace, units)}`;
 }
 
 /** Minimum weight (kg) that keeps BMI at or above the safe threshold. */

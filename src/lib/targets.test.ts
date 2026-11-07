@@ -3,6 +3,7 @@ import {
   ageFromDob,
   bmi,
   bmr,
+  calorieExplanation,
   computeTargets,
   minSafeWeightKg,
   projectionFor,
@@ -210,5 +211,56 @@ describe("projectionFor", () => {
     expect(
       projectionFor({ goal: "lose", currentKg: 65, targetKg: 70, paceKgPerWeek: 0.5, from }),
     ).toBeNull();
+  });
+});
+
+describe("the sentence under the calorie number", () => {
+  const result = { tdee: 2398, adjustment: -550, requestedPace: 0.5 } as const;
+
+  it("shows the subtraction it performed, in the units on screen", () => {
+    expect(calorieExplanation(result, "lose", "metric")).toBe(
+      "Maintenance \u2248 2,398 kcal \u2212 550 kcal for 0.5 kg/week",
+    );
+  });
+
+  it("names the pace in pounds where pounds are selected", () => {
+    // 0.5 kg/week is 1.1 lb/week, and a line that said kg on an imperial profile would be the one
+    // number on the screen in the other unit system.
+    expect(calorieExplanation(result, "lose", "imperial")).toContain("for 1.1 lb/week");
+  });
+
+  it("adds rather than subtracts for a surplus", () => {
+    expect(
+      calorieExplanation({ tdee: 2398, adjustment: 300, requestedPace: 0.25 }, "gain", "metric"),
+    ).toBe("Maintenance \u2248 2,398 kcal + 300 kcal for 0.25 kg/week");
+  });
+
+  it("says there is no adjustment when maintaining", () => {
+    expect(
+      calorieExplanation({ tdee: 2398.4, adjustment: 0, requestedPace: 0.5 }, "maintain", "metric"),
+    ).toBe("Maintenance \u2248 2,398 kcal, with no adjustment.");
+  });
+
+  it("reads the real result as prose, not as a formula", () => {
+    // The worked example: female, 32, 165 cm, 70 kg, moderately active, lose 0.5 kg/week.
+    const targets = computeTargets({
+      sex: "female",
+      age: ageFromDob("1994-01-01", new Date("2026-01-01T00:00:00Z")),
+      heightCm: 165,
+      weightKg: 70,
+      activityLevel: "moderately_active",
+      goal: "lose",
+      paceKgPerWeek: 0.5,
+      proteinGPerKg: 1.6,
+    });
+    const sentence = calorieExplanation(targets, "lose", "metric");
+
+    expect(sentence).toBe(
+      `Maintenance \u2248 ${Math.round(targets.tdee).toLocaleString("en-US")} kcal \u2212 ${Math.round(Math.abs(targets.adjustment)).toLocaleString("en-US")} kcal for 0.5 kg/week`,
+    );
+    // The two numbers in the sentence, subtracted, are the number printed above it. The result is
+    // not repeated in the sentence: that is what the big number is for.
+    const fromSentence = Math.round(targets.tdee) - Math.round(Math.abs(targets.adjustment));
+    expect(Math.abs(fromSentence - targets.calories)).toBeLessThanOrEqual(1);
   });
 });
