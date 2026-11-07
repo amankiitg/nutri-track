@@ -75,10 +75,34 @@ function Landing() {
           <Button asChild size="lg" className="h-12 rounded-full text-base" disabled={checking}>
             <Link to="/auth">{checking ? "Checking…" : "Sign in"}</Link>
           </Button>
+          <p className="text-center text-sm">
+            <Link to="/auth" search={{ tab: "signup" }} className="underline">
+              Request an invite
+            </Link>
+          </p>
           <p className="text-center text-xs text-muted-foreground">
             Private, invite-only. Estimates are estimates — you always review before saving.
           </p>
         </div>
+
+        {/*
+          What happens to the data, before anyone is asked for an email. Each line is something
+          the code actually does: no analytics is a fact about the bundle, and "enforced by the
+          database" is RLS rather than a promise in a policy document.
+        */}
+        <section className="mt-10 animate-rise space-y-2 rounded-2xl border border-border bg-muted/30 p-4 text-sm [animation-delay:260ms]">
+          <h2 className="font-semibold">Your data</h2>
+          <ul className="space-y-1 text-muted-foreground">
+            <li>No ads, no analytics, nothing sold.</li>
+            <li>Only you can see your meals, enforced by the database.</li>
+            <li>
+              Only the meal photo and text are sent for estimating, never your name or weight.
+            </li>
+          </ul>
+          <Link to="/privacy" className="inline-block underline">
+            Read the privacy page
+          </Link>
+        </section>
       </div>
     </main>
   );

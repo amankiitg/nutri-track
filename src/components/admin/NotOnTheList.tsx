@@ -3,25 +3,38 @@
  *
  * There are two, and keeping them apart is the point. A check that could not be completed is
  * not a refusal, and saying "you are not on the list" because a network dropped sends someone
- * looking for an invitation they already have. The refusal screen is the only place in the app
- * an uninvited person can cause a write, so the write is deliberately fire-and-forget: it
- * happens once per session, it cannot fail the screen, and the screen works identically whether
- * it succeeded or not. What it must never do is stop the person reading the one thing they need
- * to know, which is who to ask.
+ * looking for an invitation they already have.
+ *
+ * The refusal screen files a request automatically, because that is the one useful thing it can
+ * do for somebody who cannot act on the screen otherwise. It no longer hides the outcome: a
+ * request that was not recorded says so and offers the button, because "we have your request"
+ * when no row was written is the kind of reassurance that costs a week of waiting. The request is
+ * made by `request_invite`, the only write an uninvited person can cause, and it is bounded by
+ * the table's own unique index and burst limit.
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
+import { fetchOwnRequest, requestInvite } from "@/lib/admin";
 
 /** Why the invite gate did not let someone through. Mirrors the layout's `beforeLoad`. */
 export type GateFailure = "denied" | "unavailable";
 
+/** Said when the row was not written, whether the guard refused it or the call failed quietly. */
+const COULD_NOT_RECORD =
+  "We couldn't record the request just now. Please try again in a little while.";
+
+function messageOf(caught: unknown): string {
+  return caught instanceof Error ? caught.message : COULD_NOT_RECORD;
+}
+
 export function NotOnTheList({ email, reason }: { email: string; reason: GateFailure }) {
   const router = useRouter();
-  const [requested, setRequested] = useState<boolean | null>(null);
+  /** What happened to the automatic request. */
+  const [request, setRequest] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
@@ -38,17 +51,41 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
       const existing = await fetchOwnRequest();
       if (cancelled) return;
       if (existing !== null) {
-        setRequested(true);
+        setRequest("sent");
         return;
       }
-      const ok = await recordInviteRequest();
-      if (!cancelled) setRequested(ok);
+
+      setRequest("sending");
+      try {
+        const recorded = await requestInvite(email);
+        if (cancelled) return;
+        setRequest(recorded ? "sent" : "failed");
+        if (!recorded) setRequestError(COULD_NOT_RECORD);
+      } catch (caught) {
+        if (cancelled) return;
+        setRequest("failed");
+        setRequestError(messageOf(caught));
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [reason]);
+  }, [reason, email]);
+
+  /** The button's path, after the automatic attempt could not record the request. */
+  async function requestAgain(): Promise<void> {
+    setRequest("sending");
+    setRequestError(null);
+    try {
+      const recorded = await requestInvite(email);
+      setRequest(recorded ? "sent" : "failed");
+      if (!recorded) setRequestError(COULD_NOT_RECORD);
+    } catch (caught) {
+      setRequest("failed");
+      setRequestError(messageOf(caught));
+    }
+  }
 
   return (
     <main className="paper-grain min-h-dvh">
@@ -77,20 +114,38 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
           </>
         ) : (
           <>
-            <h1 className="mt-6 text-3xl font-semibold">Not on the list yet</h1>
+            <h1 className="mt-6 text-3xl font-semibold">NutriTrack is invite-only right now</h1>
             <p className="mt-2 text-muted-foreground">
-              <strong>{email}</strong> isn&apos;t on the invite list. Ask the account owner to add
-              it, then sign in again.
+              <strong>{email}</strong> isn&apos;t on the list yet. Request access and you&apos;ll
+              get an email as soon as you&apos;re in.
             </p>
 
-            {requested === true && (
+            {request === "sending" && (
+              <p role="status" className="mt-4 text-sm text-muted-foreground">
+                Sending your request…
+              </p>
+            )}
+
+            {request === "sent" && (
               <p
                 role="status"
                 className="mt-4 rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
               >
-                Your request has been sent, so you may not need to ask separately. Nothing else is
-                needed from you.
+                Request sent. We&apos;ll email <strong>{email}</strong> when you&apos;re approved.
               </p>
+            )}
+
+            {request === "failed" && (
+              <>
+                {requestError !== null && (
+                  <p role="alert" className="mt-4 text-sm text-destructive">
+                    {requestError}
+                  </p>
+                )}
+                <Button className="mt-4 w-fit rounded-full" onClick={() => void requestAgain()}>
+                  Request access
+                </Button>
+              </>
             )}
           </>
         )}

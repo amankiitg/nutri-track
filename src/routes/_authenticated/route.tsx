@@ -11,9 +11,14 @@ type Gate = "allowed" | GateFailure;
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
+    if (error || !data.user) {
+      // The path they asked for travels through sign-in with them, so a link to /trends lands on
+      // /trends rather than on /today. `safeRedirect` on the other side is what makes it safe to
+      // trust: this value is attacker-controlled and ends up in a navigation.
+      throw redirect({ to: "/auth", search: { redirect: location.href } });
+    }
 
     // Invite-list gate: a user who is not allowed never reaches onboarding.
     //

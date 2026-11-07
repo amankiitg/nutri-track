@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Loader2, MailCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/app/BrandMark";
+import { isPlausibleEmail, normalizeEmail, requestInvite } from "@/lib/admin";
+import { friendlyAuthError } from "@/lib/auth-errors";
+import { safeRedirect } from "@/lib/auth-redirect";
+
+type AuthTab = "signin" | "signup";
+
+/** How long the Resend control stays disabled after a send. */
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -17,6 +25,15 @@ export const Route = createFileRoute("/auth")({
       { property: "og:title", content: "Sign in — NutriTrack" },
       { property: "og:description", content: "Sign in to NutriTrack with Google or email." },
     ],
+  }),
+  /**
+   * `tab` lets the landing page open the create-account form directly. `redirect` is where the
+   * guard sends someone back after signing in, and it is checked again by `safeRedirect` before
+   * anything navigates to it.
+   */
+  validateSearch: (search: Record<string, unknown>): { tab?: AuthTab; redirect?: string } => ({
+    ...(search["tab"] === "signup" ? { tab: "signup" as const } : {}),
+    ...(typeof search["redirect"] === "string" ? { redirect: search["redirect"] } : {}),
   }),
   component: AuthPage,
 });
@@ -45,18 +62,76 @@ function GoogleIcon() {
 }
 
 function AuthPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
+  const search = Route.useSearch();
+  const destination = safeRedirect(search.redirect);
+
+  const [tab, setTab] = useState<AuthTab>(search.tab ?? "signin");
   const [busy, setBusy] = useState<"google" | "email" | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verifySent, setVerifySent] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The invite gate, answered on blur rather than at the end of the form.
+   *
+   * The old flow let someone choose a password and submit, and only then told them they were
+   * never going to get an account. `checking` is a state of its own because the check is a round
+   * trip, and the panel must not flash "invite-only" while the question is still in the air.
+   */
+  const [invite, setInvite] = useState<"unknown" | "checking" | "allowed" | "denied" | "error">(
+    "unknown",
+  );
+  /** The address the current `invite` answer belongs to, so a re-blur does not re-ask. */
+  const checkedEmail = useRef("");
+  const [requesting, setRequesting] = useState(false);
+  const [requested, setRequested] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/today", replace: true });
+      if (data.session) router.history.replace(destination);
     });
-  }, [navigate]);
+  }, [router, destination]);
+
+  // A countdown rather than a timer per send: one timeout at a time, cleared when this unmounts
+  // or the number changes, so a double press cannot start two clocks.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
+
+  /** The address a verification link or OAuth exchange comes back to, carrying the redirect. */
+  function callbackUrl(): string {
+    const url = new URL(`${window.location.origin}/auth/callback`);
+    if (search.redirect !== undefined) url.searchParams.set("redirect", search.redirect);
+    return url.toString();
+  }
+
+  /** Asks the database whether an address may create an account. */
+  async function checkInvite(address: string): Promise<"allowed" | "denied" | "error"> {
+    const { data, error: checkError } = await supabase.rpc("check_email_allowed", {
+      _email: address,
+    });
+    if (checkError) return "error";
+    return data === true ? "allowed" : "denied";
+  }
+
+  /** The answer that decides whether the create-account form is even shown. */
+  async function handleEmailBlur(): Promise<void> {
+    if (tab !== "signup" || !isPlausibleEmail(email)) return;
+    const address = normalizeEmail(email);
+    if (checkedEmail.current === address) return;
+    checkedEmail.current = address;
+    setInvite("checking");
+    setRequested(false);
+    setRequestError(null);
+    setError(null);
+    setInvite(await checkInvite(address));
+  }
 
   const google = async () => {
     setBusy("google");
@@ -64,7 +139,7 @@ function AuthPage() {
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: callbackUrl(),
         // Take the URL back rather than letting supabase-js navigate, so any error it
         // returns lands in the error state below.
         //
@@ -77,7 +152,7 @@ function AuthPage() {
       },
     });
     if (oauthError) {
-      setError(oauthError.message);
+      setError(friendlyAuthError(oauthError));
       setBusy(null);
       return;
     }
@@ -93,58 +168,121 @@ function AuthPage() {
     e.preventDefault();
     setBusy("email");
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(email),
+      password,
+    });
     setBusy(null);
-    if (error) {
-      setError(
-        error.message.toLowerCase().includes("confirm")
-          ? "Please verify your email first — check your inbox for the link."
-          : error.message,
-      );
+    if (signInError) {
+      setError(friendlyAuthError(signInError));
       return;
     }
-    navigate({ to: "/today", replace: true });
+    router.history.replace(destination);
   };
 
   const signUp = async (e: FormEvent) => {
     e.preventDefault();
     setBusy("email");
     setError(null);
+
+    const address = normalizeEmail(email);
+    if (!isPlausibleEmail(address)) {
+      setError("Enter an email address first.");
+      setBusy(null);
+      return;
+    }
     if (password.length < 8) {
       setError("Use at least 8 characters for your password.");
       setBusy(null);
       return;
     }
-    const { data: allowed, error: checkError } = await supabase.rpc("check_email_allowed", {
-      _email: email,
-    });
-    if (checkError) {
-      setError(checkError.message);
+
+    // Asked again on submit, not only on blur: a blur can be skipped, and the answer can have
+    // changed since. A refusal replaces the form, because there is nothing to type into it.
+    const allowed = await checkInvite(address);
+    checkedEmail.current = address;
+    if (allowed === "error") {
+      setInvite("error");
+      setError("We couldn't check the invite list just now. Check your connection and try again.");
       setBusy(null);
       return;
     }
-    if (!allowed) {
-      setError("This email isn't on the invite list yet. Ask the account owner to add you.");
+    if (allowed === "denied") {
+      setInvite("denied");
       setBusy(null);
       return;
     }
-    const { data, error } = await supabase.auth.signUp({
-      email,
+
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: address,
       password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: callbackUrl() },
     });
     setBusy(null);
-    if (error) {
-      setError(error.message);
+    if (signUpError) {
+      setError(friendlyAuthError(signUpError));
       return;
     }
+
+    // Supabase reports success when the address already has an account, and sends nothing. The
+    // tell is a user with no identities: no error, no email, and a person waiting for one.
+    if (data.user?.identities?.length === 0) {
+      setTab("signin");
+      setError(
+        "You already have an account with this email. Sign in instead, or use Continue with Google if that's how you joined.",
+      );
+      return;
+    }
+
     if (data.session) {
-      navigate({ to: "/today", replace: true });
+      router.history.replace(destination);
       return;
     }
-    setVerifySent(email);
+
+    setVerifySent(address);
+    setResendIn(RESEND_COOLDOWN_SECONDS);
     toast.success("Verification email sent");
   };
+
+  async function resend(): Promise<void> {
+    if (verifySent === null || resendIn > 0) return;
+    setError(null);
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: verifySent,
+    });
+    if (resendError) {
+      setError(friendlyAuthError(resendError));
+      return;
+    }
+    setResendIn(RESEND_COOLDOWN_SECONDS);
+    toast.success("Verification email sent again");
+  }
+
+  /** Files the request the invite panel offers, and reports a failure rather than claiming it. */
+  async function requestAccess(): Promise<void> {
+    const address = normalizeEmail(email);
+    setRequesting(true);
+    setRequestError(null);
+    try {
+      const recorded = await requestInvite(address);
+      if (!recorded) {
+        setRequestError(
+          "We couldn't record the request just now. Please try again in a little while.",
+        );
+        return;
+      }
+      setRequested(true);
+    } catch (caught) {
+      setRequestError(
+        caught instanceof Error
+          ? caught.message
+          : "We couldn't record the request. Please try again.",
+      );
+    } finally {
+      setRequesting(false);
+    }
+  }
 
   return (
     <main className="paper-grain min-h-dvh">
@@ -154,9 +292,11 @@ function AuthPage() {
         </Link>
 
         <div className="my-auto animate-rise py-10">
-          <h1 className="text-4xl font-semibold">Welcome back.</h1>
+          <h1 className="text-4xl font-semibold">
+            {tab === "signup" ? "Create your account" : "Welcome"}
+          </h1>
           <p className="mt-2 text-muted-foreground">
-            Invite-only for now. Sign in with Google or your email.
+            Invite-only for now. Use the email you were invited with.
           </p>
 
           {verifySent ? (
@@ -167,6 +307,23 @@ function AuthPage() {
                 We sent a verification link to <strong>{verifySent}</strong>. Open it on this
                 device, then come back and sign in.
               </p>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Didn&apos;t get it? Check spam, or{" "}
+                <button
+                  type="button"
+                  className="underline disabled:opacity-60 disabled:no-underline"
+                  onClick={() => void resend()}
+                  disabled={resendIn > 0}
+                >
+                  {resendIn > 0 ? `resend in ${resendIn}s` : "resend"}
+                </button>
+                .
+              </p>
+              {error && (
+                <p role="alert" className="mt-3 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
               <Button variant="outline" className="mt-4" onClick={() => setVerifySent(null)}>
                 Back to sign in
               </Button>
@@ -190,11 +347,18 @@ function AuthPage() {
                 <span className="h-px flex-1 bg-border" />
               </div>
 
-              <Tabs defaultValue="signin" onValueChange={() => setError(null)}>
+              <Tabs
+                value={tab}
+                onValueChange={(value) => {
+                  setTab(value === "signup" ? "signup" : "signin");
+                  setError(null);
+                }}
+              >
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="signin">Sign in</TabsTrigger>
                   <TabsTrigger value="signup">Create account</TabsTrigger>
                 </TabsList>
+
                 <TabsContent value="signin">
                   <form onSubmit={signIn} className="space-y-4 pt-2">
                     <EmailPassword
@@ -219,37 +383,101 @@ function AuthPage() {
                     </Button>
                   </form>
                 </TabsContent>
+
                 <TabsContent value="signup">
-                  <form onSubmit={signUp} className="space-y-4 pt-2">
-                    <EmailPassword
-                      email={email}
-                      password={password}
-                      setEmail={setEmail}
-                      setPassword={setPassword}
-                      autoComplete="new-password"
-                    />
-                    {error && (
-                      <p role="alert" className="text-sm text-destructive">
-                        {error}
+                  {invite === "denied" ? (
+                    <div className="space-y-4 pt-2">
+                      <h2 className="text-xl font-semibold">NutriTrack is invite-only right now</h2>
+                      <p className="text-sm text-muted-foreground">
+                        <strong>{normalizeEmail(email)}</strong> isn&apos;t on the list yet. Request
+                        access and you&apos;ll get an email as soon as you&apos;re in.
                       </p>
-                    )}
-                    <Button
-                      type="submit"
-                      className="h-12 w-full rounded-full text-base"
-                      disabled={busy !== null}
-                    >
-                      {busy === "email" && <Loader2 className="animate-spin" />}
-                      Create account
-                    </Button>
-                    <p className="text-xs text-muted-foreground">
-                      We'll email you a verification link before you can sign in.
-                    </p>
-                  </form>
+
+                      {requested ? (
+                        <p
+                          role="status"
+                          className="rounded-xl border border-border bg-muted/40 p-3 text-sm"
+                        >
+                          Request sent. We&apos;ll email <strong>{normalizeEmail(email)}</strong>{" "}
+                          when you&apos;re approved.
+                        </p>
+                      ) : (
+                        <Button
+                          type="button"
+                          className="h-11 w-full rounded-full"
+                          disabled={requesting}
+                          onClick={() => void requestAccess()}
+                        >
+                          {requesting ? <Loader2 className="animate-spin" /> : null}
+                          Request access
+                        </Button>
+                      )}
+
+                      {requestError && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {requestError}
+                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        className="text-xs underline"
+                        onClick={() => {
+                          checkedEmail.current = "";
+                          setInvite("unknown");
+                          setRequested(false);
+                          setRequestError(null);
+                        }}
+                      >
+                        Use a different email
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={signUp} className="space-y-4 pt-2">
+                      <EmailPassword
+                        email={email}
+                        password={password}
+                        setEmail={setEmail}
+                        setPassword={setPassword}
+                        autoComplete="new-password"
+                        onEmailBlur={() => void handleEmailBlur()}
+                      />
+                      {error && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {error}
+                        </p>
+                      )}
+                      <Button
+                        type="submit"
+                        className="h-12 w-full rounded-full text-base"
+                        disabled={busy !== null}
+                      >
+                        {busy === "email" && <Loader2 className="animate-spin" />}
+                        Create account
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        By creating an account you agree to how your data is handled (
+                        <Link to="/privacy" className="underline">
+                          Privacy
+                        </Link>
+                        ).
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        We&apos;ll email you a verification link before you can sign in.
+                      </p>
+                    </form>
+                  )}
                 </TabsContent>
               </Tabs>
             </div>
           )}
         </div>
+
+        <p className="text-center text-xs text-muted-foreground">
+          <Link to="/privacy" className="underline">
+            Privacy
+          </Link>
+        </p>
       </div>
     </main>
   );
@@ -261,6 +489,8 @@ function EmailPassword(props: {
   setEmail: (v: string) => void;
   setPassword: (v: string) => void;
   autoComplete: "current-password" | "new-password";
+  /** Only the create-account form asks the invite list, on the way out of the field. */
+  onEmailBlur?: (() => void) | undefined;
 }) {
   return (
     <>
@@ -274,6 +504,7 @@ function EmailPassword(props: {
           required
           value={props.email}
           onChange={(e) => props.setEmail(e.target.value)}
+          onBlur={props.onEmailBlur}
           className="h-11"
         />
       </div>

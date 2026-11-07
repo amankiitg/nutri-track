@@ -7,9 +7,10 @@
  * same trap the height field taught, so the contract is pinned here instead, at the layer
  * that owns it, where the caller cannot accidentally make it look correct.
  *
- * The most important assertion in this file is that `recordInviteRequest` sends nothing
- * but the row's defaults. The address is not a client-supplied value; if it ever becomes
- * one, this fails.
+ * The most important assertions in this file are about the invite request: the address is
+ * normalised before it is sent, and a refusal from the table's burst guard is reported as false
+ * rather than as a success. Saying "request sent" when the row was never written is the failure
+ * this section of the app exists to remove.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,8 +20,8 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchIsAdmin,
-  recordInviteRequest,
   removeInvite,
+  requestInvite,
 } from "./admin";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -100,25 +101,35 @@ describe("removeInvite", () => {
   });
 });
 
-describe("recordInviteRequest", () => {
-  it("sends no address at all: the column default supplies it from the token", async () => {
-    await recordInviteRequest();
-    expect(inserted).toEqual([{}]);
+describe("requestInvite", () => {
+  it("sends the normalised address to the rpc, which is anon's only way in", async () => {
+    client.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(requestInvite("  Aman.IITG@Gmail.COM ")).resolves.toBe(true);
+    expect(client.rpc).toHaveBeenCalledWith("request_invite", { _email: "aman.iitg@gmail.com" });
   });
 
-  it("does not throw when the database refuses, because the screen must still render", async () => {
-    insertResult = { error: { message: "row-level security policy" } };
-    await expect(recordInviteRequest()).resolves.toBe(false);
+  it("reports a refusal from the burst guard as false, not as success", async () => {
+    // The server returns false when the guard skipped the row. Thanking somebody for a request
+    // that was not kept is the exact lie this section exists to remove.
+    client.rpc.mockResolvedValueOnce({ data: false, error: null });
+
+    await expect(requestInvite("a@example.com")).resolves.toBe(false);
   });
 
-  it("reports success when the row lands", async () => {
-    await expect(recordInviteRequest()).resolves.toBe(true);
+  it("throws a readable message when the call itself fails", async () => {
+    client.rpc.mockResolvedValueOnce({ data: null, error: { message: "fetch failed" } });
+
+    await expect(requestInvite("a@example.com")).rejects.toThrow(/couldn't record the request/i);
   });
 
-  it("sends no status and no timestamp, so nothing an outsider writes can be believed", async () => {
-    await recordInviteRequest();
-    const body = inserted[0] ?? {};
-    expect(Object.keys(body)).toEqual([]);
+  it("names an invalid address rather than blaming the connection", async () => {
+    client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: "22023", message: "request_invite: not an email address" },
+    });
+
+    await expect(requestInvite("nope")).rejects.toThrow(/doesn't look like an email/i);
   });
 });
 

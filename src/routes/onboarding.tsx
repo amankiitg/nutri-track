@@ -6,9 +6,11 @@ import { BrandMark } from "@/components/app/BrandMark";
 
 export const Route = createFileRoute("/onboarding")({
   ssr: false,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
+    if (error || !data.user) {
+      throw redirect({ to: "/auth", search: { redirect: location.href } });
+    }
 
     // Onboarding runs once; a user who already has a profile belongs on Today.
     const profile = await fetchProfile(data.user.id);

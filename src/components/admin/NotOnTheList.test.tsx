@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
+import { fetchOwnRequest, requestInvite } from "@/lib/admin";
 import { NotOnTheList } from "./NotOnTheList";
 
 const invalidate = vi.fn(() => Promise.resolve());
@@ -27,11 +27,11 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 vi.mock("@/lib/admin", () => ({
   fetchOwnRequest: vi.fn(),
-  recordInviteRequest: vi.fn(),
+  requestInvite: vi.fn(),
 }));
 
 const ownRequest = fetchOwnRequest as unknown as ReturnType<typeof vi.fn>;
-const inviteRequest = recordInviteRequest as unknown as ReturnType<typeof vi.fn>;
+const inviteRequest = requestInvite as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   invalidate.mockClear();
@@ -71,17 +71,43 @@ describe("a check that could not be completed", () => {
 });
 
 describe("a genuine refusal", () => {
-  it("still says they are not on the list, and offers no retry", async () => {
+  it("uses the invite-only wording, and does not send them looking for an owner", async () => {
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
-    expect(screen.getByRole("heading")).toHaveTextContent(/not on the list/i);
-    expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+    expect(screen.getByRole("heading")).toHaveTextContent(/invite-only right now/i);
+    expect(screen.getByText(/isn't on the list yet/i)).toBeInTheDocument();
+    // The old copy told a stranger to "ask the account owner", which is not something they can do.
+    expect(screen.queryByText(/account owner/i)).toBeNull();
+    await waitFor(() => expect(inviteRequest).toHaveBeenCalledTimes(1));
   });
 
-  it("files the invite request, so they do not have to ask twice", async () => {
+  it("says the request was sent, and offers no button to send it again", async () => {
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
-    await waitFor(() => expect(inviteRequest).toHaveBeenCalledTimes(1));
-    expect(await screen.findByRole("status")).toHaveTextContent(/request has been sent/i);
+    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
+    expect(screen.queryByRole("button", { name: /request access/i })).toBeNull();
+  });
+
+  it("does not claim a request was sent when the row was not recorded", async () => {
+    // The point of this section: never reassure somebody about a request the database refused.
+    inviteRequest.mockResolvedValueOnce(false);
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't record/i);
+    expect(screen.queryByText(/request sent/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /request access/i })).toBeInTheDocument();
+  });
+
+  it("offers the button when the call throws, and retries when it is pressed", async () => {
+    inviteRequest.mockRejectedValueOnce(new Error("Couldn't reach the server."));
+    const user = userEvent.setup();
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/reach the server/i);
+
+    inviteRequest.mockResolvedValueOnce(true);
+    await user.click(screen.getByRole("button", { name: /request access/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
   });
 });

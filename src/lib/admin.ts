@@ -247,37 +247,46 @@ export async function approveRequest(id: string): Promise<string> {
 }
 
 /**
- * Records that someone signed in and was not on the list.
+ * Records a request for access, for either way in.
  *
- * The only write in this app that an uninvited person can cause, so it is written to be
- * safe by construction rather than by being careful:
+ * One function for both paths, because they are the same request from two starting points. The
+ * Google path holds a session, and the server replaces whatever address is sent with the one in
+ * that session's token, so a signed-in caller cannot ask on somebody else's behalf. The email
+ * sign-up path has no session yet, which is why the write goes through a `security definer`
+ * function rather than the table: `anon` is granted nothing on `invite_requests`, and should stay
+ * that way. See `20261106120000_request_invite.sql`.
  *
- *   - The body carries **no email**. The address comes from the column default, which is
- *     the `email` claim of the caller's signed JWT, and the insert policy checks the
- *     stored value against that same claim. So there is no address for this request to
- *     aim at even if the caller tampers with the body.
- *   - It is a plain insert, and the database skips it if the address has asked before.
- *     So a repeat is not an error and there is nothing to retry in a loop.
- *   - It **never throws**. Asking twice, being offline, or being refused by a burst guard
- *     must not stop the person seeing the screen that tells them what to do. A failure
- *     here is a missed notification, not a broken app.
+ * This reverses an earlier decision to keep the write as a plain insert on the table. That insert
+ * covered the case it was written for, Google sign-in, and never covered the email form. A
+ * definer function is a bigger door, so this one is narrow: a single row, about the address it was
+ * given, with the table's own unique index and burst guard still applying.
  *
- * The alternative — a `security definer` function that inserts on the caller's behalf —
- * was rejected: it would hand an uninvited person a definer-rights primitive to protect a
- * row that RLS already protects far more cheaply.
+ * Returns true when the address is on record afterwards, whether it was recorded now or earlier,
+ * and false when the table's burst guard refused it. **Throws** when the call itself failed,
+ * because the screen has to be able to say that nothing was recorded rather than thank somebody
+ * for a request that was not kept.
  */
-export async function recordInviteRequest(): Promise<boolean> {
-  try {
-    const { error } = await supabase.from("invite_requests").insert({});
-    if (error) {
-      console.warn("could not record the invite request", error.message);
-      return false;
-    }
-    return true;
-  } catch (caught) {
-    console.warn("could not record the invite request", caught);
-    return false;
+export async function requestInvite(email: string): Promise<boolean> {
+  // The signature below is the one in `20261106120000_request_invite.sql`. The cast is here
+  // because `Database["public"]["Functions"]` is generated from the deployed schema and this
+  // function is not in it until that migration is applied; regenerating then removes the need for
+  // the cast. One name-wide cast at one boundary, rather than a hand-edited generated file or an
+  // `any`.
+  const rpc = supabase.rpc as unknown as (
+    name: "request_invite",
+    args: { _email: string },
+  ) => PromiseLike<{
+    data: boolean | null;
+    error: { message: string; code?: string } | null;
+  }>;
+
+  const { data, error } = await rpc("request_invite", { _email: normalizeEmail(email) });
+  if (error) {
+    console.warn("[invite] could not record the request", error.message);
+    if (error.code === "22023") throw new Error("That doesn't look like an email address.");
+    throw new Error("We couldn't record the request. Check your connection and try again.");
   }
+  return data === true;
 }
 
 /** Whether the caller's own request is already on record, for the gate screen. */
