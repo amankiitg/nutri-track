@@ -1,1 +1,29 @@
 project_id = "luxomuhczhtczfxwornl"
+
+# Sign-in and confirmation mail goes out through Resend's SMTP endpoint rather than Supabase's
+# built-in sender, which only reaches the project's own team (see README, "Email delivery before
+# inviting anyone"). The password is read from the environment when the config is pushed and is
+# never in this file: source the secrets, then `supabase config push`.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "no-reply@tracknutri.app"
+sender_name = "NutriTrack"
+
+# Thirty an hour, chosen rather than measured: the built-in limit is small enough that a couple
+# of sign-ups in a row can trip it, and this app sits behind an invite gate.
+[auth.rate_limit]
+email_sent = 30
+
+# The one email anybody new reads. Supabase's default subject reads like a form submission
+# rather than an account being created.
+#
+# `config push` carries the subject **and** the body read from `content_path`. Worth knowing
+# because `config diff` lists only the subject: the push result is what shows the body went too,
+# as `auth.email.template.confirmation.content`.
+[auth.email.template.confirmation]
+subject = "Confirm your NutriTrack account"
+content_path = "./supabase/templates/confirmation.html"
