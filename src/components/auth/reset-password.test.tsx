@@ -79,6 +79,23 @@ describe("a usable reset link", () => {
     expect(h.replace).toHaveBeenCalledWith("/today");
   });
 
+  it("reveals both fields from either toggle, because they are one decision", async () => {
+    const user = userEvent.setup();
+    render(<Page />);
+    const next = await screen.findByLabelText(/^new password$/i);
+    const confirm = screen.getByLabelText(/^confirm password$/i);
+    expect(next).toHaveAttribute("type", "password");
+
+    // The second field's toggle, pressed deliberately: either one drives the pair.
+    const toggles = screen.getAllByRole("button", { name: /show password/i });
+    expect(toggles).toHaveLength(2);
+    await user.click(toggles[1]!);
+
+    expect(next).toHaveAttribute("type", "text");
+    expect(confirm).toHaveAttribute("type", "text");
+    expect(screen.getAllByRole("button", { name: /hide password/i })).toHaveLength(2);
+  });
+
   it("refuses two different passwords before it sends anything", async () => {
     render(<Page />);
 

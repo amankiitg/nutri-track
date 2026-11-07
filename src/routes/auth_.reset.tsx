@@ -19,9 +19,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandMark } from "@/components/app/BrandMark";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 import { authErrorText, friendlyAuthError } from "@/lib/auth-errors";
 
 /** Said for a link that cannot be used, in the one place both paths reach it. */
@@ -68,6 +68,13 @@ function ResetPasswordPage() {
   const [state, setState] = useState<"checking" | "ready" | "expired">("checking");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  /**
+   * One reveal for both fields.
+   *
+   * The two are typed a character apart and compared on submit, so revealing one and hiding the
+   * other would only make it harder to spot the typo this form exists to catch.
+   */
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,6 +112,7 @@ function ResetPasswordPage() {
       else setError(friendlyAuthError(updateError));
       return;
     }
+    setShowPassword(false);
     router.history.replace("/today");
   }
 
@@ -145,27 +153,29 @@ function ResetPasswordPage() {
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="new-password">New password</Label>
-                <Input
+                <PasswordInput
                   id="new-password"
-                  type="password"
                   autoComplete="new-password"
                   required
                   minLength={MIN_PASSWORD}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  visible={showPassword}
+                  onToggle={() => setShowPassword((shown) => !shown)}
                   className="h-11"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="confirm-password">Confirm password</Label>
-                <Input
+                <PasswordInput
                   id="confirm-password"
-                  type="password"
                   autoComplete="new-password"
                   required
                   minLength={MIN_PASSWORD}
                   value={confirmation}
                   onChange={(e) => setConfirmation(e.target.value)}
+                  visible={showPassword}
+                  onToggle={() => setShowPassword((shown) => !shown)}
                   className="h-11"
                 />
               </div>

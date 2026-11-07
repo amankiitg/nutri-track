@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ReactNode } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const h = vi.hoisted(() => ({
@@ -60,8 +60,10 @@ const CREDENTIALS_REFUSED = {
 async function attemptSignIn(email: string): Promise<void> {
   const user = userEvent.setup({ pointerEventsCheck: 0 });
   render(<Page />);
-  await user.type(screen.getByLabelText(/email/i), email);
-  await user.type(screen.getByLabelText(/password/i), "hunter2hunter2");
+  // Anchored queries: the reveal button is labelled "Show password", so a loose /password/ would
+  // match it as well and the failure would read as an ambiguity rather than a bug.
+  await user.type(screen.getByLabelText(/^email$/i), email);
+  await user.type(screen.getByLabelText(/^password$/i), "hunter2hunter2");
   await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 }
 
@@ -199,6 +201,72 @@ describe("the address to write to by hand", () => {
     await user.click(screen.getByRole("button", { name: /^copy$/i }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(/select the address above/i);
+  });
+});
+
+describe("the password field", () => {
+  const field = () => screen.getByLabelText(/^password$/i);
+
+  it("can be revealed, and the button says which way it will go", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Page />);
+    expect(field()).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: /show password/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: /show password/i }));
+
+    expect(field()).toHaveAttribute("type", "text");
+    const hide = screen.getByRole("button", { name: /hide password/i });
+    expect(hide).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(hide);
+
+    expect(field()).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: /show password/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("does not submit the form, which is what a bare button inside one does", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Page />);
+    await user.type(screen.getByLabelText(/^email$/i), "invited@example.com");
+    await user.type(field(), "hunter2hunter2");
+
+    await user.click(screen.getByRole("button", { name: /show password/i }));
+
+    expect(h.signInWithPassword).not.toHaveBeenCalled();
+    // And the caret stayed where it was, so the next keystroke lands in the password.
+    expect(field()).toHaveFocus();
+  });
+
+  it("is on the create-account form too, sharing the same reveal", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Page />);
+    await user.click(screen.getByRole("tab", { name: /create account/i }));
+    expect(field()).toHaveAttribute("type", "password");
+
+    await user.click(screen.getByRole("button", { name: /show password/i }));
+
+    expect(field()).toHaveAttribute("type", "text");
+  });
+
+  it("is hidden again once the sign-in succeeds", async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Page />);
+    await user.type(screen.getByLabelText(/^email$/i), "invited@example.com");
+    await user.type(field(), "hunter2hunter2");
+    await user.click(screen.getByRole("button", { name: /show password/i }));
+    expect(field()).toHaveAttribute("type", "text");
+
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/today"));
+    expect(field()).toHaveAttribute("type", "password");
   });
 });
 

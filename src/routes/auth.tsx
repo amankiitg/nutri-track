@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/app/BrandMark";
 import { InviteAddress } from "@/components/invite/InviteAddress";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { CREDENTIALS_MISMATCH, friendlyAuthError, isInvalidCredentials } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
@@ -98,6 +99,8 @@ function AuthPage() {
   const [busy, setBusy] = useState<"google" | "email" | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  /** One reveal for both tabs: the same field in two forms, and nobody wants it always on. */
+  const [showPassword, setShowPassword] = useState(false);
   const [verifySent, setVerifySent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -206,6 +209,7 @@ function AuthPage() {
 
     if (signInError === null) {
       setBusy(null);
+      setShowPassword(false);
       router.history.replace(destination);
       return;
     }
@@ -286,6 +290,7 @@ function AuthPage() {
     // tell is a user with no identities: no error, no email, and a person waiting for one.
     if (data.user?.identities?.length === 0) {
       setTab("signin");
+      setShowPassword(false);
       setError(
         "You already have an account with this email. Sign in instead, or use Continue with Google if that's how you joined.",
       );
@@ -293,11 +298,13 @@ function AuthPage() {
     }
 
     if (data.session) {
+      setShowPassword(false);
       router.history.replace(destination);
       return;
     }
 
     setVerifySent(address);
+    setShowPassword(false);
     resendCooldown.start();
     toast.success("Verification email sent");
   };
@@ -448,6 +455,8 @@ function AuthPage() {
                         setEmail={setEmail}
                         setPassword={setPassword}
                         autoComplete="current-password"
+                        passwordVisible={showPassword}
+                        onTogglePassword={() => setShowPassword((shown) => !shown)}
                       />
                       <button
                         type="button"
@@ -565,6 +574,8 @@ function AuthPage() {
                         setEmail={setEmail}
                         setPassword={setPassword}
                         autoComplete="new-password"
+                        passwordVisible={showPassword}
+                        onTogglePassword={() => setShowPassword((shown) => !shown)}
                         onEmailBlur={() => void handleEmailBlur()}
                       />
                       {error && (
@@ -650,6 +661,8 @@ function EmailPassword(props: {
   setEmail: (v: string) => void;
   setPassword: (v: string) => void;
   autoComplete: "current-password" | "new-password";
+  passwordVisible: boolean;
+  onTogglePassword: () => void;
   /** Only the create-account form asks the invite list, on the way out of the field. */
   onEmailBlur?: (() => void) | undefined;
 }) {
@@ -671,14 +684,15 @@ function EmailPassword(props: {
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="password">Password</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete={props.autoComplete}
           required
           minLength={8}
           value={props.password}
           onChange={(e) => props.setPassword(e.target.value)}
+          visible={props.passwordVisible}
+          onToggle={props.onTogglePassword}
           className="h-11"
         />
       </div>
