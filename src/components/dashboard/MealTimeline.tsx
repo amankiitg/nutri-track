@@ -77,6 +77,16 @@ function TimelineRow({
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     // Ignore a secondary click, which is a context menu and not a drag.
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    // Ignore a press that did not land on the row itself. The actions menu is rendered as a
+    // child of this element and portalled to `document.body`, and React bubbles a portal's
+    // events up the React tree, so a press on a menu *item* arrives here. Capturing that
+    // pointer is what starts a drag, and capture retargets every later event to this element:
+    // the item's own pointerup and click went to the row instead, so the menu opened, the item
+    // did nothing, and it stayed open. The keyboard was unaffected because it uses no pointer.
+    // `contains` is false for the portal, whose DOM node is not inside this element. jsdom
+    // could not see any of this: its `setPointerCapture` is a stub, so capture does nothing
+    // there and the click completes in the test but not in a browser.
+    if (!event.currentTarget.contains(event.target as Node)) return;
     startX.current = event.clientX;
     fromOffset.current = offset;
     travel.current = { left: 0, right: 0 };

@@ -135,6 +135,25 @@ describe("the actions on a meal row", () => {
     expect(body.style.transform).toBe("translateX(0px)");
   });
 
+  it("does not capture the pointer when the press lands on a menu item", async () => {
+    renderRow();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    // The menu is portalled to `document.body` but is still a child of the row in the React
+    // tree, so React bubbles a press on one of its items up to the row's swipe handler. In a
+    // browser that handler's `setPointerCapture` retargets the coming pointerup and click to
+    // the row, so the item never completes its own click: the menu opened and neither Edit nor
+    // Delete did anything with a mouse, though both worked from the keyboard. It cannot be
+    // asserted through the callback, because jsdom's `setPointerCapture` is a stub and the
+    // click therefore completes here either way. Assert on the capture instead.
+    const capture = vi.spyOn(Element.prototype, "setPointerCapture");
+
+    await user.click(menuTrigger());
+    await user.click(await screen.findByRole("menuitem", { name: /^delete$/i }));
+
+    expect(capture).not.toHaveBeenCalled();
+    capture.mockRestore();
+  });
+
   it("still swipes when the drag starts on the row itself", () => {
     renderRow();
     const body = row();

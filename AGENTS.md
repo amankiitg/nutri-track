@@ -259,6 +259,17 @@ npm test
   `200`). And a constant cannot be right, because the same axis reads `3200` on a daily bucket
   and `12600` on a weekly one. jsdom has no layout engine, so this class of bug cannot be
   caught by a test: measure it in a browser, checking each label's box against the SVG's.
+- `src/components/dashboard/MealTimeline.tsx` — the swipeable row, and the one place where a
+  portalled child is a stranger in the DOM but a relation in React. Radix renders the actions
+  menu into `document.body`, and React still bubbles its events up through the row, so a press
+  on a menu _item_ reached the row's swipe handler; its `setPointerCapture` then retargeted the
+  following pointerup and click to the row, and the item never completed its own click — the
+  menu opened, Delete did nothing with a mouse, and the keyboard worked because it uses no
+  pointer. The handler now ignores a press whose target is not inside the row
+  (`currentTarget.contains(target)`), which is false for the portal. **A jsdom test cannot see
+  this class of bug**: `src/test/setup.ts` stubs `setPointerCapture`, so capture does nothing
+  there and the click completes in the test and not in a browser. The regression test asserts
+  on the capture call; the real check is a browser with a real pointer.
 - `src/components/onboarding/steps.tsx` — the question groups, shared by the onboarding
   wizard and the settings form. Change them in one place.
 - `shared/meal-parse.ts` — the parse-meal contract: the prompt, the Zod schemas the model's
