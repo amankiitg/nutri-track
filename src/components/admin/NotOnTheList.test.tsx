@@ -88,6 +88,25 @@ describe("a genuine refusal", () => {
     expect(screen.queryByRole("button", { name: /request access/i })).toBeNull();
   });
 
+  it("offers the address as well, because a recorded request is not the only way in", async () => {
+    // The automatic request succeeds here, which is the state that used to leave this screen with
+    // nothing a person could act on: the row is written for them, but they cannot say anything
+    // themselves.
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
+    expect(screen.getByText(/or email/i)).toHaveTextContent("Or email invites@tracknutri.app");
+    expect(screen.getByRole("button", { name: /^copy$/i })).toBeInTheDocument();
+  });
+
+  it("offers it when the row was refused too", async () => {
+    inviteRequest.mockResolvedValueOnce(false);
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't record/i);
+    expect(screen.getByRole("button", { name: /^copy$/i })).toBeInTheDocument();
+  });
+
   it("does not claim a request was sent when the row was not recorded", async () => {
     // The point of this section: never reassure somebody about a request the database refused.
     inviteRequest.mockResolvedValueOnce(false);

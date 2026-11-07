@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
+import { InviteAddress } from "@/components/invite/InviteAddress";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
 
@@ -148,6 +149,13 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
                 </Button>
               </>
             )}
+
+            {/* Always here, not only when the automatic request failed: the row above needs a
+                signed-in stranger to write it, and this is the way in for somebody who would
+                rather say it themselves. */}
+            <div className="mt-4">
+              <InviteAddress />
+            </div>
           </>
         )}
 

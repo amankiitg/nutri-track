@@ -1,30 +1,23 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { Check, Copy, Loader2, MailCheck } from "lucide-react";
+import { Loader2, MailCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/app/BrandMark";
+import { InviteAddress } from "@/components/invite/InviteAddress";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { friendlyAuthError, isInvalidCredentials } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
-import { inviteRequestMailto, INVITE_REQUEST_ADDRESS } from "@/lib/invite-request";
+import { inviteRequestMailto } from "@/lib/invite-request";
 
 type AuthTab = "signin" | "signup";
 
 /** How long the Resend control stays disabled after a send. */
 const RESEND_COOLDOWN_SECONDS = 60;
-
-/**
- * How long the copy button reads "Copied" before going back to "Copy".
- *
- * Chosen, not measured: long enough to be read without looking for it, short enough that the
- * button is a fresh action by the time anybody presses it again.
- */
-const COPY_CONFIRM_MS = 2000;
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -461,28 +454,6 @@ function AuthPage() {
  * own mailbox instead, and the app records nothing until they are let in.
  */
 function InviteOnlyPanel({ email, onReset }: { email: string; onReset: () => void }) {
-  const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
-
-  // Back to "Copy" once the confirmation has been read. One timeout at a time, cleared when this
-  // unmounts, which is the same shape as the resend countdown: a stale timer is how a label ends
-  // up saying something that is no longer true.
-  useEffect(() => {
-    if (copy !== "done") return;
-    const timer = setTimeout(() => setCopy("idle"), COPY_CONFIRM_MS);
-    return () => clearTimeout(timer);
-  }, [copy]);
-
-  async function copyAddress(): Promise<void> {
-    try {
-      // The clipboard needs a secure origin, which the app has in production and on localhost.
-      // A browser can still refuse it; the address is select-all for exactly that case.
-      await navigator.clipboard.writeText(INVITE_REQUEST_ADDRESS);
-      setCopy("done");
-    } catch {
-      setCopy("failed");
-    }
-  }
-
   return (
     <div className="space-y-4 pt-2">
       <h2 className="text-xl font-semibold">NutriTrack is invite-only right now</h2>
@@ -498,29 +469,7 @@ function InviteOnlyPanel({ email, onReset }: { email: string; onReset: () => voi
         Your email app will open with the request ready to send.
       </p>
 
-      <div className="space-y-1.5">
-        <p className="text-xs text-muted-foreground">
-          Or email{" "}
-          {/* One press selects the whole address: the button above needs a mail app, and this is
-              for the device that has none. */}
-          <span className="font-medium text-foreground select-all">{INVITE_REQUEST_ADDRESS}</span>
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="rounded-full"
-          onClick={() => void copyAddress()}
-        >
-          {copy === "done" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          {copy === "done" ? "Copied" : "Copy"}
-        </Button>
-        {copy === "failed" && (
-          <p role="status" className="text-xs text-muted-foreground">
-            This browser would not copy it. Select the address above and copy it by hand.
-          </p>
-        )}
-      </div>
+      <InviteAddress />
 
       <button type="button" className="text-xs underline" onClick={onReset}>
         Use a different email
