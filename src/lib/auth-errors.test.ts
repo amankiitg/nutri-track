@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { friendlyAuthError, isInvalidCredentials } from "./auth-errors";
+import {
+  CREDENTIALS_MISMATCH,
+  credentialsMismatchText,
+  friendlyAuthError,
+  isInvalidCredentials,
+} from "./auth-errors";
 
 beforeEach(() => {
   // The helper logs the raw message on purpose; the tests are about the sentence it returns.
@@ -42,6 +47,24 @@ describe("friendlyAuthError", () => {
   it("has an answer when there is no message at all", () => {
     expect(friendlyAuthError(null)).toMatch(/something went wrong/i);
     expect(friendlyAuthError(undefined)).toMatch(/something went wrong/i);
+  });
+});
+
+describe("the wrong-password sentence", () => {
+  it("says the same thing in parts as it does whole", () => {
+    const whole = friendlyAuthError({ message: "Invalid login credentials" });
+
+    // The sign-in form renders two of the parts as buttons and the rest as text, so the pieces
+    // have to add up to exactly the sentence every other screen shows.
+    expect(whole).toBe(credentialsMismatchText());
+    expect(whole).toContain(CREDENTIALS_MISMATCH.google);
+    expect(whole).toContain(CREDENTIALS_MISMATCH.reset);
+  });
+
+  it("does not suggest creating an account, which a wrong password cannot need", () => {
+    expect(friendlyAuthError({ message: "Invalid login credentials" })).not.toMatch(
+      /create an account/i,
+    );
   });
 });
 

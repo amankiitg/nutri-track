@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/app/BrandMark";
 import { InviteAddress } from "@/components/invite/InviteAddress";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
-import { friendlyAuthError, isInvalidCredentials } from "@/lib/auth-errors";
+import { CREDENTIALS_MISMATCH, friendlyAuthError, isInvalidCredentials } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
 import { inviteRequestMailto } from "@/lib/invite-request";
 
@@ -18,6 +18,25 @@ type AuthTab = "signin" | "signup";
 
 /** How long the Resend control stays disabled after a send. */
 const RESEND_COOLDOWN_SECONDS = 60;
+
+/** How long the reset link can be asked for again. The same minute, for the same reason. */
+const RESET_COOLDOWN_SECONDS = 60;
+
+/**
+ * A countdown a button starts, used by the two controls that must not be pressed twice in a row.
+ *
+ * One timeout at a time, cleared when the number changes or the page unmounts: a stale timer is
+ * how a label ends up saying something that is no longer true.
+ */
+function useCooldown(seconds: number): { remaining: number; start: () => void } {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setRemaining((left) => left - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [remaining]);
+  return { remaining, start: () => setRemaining(seconds) };
+}
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -33,9 +52,16 @@ export const Route = createFileRoute("/auth")({
    * guard sends someone back after signing in, and it is checked again by `safeRedirect` before
    * anything navigates to it.
    */
-  validateSearch: (search: Record<string, unknown>): { tab?: AuthTab; redirect?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    tab?: AuthTab;
+    redirect?: string;
+    forgot?: boolean;
+  } => ({
     ...(search["tab"] === "signup" ? { tab: "signup" as const } : {}),
     ...(typeof search["redirect"] === "string" ? { redirect: search["redirect"] } : {}),
+    ...(search["forgot"] === true ? { forgot: true } : {}),
   }),
   component: AuthPage,
 });
@@ -73,8 +99,22 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verifySent, setVerifySent] = useState<string | null>(null);
-  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The wrong-password sentence, kept apart from `error` because two of its words are buttons:
+   * one moves the pointer to the Google button, the other opens the reset step. It is set only
+   * when the address is on the invite list, because off it the panel explains something else.
+   */
+  const [mismatch, setMismatch] = useState(false);
+  /** The inline reset step: closed, asking for an address, or answered. */
+  const [forgot, setForgot] = useState<"closed" | "open" | "sent">(
+    search.forgot === true ? "open" : "closed",
+  );
+  const resendCooldown = useCooldown(RESEND_COOLDOWN_SECONDS);
+  const resetCooldown = useCooldown(RESET_COOLDOWN_SECONDS);
+  /** Where the word "Continue with Google" sends the pointer. */
+  const googleButton = useRef<HTMLButtonElement>(null);
 
   /**
    * The invite gate, answered on blur rather than at the end of the form.
@@ -94,14 +134,6 @@ function AuthPage() {
       if (data.session) router.history.replace(destination);
     });
   }, [router, destination]);
-
-  // A countdown rather than a timer per send: one timeout at a time, cleared when this unmounts
-  // or the number changes, so a double press cannot start two clocks.
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [resendIn]);
 
   /** The address a verification link or OAuth exchange comes back to, carrying the redirect. */
   function callbackUrl(): string {
@@ -165,6 +197,7 @@ function AuthPage() {
     e.preventDefault();
     setBusy("email");
     setError(null);
+    setMismatch(false);
     const address = normalizeEmail(email);
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: address,
@@ -190,8 +223,15 @@ function AuthPage() {
         setBusy(null);
         return;
       }
-      // Anything else — allowed, or a check that could not be completed — leaves the
-      // provider's own answer standing: it did say the credentials do not match.
+      if (verdict === "allowed") {
+        // The address is on the list, so the password really is the problem, and the two ways
+        // out are a Google sign-in and a reset. Both are offered as buttons inside the sentence.
+        setMismatch(true);
+        setBusy(null);
+        return;
+      }
+      // A check that could not be completed leaves the provider's own answer standing: it did
+      // say the credentials do not match, and inventing a reason would be worse than saying that.
     }
 
     setBusy(null);
@@ -258,12 +298,12 @@ function AuthPage() {
     }
 
     setVerifySent(address);
-    setResendIn(RESEND_COOLDOWN_SECONDS);
+    resendCooldown.start();
     toast.success("Verification email sent");
   };
 
   async function resend(): Promise<void> {
-    if (verifySent === null || resendIn > 0) return;
+    if (verifySent === null || resendCooldown.remaining > 0) return;
     setError(null);
     const { error: resendError } = await supabase.auth.resend({
       type: "signup",
@@ -273,8 +313,43 @@ function AuthPage() {
       setError(friendlyAuthError(resendError));
       return;
     }
-    setResendIn(RESEND_COOLDOWN_SECONDS);
+    resendCooldown.start();
     toast.success("Verification email sent again");
+  }
+
+  /** Puts the pointer on the Google button, for the sentence that names it. */
+  function focusGoogle(): void {
+    const button = googleButton.current;
+    if (button === null) return;
+    button.scrollIntoView({ block: "center", behavior: "smooth" });
+    button.focus();
+  }
+
+  /**
+   * Asks for a reset link.
+   *
+   * The answer is the same whether or not the address has an account, which is the point: a
+   * screen that says "no such account" is a way to ask whether somebody uses this app. Supabase
+   * reports no error for an unknown address, so there is nothing to branch on anyway.
+   */
+  async function sendReset(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    const address = normalizeEmail(email);
+    if (!isPlausibleEmail(address)) {
+      setError("Enter an email address first.");
+      return;
+    }
+    setError(null);
+    setBusy("email");
+    resetCooldown.start();
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(address, {
+      redirectTo: `${window.location.origin}/auth/reset`,
+    });
+    setBusy(null);
+    setForgot("sent");
+    // The neutral sentence is shown either way. A transport failure is still worth naming,
+    // underneath it, because otherwise the person waits for a link that was never sent.
+    if (resetError) setError(friendlyAuthError(resetError));
   }
 
   /** Back to the form, for someone who wants to try another address. */
@@ -313,9 +388,11 @@ function AuthPage() {
                   type="button"
                   className="underline disabled:opacity-60 disabled:no-underline"
                   onClick={() => void resend()}
-                  disabled={resendIn > 0}
+                  disabled={resendCooldown.remaining > 0}
                 >
-                  {resendIn > 0 ? `resend in ${resendIn}s` : "resend"}
+                  {resendCooldown.remaining > 0
+                    ? `resend in ${resendCooldown.remaining}s`
+                    : "resend"}
                 </button>
                 .
               </p>
@@ -336,6 +413,7 @@ function AuthPage() {
                 className="h-12 w-full rounded-full text-base"
                 onClick={google}
                 disabled={busy !== null}
+                ref={googleButton}
               >
                 {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
                 Continue with Google
@@ -362,7 +440,7 @@ function AuthPage() {
                 <TabsContent value="signin">
                   {invite === "denied" ? (
                     <InviteOnlyPanel email={normalizeEmail(email)} onReset={resetInvite} />
-                  ) : (
+                  ) : forgot === "closed" ? (
                     <form onSubmit={signIn} className="space-y-4 pt-2">
                       <EmailPassword
                         email={email}
@@ -371,10 +449,42 @@ function AuthPage() {
                         setPassword={setPassword}
                         autoComplete="current-password"
                       />
-                      {error && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline"
+                        onClick={() => {
+                          setForgot("open");
+                          setError(null);
+                          setMismatch(false);
+                        }}
+                      >
+                        Forgot password?
+                      </button>
+                      {mismatch ? (
                         <p role="alert" className="text-sm text-destructive">
-                          {error}
+                          {CREDENTIALS_MISMATCH.before}
+                          <button type="button" className="underline" onClick={focusGoogle}>
+                            {CREDENTIALS_MISMATCH.google}
+                          </button>
+                          {CREDENTIALS_MISMATCH.between}
+                          <button
+                            type="button"
+                            className="underline"
+                            onClick={() => {
+                              setForgot("open");
+                              setMismatch(false);
+                            }}
+                          >
+                            {CREDENTIALS_MISMATCH.reset}
+                          </button>
+                          {CREDENTIALS_MISMATCH.after}
                         </p>
+                      ) : (
+                        error && (
+                          <p role="alert" className="text-sm text-destructive">
+                            {error}
+                          </p>
+                        )
                       )}
                       <Button
                         type="submit"
@@ -384,6 +494,62 @@ function AuthPage() {
                         {busy === "email" && <Loader2 className="animate-spin" />}
                         Sign in
                       </Button>
+                    </form>
+                  ) : (
+                    <form onSubmit={sendReset} className="space-y-4 pt-2">
+                      <h2 className="text-lg font-semibold">Reset your password</h2>
+                      {forgot === "sent" ? (
+                        <p role="status" className="text-sm text-muted-foreground">
+                          If that email has a password account, a reset link is on its way. Check
+                          spam too.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-sm text-muted-foreground">
+                            We&apos;ll email you a link to set a new one.
+                          </p>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="reset-email">Email</Label>
+                            <Input
+                              id="reset-email"
+                              type="email"
+                              inputMode="email"
+                              autoComplete="email"
+                              required
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              className="h-11"
+                            />
+                          </div>
+                        </>
+                      )}
+                      {error && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {error}
+                        </p>
+                      )}
+                      {forgot === "open" && (
+                        <Button
+                          type="submit"
+                          className="h-12 w-full rounded-full text-base"
+                          disabled={busy !== null || resetCooldown.remaining > 0}
+                        >
+                          {busy === "email" && <Loader2 className="animate-spin" />}
+                          {resetCooldown.remaining > 0
+                            ? `Send again in ${resetCooldown.remaining}s`
+                            : "Send reset link"}
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline"
+                        onClick={() => {
+                          setForgot("closed");
+                          setError(null);
+                        }}
+                      >
+                        Back to sign in
+                      </button>
                     </form>
                   )}
                 </TabsContent>

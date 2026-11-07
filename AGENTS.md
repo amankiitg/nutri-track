@@ -336,6 +336,15 @@ npm test
   request body, one row per address is enforced by a unique index, and a trigger skips
   repeats. Do not add an email to that body, and do not give `authenticated` an update or
   delete policy on the table.
+- `src/routes/auth.tsx` and `src/routes/auth_.reset.tsx` — signing in, and the reset the screen
+  offers. A wrong password for an address that _is_ on the list gets a sentence whose words are
+  buttons: "Continue with Google" moves the pointer to the Google button, and "reset your
+  password" opens the inline reset step. `resetPasswordForEmail` answers the same way for an
+  address with no account, which is why the confirmation is unconditional; a screen that said
+  "no such account" would be a way to ask whether somebody uses this app. **A Google-only
+  account that finishes a reset gets a password on the same account rather than a second one**,
+  deliberately: the address is the identity, and splitting it would leave somebody with two rows
+  and two histories.
 - `src/lib/calls.ts` — the meal-analysis budget for the signed-in user; the admin page
   reads everyone's from `admin_spend()`, which shares `local_day_start()` with
   `llm_call_budget()` so there is one day-boundary rule and not two.

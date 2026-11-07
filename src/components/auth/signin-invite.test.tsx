@@ -12,11 +12,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const h = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
   rpc: vi.fn(),
   replace: vi.fn(),
 }));
@@ -38,6 +39,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     auth: {
       getSession: () => Promise.resolve({ data: { session: null } }),
       signInWithPassword: h.signInWithPassword,
+      resetPasswordForEmail: h.resetPasswordForEmail,
       signOut: vi.fn(),
     },
     rpc: h.rpc,
@@ -66,6 +68,7 @@ async function attemptSignIn(email: string): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   h.signInWithPassword.mockResolvedValue({ data: { user: null, session: null }, error: null });
+  h.resetPasswordForEmail.mockResolvedValue({ data: {}, error: null });
   h.rpc.mockResolvedValue({ data: true, error: null });
 });
 
@@ -96,17 +99,32 @@ describe("signing in with an address that was never invited", () => {
     expect(h.replace).not.toHaveBeenCalled();
   });
 
-  it("blames the password when the address is on the list", async () => {
+  it("names the two real ways out when the address is on the list", async () => {
     h.signInWithPassword.mockResolvedValueOnce(CREDENTIALS_REFUSED);
     h.rpc.mockResolvedValueOnce({ data: true, error: null });
 
     await attemptSignIn("invited@example.com");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /that email and password don't match/i,
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "That email and password don't match. If you joined with Google, use Continue with Google above. Otherwise reset your password.",
     );
+    // "or create an account" is gone: somebody with a wrong password has an account already.
+    expect(alert).not.toHaveTextContent(/create an account/i);
     expect(screen.queryByRole("heading", { name: /invite-only/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /request access/i })).toBeNull();
+
+    // The words in the sentence are buttons, and the Google one really does move the pointer.
+    const googleInText = within(alert).getByRole("button", { name: /continue with google/i });
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(googleInText);
+
+    // Two buttons carry this name now, one inside the sentence and the real one above it, so the
+    // assertion names the one outside the alert rather than trusting the first match.
+    const googleButton = screen
+      .getAllByRole("button", { name: /^continue with google$/i })
+      .filter((button) => !alert.contains(button));
+    expect(googleButton).toHaveLength(1);
+    expect(googleButton[0]).toHaveFocus();
   });
 
   it("does not ask the invite list about a failure that is not about the credentials", async () => {
@@ -181,5 +199,57 @@ describe("the address to write to by hand", () => {
     await user.click(screen.getByRole("button", { name: /^copy$/i }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(/select the address above/i);
+  });
+});
+
+describe("forgetting a password", () => {
+  /** Opens the sign-in tab's reset step, with whatever address was typed first. */
+  async function openResetStep(typed: string) {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<Page />);
+    if (typed !== "") await user.type(screen.getByLabelText(/^email$/i), typed);
+    await user.click(screen.getByRole("button", { name: /forgot password/i }));
+    return user;
+  }
+
+  it("carries the address over, sends the link, and answers the same way either way", async () => {
+    const user = await openResetStep("invited@example.com");
+
+    // Prefilled from the sign-in field, so nobody types it twice.
+    expect(screen.getByLabelText(/^email$/i)).toHaveValue("invited@example.com");
+    await user.click(screen.getByRole("button", { name: /send reset link/i }));
+
+    // The sentence never says whether the address has an account: that answer is a way to ask
+    // whether somebody uses this app.
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "If that email has a password account, a reset link is on its way. Check spam too.",
+    );
+    expect(h.resetPasswordForEmail).toHaveBeenCalledWith("invited@example.com", {
+      redirectTo: expect.stringContaining("/auth/reset"),
+    });
+  });
+
+  it("says the same thing when Supabase reports nothing for the address", async () => {
+    // `resetPasswordForEmail` resolves for an unknown address, which is the whole reason the
+    // sentence can be unconditional rather than hedged.
+    h.resetPasswordForEmail.mockResolvedValueOnce({ data: {}, error: null });
+    const user = await openResetStep("nobody@example.com");
+
+    await user.click(screen.getByRole("button", { name: /send reset link/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/a reset link is on its way/i);
+  });
+
+  it("holds the button for a minute after a send", async () => {
+    const user = await openResetStep("invited@example.com");
+    await user.click(screen.getByRole("button", { name: /send reset link/i }));
+    await screen.findByRole("status");
+
+    await user.click(screen.getByRole("button", { name: /back to sign in/i }));
+    await user.click(screen.getByRole("button", { name: /forgot password/i }));
+
+    expect(screen.getByRole("button", { name: /send again in 60s/i })).toBeDisabled();
+    // And one send, not two: the guard is real, not only a label.
+    expect(h.resetPasswordForEmail).toHaveBeenCalledTimes(1);
   });
 });

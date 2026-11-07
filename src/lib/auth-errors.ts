@@ -14,8 +14,15 @@
  * "Database error saving new user" must win over the generic fallback, so the specific cases come
  * first.
  */
-/** The provider's own text, which is what every check in this file reads. */
-function rawMessage(error: unknown): string {
+/**
+ * The provider's own text, which is what every check in this file reads.
+ *
+ * Exported because a second reader needs it: the reset page has to tell a dead link from a bad
+ * password, and supabase-js reports its errors as plain objects with a `message`, as `Error`
+ * instances, or as strings depending on where the failure happened. Reading all three in one
+ * place is what stops one screen classifying a failure that another screen understands.
+ */
+export function authErrorText(error: unknown): string {
   return typeof error === "string"
     ? error
     : error instanceof Error
@@ -34,12 +41,39 @@ function rawMessage(error: unknown): string {
  * offers the invite panel for one kind of failure and blames the password for another.
  */
 export function isInvalidCredentials(error: unknown): boolean {
-  const text = rawMessage(error).toLowerCase();
+  const text = authErrorText(error).toLowerCase();
   return text.includes("invalid login credentials") || text.includes("invalid credentials");
 }
 
+/**
+ * The wrong-password sentence, in parts.
+ *
+ * Split because the sign-in form renders two of them as buttons: "Continue with Google" moves
+ * the pointer to the Google button, and "reset your password" opens the reset step. The plain
+ * sentence below is the concatenation, so the screen and the callback cannot drift apart, and a
+ * screen without buttons still gets the whole thing.
+ */
+export const CREDENTIALS_MISMATCH = {
+  before: "That email and password don't match. If you joined with Google, use ",
+  google: "Continue with Google",
+  between: " above. Otherwise ",
+  reset: "reset your password",
+  after: ".",
+} as const;
+
+/** The same sentence as one string, which is what every non-interactive screen shows. */
+export function credentialsMismatchText(): string {
+  return (
+    CREDENTIALS_MISMATCH.before +
+    CREDENTIALS_MISMATCH.google +
+    CREDENTIALS_MISMATCH.between +
+    CREDENTIALS_MISMATCH.reset +
+    CREDENTIALS_MISMATCH.after
+  );
+}
+
 export function friendlyAuthError(error: unknown): string {
-  const raw = rawMessage(error);
+  const raw = authErrorText(error);
 
   if (raw !== "") console.error("[auth]", raw);
   const text = raw.toLowerCase();
@@ -47,7 +81,7 @@ export function friendlyAuthError(error: unknown): string {
   if (text === "") return "Something went wrong. Please try again.";
 
   if (isInvalidCredentials(error)) {
-    return "That email and password don't match. Try again, or create an account.";
+    return credentialsMismatchText();
   }
   if (text.includes("email not confirmed")) {
     return "Confirm your email first. Check your inbox for the link, then sign in.";
