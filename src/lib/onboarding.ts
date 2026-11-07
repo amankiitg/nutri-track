@@ -244,17 +244,19 @@ const paceSchema = z.custom<Pace>(
 );
 
 /**
- * A choice that can still be unmade.
+ * The shape of a choice, without the rule that it must be made.
  *
- * The form holds null while the person has not answered, so the schema has to accept that shape and
- * still refuse to save it: an unset choice is a valid state to be in and an invalid thing to keep.
+ * Used by the form, which must accept a choice not yet made and still refuse to save it, and by the
+ * draft, which has to hold exactly that state without complaint.
  */
+function choiceShape<T extends string>(options: readonly T[]) {
+  return z.custom<T | null>((value) => value === null || options.includes(value as T), {
+    message: CHOOSE_ONE,
+  });
+}
+
 function choiceSchema<T extends string>(options: readonly T[]) {
-  return z
-    .custom<T | null>((value) => value === null || options.includes(value as T), {
-      message: CHOOSE_ONE,
-    })
-    .refine((value) => value !== null, { message: CHOOSE_ONE });
+  return choiceShape(options).refine((value) => value !== null, { message: CHOOSE_ONE });
 }
 
 const formShape = {
@@ -495,6 +497,27 @@ export function validateStep(step: OnboardingStep, form: OnboardingForm): FieldE
   return STEP_VALIDATORS[step](form);
 }
 
+/**
+ * The first step a validator still refuses, with the messages that step should show.
+ *
+ * The step validators are the whole-form schema split by step, so walking them in order is the
+ * full-form check with one extra fact: *where* to send somebody. A draft written by an older run
+ * can hold answers a rule has since learned to refuse, and the step it was saved on is not
+ * necessarily the step that needs fixing.
+ *
+ * `null` means every answer holds and the form is ready to save.
+ */
+export function firstInvalidStep(
+  form: OnboardingForm,
+): { step: OnboardingStep; errors: FieldErrors } | null {
+  for (const step of ONBOARDING_STEPS) {
+    if (step === "review") continue;
+    const errors = validateStep(step, form);
+    if (Object.keys(errors).length > 0) return { step, errors };
+  }
+  return null;
+}
+
 /** Computed targets for the review screen, or null while the form is incomplete. */
 export function computeTargetsFromForm(form: OnboardingForm): TargetResult | null {
   if (form.height_cm == null || form.weight_kg == null || !ISO_DATE.test(form.dob)) return null;
@@ -570,9 +593,31 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
 
 const DRAFT_KEY = "nutritrack:onboarding:draft:v1";
 
+/**
+ * What a draft may hold: a form part-way through being filled.
+ *
+ * Every key is optional, and the five fields that can be legitimately incomplete while somebody is
+ * typing are accepted as they stand — an empty name, a blank date of birth, a height or weight box
+ * not yet filled, a choice not yet made. The field rules run when the draft is *restored*
+ * (`firstInvalidStep`), which is where a refusal belongs; applying them here meant a draft written
+ * on the very first screen failed to parse and was silently thrown away, and the person restarted
+ * from nothing. Every other field comes from a picker or a slider and cannot hold an interim value.
+ */
+const draftFormSchema = z
+  .object({
+    ...formShape,
+    display_name: z.string(),
+    dob: z.string(),
+    sex: choiceShape(SEX_OPTIONS),
+    height_cm: z.number().nullable(),
+    weight_kg: z.number().nullable(),
+    goal: choiceShape(GOAL_OPTIONS),
+  })
+  .partial();
+
 const draftSchema = z.object({
   step: z.enum(ONBOARDING_STEPS),
-  form: onboardingBaseSchema.partial(),
+  form: draftFormSchema,
 });
 
 /** Partial where an explicit `undefined` is allowed (see `exactOptionalPropertyTypes`). */

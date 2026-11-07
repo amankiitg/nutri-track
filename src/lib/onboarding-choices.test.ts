@@ -15,6 +15,9 @@ import {
   MAX_AGE,
   MIN_AGE,
   defaultUnits,
+  firstInvalidStep,
+  loadOnboardingDraft,
+  saveOnboardingDraft,
   targetDirectionMessage,
   validateForm,
   validateStep,
@@ -193,5 +196,74 @@ describe("the unit system a device suggests", () => {
     expect(defaultUnits("Europe/Berlin", "de-DE")).toBe("metric");
     expect(defaultUnits("Asia/Kolkata", "en-IN")).toBe("metric");
     expect(defaultUnits("UTC", "")).toBe("metric");
+  });
+});
+
+describe("where a form that fails should open", () => {
+  const SOUND: OnboardingForm = {
+    ...FILLED,
+    sex: "female",
+    goal: "lose",
+    target_weight_kg: 65,
+  };
+
+  it("has nothing to report about a form that holds", () => {
+    expect(firstInvalidStep(SOUND)).toBeNull();
+  });
+
+  it("reports the goal step for the draft that exposed the gap", () => {
+    // Goal lose, target 85 kg, weight 77 kg: saved on Review, refused by a later rule.
+    const problem = firstInvalidStep({ ...SOUND, target_weight_kg: 85 });
+
+    expect(problem?.step).toBe("goal");
+    expect(problem?.errors.target_weight_kg).toBe(ABOVE);
+  });
+
+  it("reports the earlier of two failing steps, because that is the one to open", () => {
+    const problem = firstInvalidStep({ ...SOUND, sex: null, target_weight_kg: 85 });
+
+    expect(problem?.step).toBe("about");
+    expect(problem?.errors.sex).toBe(CHOOSE_ONE);
+  });
+
+  it("never reports Review itself, which has no answers of its own to check", () => {
+    // The step is a summary, so a form that fails must be attributed to a step that asks something.
+    for (const problem of [firstInvalidStep({ ...SOUND, target_weight_kg: 85 })]) {
+      expect(problem?.step).not.toBe("review");
+    }
+  });
+});
+
+describe("a draft is written before there is anything valid to write", () => {
+  it("comes back rather than being thrown away on load", () => {
+    // The wizard saves on every keystroke, so the first thing it ever stores has an empty name and
+    // no sex chosen. Parsing that with the rules a save uses threw the draft away in silence, and
+    // the person started again from nothing.
+    const midStep: OnboardingForm = {
+      ...DEFAULT_ONBOARDING_FORM,
+      display_name: "",
+      dob: "",
+      height_cm: null,
+      weight_kg: null,
+    };
+    saveOnboardingDraft({ step: "about", form: midStep });
+
+    const loaded = loadOnboardingDraft();
+
+    expect(loaded?.step).toBe("about");
+    expect(loaded?.form.sex).toBeNull();
+    expect(loaded?.form.height_cm).toBeNull();
+  });
+
+  it("keeps a half-typed name and a stale target while the person is inside", () => {
+    saveOnboardingDraft({
+      step: "goal",
+      form: { ...FILLED, display_name: "Ad", sex: "female", goal: "lose", target_weight_kg: 85 },
+    });
+
+    const loaded = loadOnboardingDraft();
+
+    expect(loaded?.form.display_name).toBe("Ad");
+    expect(loaded?.form.target_weight_kg).toBe(85);
   });
 });
