@@ -1,15 +1,21 @@
 Hi {{{contact.first_name|there}}},
 
-A very happy Diwali to you and your family. I hope the week is full of light, good food, and
-time with the people you love.
+Wishing you and your family a very happy Diwali, full of light, laughter and people you love. 🪔
 
-Enjoy the mithai guilt-free this week. The tracking can wait until Monday.
+A quick note from our nutrition department: this week, kaju katli is officially a vegetable. Our
+AI disagrees, but it wasn't invited to the party.
 
-If you haven't tried NutriTrack yet, your invite is still open at
-https://tracknutri.app/auth?tab=signup
+If you do photograph the mithai box, NutriTrack will happily estimate it. Our advice: look at the
+number on Tuesday. 😄
+
+Haven't tried NutriTrack yet? Your invite is still open at
+https://tracknutri.app/auth?tab=signup, just in time for the post-Diwali reset.
 
 Warmly,
-Aman
+Aman Kesarwani
 
-You're getting this because you joined or asked to join NutriTrack.
+P.S. We've updated our privacy policy to cover emails like this one. Short version: still no ads,
+still nothing sold. Read it here: https://tracknutri.app/privacy
+
+You're getting this because you joined NutriTrack or were invited to it.
 Unsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}
