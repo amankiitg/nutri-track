@@ -19,6 +19,7 @@ import {
   loadOnboardingDraft,
   saveOnboardingDraft,
   targetDirectionMessage,
+  TARGET_TOO_CLOSE,
   validateForm,
   validateStep,
   type OnboardingForm,
@@ -134,6 +135,65 @@ describe("a target on the wrong side of the current weight", () => {
       target_weight_kg: 40,
     });
     expect(errors.target_weight_kg).toMatch(/below a BMI of 18.5/i);
+  });
+});
+
+describe("a target inside a kilogram of the current weight", () => {
+  /** The reported pair: 77 kg, aiming at 77.5 with goal lose. */
+  const CLOSE: OnboardingForm = {
+    ...FILLED,
+    sex: "female",
+    goal: "lose",
+    weight_kg: 77,
+    target_weight_kg: 77.5,
+  };
+  const ONBOARDING = { requireDistance: true };
+
+  it("is refused on the goal step in onboarding", () => {
+    expect(validateStep("goal", CLOSE, ONBOARDING).target_weight_kg).toBe(TARGET_TOO_CLOSE);
+  });
+
+  it("is accepted by Settings, which says the person has arrived instead", () => {
+    // The same numbers, the other caller: the form saves, and the at-target notice is what the
+    // screen says about them.
+    expect(validateStep("goal", CLOSE).target_weight_kg).toBeUndefined();
+    expect(validateForm(CLOSE)).toEqual({});
+  });
+
+  it("is refused from either direction the goal could be heading", () => {
+    expect(
+      validateStep("goal", { ...CLOSE, goal: "gain", target_weight_kg: 76.5 }, ONBOARDING)
+        .target_weight_kg,
+    ).toBe(TARGET_TOO_CLOSE);
+  });
+
+  it("counts exactly a kilogram as too close, and a tenth more as far enough", () => {
+    expect(
+      validateStep("goal", { ...CLOSE, target_weight_kg: 76 }, ONBOARDING).target_weight_kg,
+    ).toBe(TARGET_TOO_CLOSE);
+    expect(
+      validateStep("goal", { ...CLOSE, target_weight_kg: 75.9 }, ONBOARDING).target_weight_kg,
+    ).toBeUndefined();
+  });
+
+  it("still speaks of the wrong side first when the target is far off on it", () => {
+    // 8 kg above the weight is the direction mistake; "too close" would be the wrong sentence.
+    expect(
+      validateStep("goal", { ...CLOSE, target_weight_kg: 85 }, ONBOARDING).target_weight_kg,
+    ).toBe(ABOVE);
+  });
+
+  it("does not apply to maintain, which has no target to be near", () => {
+    expect(
+      validateStep("goal", { ...CLOSE, goal: "maintain" }, ONBOARDING).target_weight_kg,
+    ).toBeUndefined();
+  });
+
+  it("sends a resumed draft back to the goal step for it", () => {
+    const problem = firstInvalidStep(CLOSE, ONBOARDING);
+
+    expect(problem?.step).toBe("goal");
+    expect(problem?.errors.target_weight_kg).toBe(TARGET_TOO_CLOSE);
   });
 });
 

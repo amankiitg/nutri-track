@@ -491,9 +491,52 @@ const STEP_VALIDATORS: Record<
   preferences: (form) => collect(preferencesStepSchema.safeParse(form)),
 };
 
-export function validateStep(step: OnboardingStep, form: OnboardingForm): FieldErrors {
+/**
+ * Said on the goal step when the target is a rounding error away from the current weight.
+ *
+ * Onboarding asks for a target the app can walk to. A target half a kilogram away is either a
+ * typo or a wish to stay put, and the second one has its own answer — Maintain — so the step asks
+ * for a real one. Settings does not ask: somebody who has arrived at their target keeps the goal
+ * they set, and the at-target notice is what that screen says instead.
+ */
+export const TARGET_TOO_CLOSE =
+  "That's within a kilogram of your current weight. Choose Maintain, or set a target further away.";
+
+/** The message for a target inside the tolerance, or null when it is far enough away. */
+export function targetTooCloseMessage(value: {
+  goal: Goal | null;
+  weight_kg: number | null;
+  target_weight_kg: number | null;
+}): string | null {
+  return targetProximity(value.goal, value.weight_kg, value.target_weight_kg) === "at_target"
+    ? TARGET_TOO_CLOSE
+    : null;
+}
+
+export interface ValidateStepOptions {
+  /**
+   * Whether this caller asks for a target worth walking to.
+   *
+   * The onboarding wizard says yes, which is the difference between the two screens that share
+   * these fields: Settings accepts a target it can only describe as already reached.
+   */
+  requireDistance?: boolean;
+}
+
+export function validateStep(
+  step: OnboardingStep,
+  form: OnboardingForm,
+  options: ValidateStepOptions = {},
+): FieldErrors {
   if (step === "review") return {};
-  return STEP_VALIDATORS[step](form);
+  const errors = STEP_VALIDATORS[step](form);
+  // The direction error speaks first when it applies: it is about the target being on the wrong
+  // side, which is a different mistake from one that is simply too near.
+  if (step === "goal" && options.requireDistance && errors.target_weight_kg === undefined) {
+    const close = targetTooCloseMessage(form);
+    if (close !== null) errors.target_weight_kg = close;
+  }
+  return errors;
 }
 
 /**
@@ -508,10 +551,11 @@ export function validateStep(step: OnboardingStep, form: OnboardingForm): FieldE
  */
 export function firstInvalidStep(
   form: OnboardingForm,
+  options: ValidateStepOptions = {},
 ): { step: OnboardingStep; errors: FieldErrors } | null {
   for (const step of ONBOARDING_STEPS) {
     if (step === "review") continue;
-    const errors = validateStep(step, form);
+    const errors = validateStep(step, form, options);
     if (Object.keys(errors).length > 0) return { step, errors };
   }
   return null;

@@ -162,6 +162,20 @@ const profile = (over: Partial<Profile>): Profile =>
   }) as Profile;
 
 describe("settings, driven through the form", () => {
+  it("shows the notice for 77 kg against a 77.5 kg target, which onboarding would refuse", () => {
+    // The same pair that onboarding blocks: this screen has no form to walk to, and somebody who
+    // has arrived at their target keeps the goal they set.
+    render(
+      <ProfileForm
+        profile={profile({ units: "metric", weight_kg: 77, target_weight_kg: 77.5 })}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(screen.queryByText(/within a kilogram of your current weight/i)).toBeNull();
+  });
+
   it("shows the notice for 169.8 lb against a 170 lb target, and no direction error", () => {
     render(<ProfileForm profile={profile({})} onSaved={vi.fn()} />);
 

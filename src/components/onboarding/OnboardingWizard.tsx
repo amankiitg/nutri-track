@@ -34,6 +34,15 @@ import {
 import type { Sex } from "@/lib/targets";
 import { AboutStep, ActivityStep, BodyStep, GoalStep, PreferencesStep } from "./steps";
 
+/**
+ * What every validator in this wizard is told, in one place so no call site can forget it.
+ *
+ * Onboarding refuses a target within a kilogram of the current weight; Settings accepts it and
+ * says the person has arrived. That is the whole difference between the two callers of the same
+ * fields, so it travels as an option rather than as a second rule.
+ */
+const ONBOARDING_ONLY = { requireDistance: true };
+
 export interface OnboardingWizardProps {
   userId: string;
   /** The only place a write may happen. Called exclusively from Confirm. */
@@ -74,7 +83,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
   }
 
   function next() {
-    const stepErrors = validateStep(step, form);
+    const stepErrors = validateStep(step, form, ONBOARDING_ONLY);
     if (Object.keys(stepErrors).length > 0) {
       setErrors(stepErrors);
       return;
@@ -97,7 +106,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
     setSaveError(null);
 
     // Re-check every step; jump back to the first one that is incomplete.
-    const invalid = firstInvalidStep(form);
+    const invalid = firstInvalidStep(form, ONBOARDING_ONLY);
     if (invalid !== null) {
       setErrors(invalid.errors);
       setStepIndex(ONBOARDING_STEPS.indexOf(invalid.step));
@@ -132,7 +141,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
    * One problem at a time, in step order: that is the order they get fixed in, and the same
    * problem `confirm` would bounce to.
    */
-  const reviewProblem = step === "review" ? firstInvalidStep(form) : null;
+  const reviewProblem = step === "review" ? firstInvalidStep(form, ONBOARDING_ONLY) : null;
 
   if (!started) return <Welcome onStart={() => setStarted(true)} />;
 
@@ -324,7 +333,7 @@ function resumeFromDraft(): {
 
   if (draft === null) return { form, started: false, stepIndex: 0, errors: {} };
 
-  const invalid = firstInvalidStep(form);
+  const invalid = firstInvalidStep(form, ONBOARDING_ONLY);
   if (invalid !== null) {
     return {
       form,

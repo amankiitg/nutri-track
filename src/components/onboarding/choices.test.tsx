@@ -155,15 +155,40 @@ describe("a target on the wrong side of the current weight", () => {
     expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
   });
 
-  it("says nothing when the target is the weight they already are, and never the notice", () => {
-    toGoal("70");
+  it("blocks a target within a kilogram, and never shows the notice", () => {
+    // The reported pair: 77 kg aiming at 77.5 with goal lose. In Settings that is somebody who has
+    // arrived; onboarding is asking for a target worth walking to, and Maintain is the answer for
+    // somebody who wants to stay put.
+    toGoal("77");
     chooseRadio(/^lose weight/i);
-    setInput(/target weight/i, "70");
+    setInput(/target weight/i, "77.5");
     continueStep();
 
-    // Onboarding has no history to have reached anything, so the at-target notice is not its to
-    // show; and being at the target is not a direction error either.
+    expect(
+      screen.getByText(
+        "That's within a kilogram of your current weight. Choose Maintain, or set a target further away.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
     expect(screen.queryByText(/you're at your target weight/i)).not.toBeInTheDocument();
+  });
+
+  it("counts exactly one kilogram as too close", () => {
+    toGoal("77");
+    chooseRadio(/^lose weight/i);
+    setInput(/target weight/i, "76");
+    continueStep();
+
+    expect(screen.getByText(/within a kilogram of your current weight/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
+  });
+
+  it("moves on once the target is further than a kilogram away", () => {
+    toGoal("77");
+    chooseRadio(/^lose weight/i);
+    setInput(/target weight/i, "75.9");
+    continueStep();
+
     expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
   });
 
