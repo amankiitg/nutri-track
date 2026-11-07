@@ -76,7 +76,9 @@ function Landing() {
             <Link to="/auth">{checking ? "Checking…" : "Sign in"}</Link>
           </Button>
           <p className="text-center text-sm">
-            <Link to="/auth" search={{ tab: "signup" }} className="underline">
+            {/* The request page, not a step inside sign-in: somebody with no invite has one thing
+                to do, and it should not begin with a form that asks them to prove they need it. */}
+            <Link to="/auth/request" className="underline">
               Request an invite
             </Link>
           </p>

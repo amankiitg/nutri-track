@@ -4,7 +4,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5";
+    PostgrestVersion: "14.17";
   };
   graphql_public: {
     Tables: {
@@ -66,38 +66,65 @@ export type Database = {
         };
         Relationships: [];
       };
+      auth_entry_state_throttle: {
+        Row: {
+          checked_at: string;
+          email_hash: string;
+          id: number;
+          ip_hash: string | null;
+        };
+        Insert: {
+          checked_at?: string;
+          email_hash: string;
+          id?: never;
+          ip_hash?: string | null;
+        };
+        Update: {
+          checked_at?: string;
+          email_hash?: string;
+          id?: never;
+          ip_hash?: string | null;
+        };
+        Relationships: [];
+      };
       invite_requests: {
         Row: {
           email: string;
+          first_name: string | null;
           handled_at: string | null;
           handled_by: string | null;
           id: string;
           notified_at: string | null;
           notify_attempts: number;
+          request_ip_hash: string | null;
           requested_at: string;
-          requested_by: string;
+          requested_by: string | null;
           status: string;
         };
         Insert: {
           email?: string;
+          first_name?: string | null;
           handled_at?: string | null;
           handled_by?: string | null;
           id?: string;
           notified_at?: string | null;
           notify_attempts?: number;
+          request_ip_hash?: string | null;
           requested_at?: string;
-          requested_by?: string;
+          requested_by?: string | null;
           status?: string;
         };
         Update: {
           email?: string;
+          first_name?: string | null;
           handled_at?: string | null;
           handled_by?: string | null;
           id?: string;
           notified_at?: string | null;
           notify_attempts?: number;
+          request_ip_hash?: string | null;
           requested_at?: string;
-          requested_by?: string;
+          requested_by?: string | null;
           status?: string;
         };
         Relationships: [];
@@ -432,6 +459,7 @@ export type Database = {
           user_id: string;
         }[];
       };
+      auth_entry_state: { Args: { p_email: string }; Returns: string };
       calorie_status: {
         Args: { p_actual: number; p_target: number };
         Returns: string;
@@ -455,6 +483,7 @@ export type Database = {
           target_protein_g: number;
         }[];
       };
+      email_canonical: { Args: { p_email: string }; Returns: string };
       get_period_summary:
         | { Args: { p_end: string; p_start: string }; Returns: Json }
         | {
@@ -470,6 +499,7 @@ export type Database = {
           weight_kg: number;
         }[];
       };
+      ip_hash: { Args: { p_ip: string }; Returns: string };
       is_admin: { Args: never; Returns: boolean };
       is_email_allowed: { Args: never; Returns: boolean };
       llm_call_budget: {
@@ -485,6 +515,16 @@ export type Database = {
         Returns: string;
       };
       meals_for_day: { Args: { p_date: string }; Returns: Json };
+      request_invite: {
+        Args: {
+          p_auto?: boolean;
+          p_email: string;
+          p_first_name?: string;
+          p_honeypot?: string;
+        };
+        Returns: string;
+      };
+      request_ip: { Args: never; Returns: string };
       save_meal: { Args: { _items: Json; _meal: Json }; Returns: Json };
       target_on: {
         Args: { p_date: string };

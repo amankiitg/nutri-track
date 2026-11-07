@@ -19,7 +19,9 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedTodayRouteImport } from './routes/_authenticated/today'
 import { Route as AuthenticatedTrendsRouteImport } from './routes/_authenticated/trends'
 import { Route as AuthCallbackRouteImport } from './routes/auth_.callback'
+import { Route as AuthRequestRouteImport } from './routes/auth_.request'
 import { Route as AuthResetRouteImport } from './routes/auth_.reset'
+import { Route as AuthWelcomeRouteImport } from './routes/auth_.welcome'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,9 +72,19 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRequestRoute = AuthRequestRouteImport.update({
+  id: '/auth_/request',
+  path: '/auth/request',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthResetRoute = AuthResetRouteImport.update({
   id: '/auth_/reset',
   path: '/auth/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthWelcomeRoute = AuthWelcomeRouteImport.update({
+  id: '/auth_/welcome',
+  path: '/auth/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -86,7 +98,9 @@ export interface FileRoutesByFullPath {
   '/today': typeof AuthenticatedTodayRoute
   '/trends': typeof AuthenticatedTrendsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/request': typeof AuthRequestRoute
   '/auth/reset': typeof AuthResetRoute
+  '/auth/welcome': typeof AuthWelcomeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -98,7 +112,9 @@ export interface FileRoutesByTo {
   '/today': typeof AuthenticatedTodayRoute
   '/trends': typeof AuthenticatedTrendsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/request': typeof AuthRequestRoute
   '/auth/reset': typeof AuthResetRoute
+  '/auth/welcome': typeof AuthWelcomeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -112,7 +128,9 @@ export interface FileRoutesById {
   '/_authenticated/today': typeof AuthenticatedTodayRoute
   '/_authenticated/trends': typeof AuthenticatedTrendsRoute
   '/auth_/callback': typeof AuthCallbackRoute
+  '/auth_/request': typeof AuthRequestRoute
   '/auth_/reset': typeof AuthResetRoute
+  '/auth_/welcome': typeof AuthWelcomeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -126,7 +144,9 @@ export interface FileRouteTypes {
     | '/today'
     | '/trends'
     | '/auth/callback'
+    | '/auth/request'
     | '/auth/reset'
+    | '/auth/welcome'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -138,7 +158,9 @@ export interface FileRouteTypes {
     | '/today'
     | '/trends'
     | '/auth/callback'
+    | '/auth/request'
     | '/auth/reset'
+    | '/auth/welcome'
   id:
     | '__root__'
     | '/'
@@ -151,7 +173,9 @@ export interface FileRouteTypes {
     | '/_authenticated/today'
     | '/_authenticated/trends'
     | '/auth_/callback'
+    | '/auth_/request'
     | '/auth_/reset'
+    | '/auth_/welcome'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -161,7 +185,9 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  AuthRequestRoute: typeof AuthRequestRoute
   AuthResetRoute: typeof AuthResetRoute
+  AuthWelcomeRoute: typeof AuthWelcomeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -236,11 +262,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth_/request': {
+      id: '/auth_/request'
+      path: '/auth/request'
+      fullPath: '/auth/request'
+      preLoaderRoute: typeof AuthRequestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth_/reset': {
       id: '/auth_/reset'
       path: '/auth/reset'
       fullPath: '/auth/reset'
       preLoaderRoute: typeof AuthResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth_/welcome': {
+      id: '/auth_/welcome'
+      path: '/auth/welcome'
+      fullPath: '/auth/welcome'
+      preLoaderRoute: typeof AuthWelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -270,7 +310,9 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  AuthRequestRoute: AuthRequestRoute,
   AuthResetRoute: AuthResetRoute,
+  AuthWelcomeRoute: AuthWelcomeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
