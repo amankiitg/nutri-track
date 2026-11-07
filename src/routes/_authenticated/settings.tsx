@@ -5,6 +5,7 @@ import { fetchCurrentTarget, type Target } from "@/lib/profile";
 import { countsNote, fetchCallBudget, presentBudget } from "@/lib/calls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm } from "@/components/onboarding/ProfileForm";
+import { AccountSection } from "@/components/settings/AccountSection";
 
 const parentApi = getRouteApi("/_authenticated");
 
@@ -127,6 +128,9 @@ function SettingsPage() {
           toast.success("Profile saved. Your new targets start today.");
         }}
       />
+
+      {/* Last, because it is the thing you reach for once, not every visit. */}
+      <AccountSection />
     </div>
   );
 }
