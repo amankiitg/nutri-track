@@ -850,9 +850,14 @@ export function CaptureSheet({
               // Said only once it is actually slow, so it is information rather than
               // reassurance: a photo usually comes back in a few seconds, and a meal
               // that needs the retry can take up to two minutes.
+              //
+              // The photo sentence only applies when there are photos. A typed meal was being
+              // told to "tap Cancel and type what you ate instead" when it had already been
+              // typed, which describes a different screen from the one in front of them.
               <p className="mt-2 text-center text-xs text-muted-foreground">
-                Taking longer than usual. A photo can take up to two minutes — keep this open, or
-                tap Cancel and type what you ate instead.
+                {photos.length > 0
+                  ? "Taking longer than usual. A photo can take up to two minutes — keep this open, or tap Cancel and type what you ate instead."
+                  : "Still working on it. You can keep this open or cancel."}
               </p>
             )}
           </div>

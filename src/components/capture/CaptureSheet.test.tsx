@@ -224,7 +224,9 @@ describe("a parse that is taking a long time", () => {
     });
 
     expect(screen.getByRole("button", { name: /still analysing/i })).toBeInTheDocument();
-    expect(screen.getByText(/can take up to two minutes/i)).toBeInTheDocument();
+    // A typed meal, so the notice must not tell them to type what they already typed.
+    expect(screen.getByText(/still working on it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/can take up to two minutes/i)).toBeNull();
     expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
   });
 
@@ -237,6 +239,7 @@ describe("a parse that is taking a long time", () => {
     submitTypedMeal();
 
     expect(screen.getByRole("button", { name: /analysing/i })).toBeInTheDocument();
+    expect(screen.queryByText(/still working on it/i)).toBeNull();
     expect(screen.queryByText(/can take up to two minutes/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).not.toBeNull();
   });
