@@ -133,6 +133,19 @@ describe("localDateString", () => {
     expect(localDateString("Pacific/Auckland", LATE_EVENING_INSTANT)).toBe("2026-03-02");
     expect(localDateString("America/Los_Angeles", LATE_EVENING_INSTANT)).toBe("2026-03-01");
   });
+
+  it("turns over at the profile's midnight, to the minute", () => {
+    // 15:00 UTC is midnight in Tokyo, and this is the input that decides which day the dashboard
+    // and Trends ask about. One minute earlier the window still ends on the same day; one minute
+    // later it has moved on, and with it the seven complete days behind it.
+    expect(localDateString("Asia/Tokyo", new Date("2026-11-07T14:59:00Z"))).toBe("2026-11-07");
+    expect(localDateString("Asia/Tokyo", new Date("2026-11-07T15:00:00Z"))).toBe("2026-11-08");
+    // The second instant is still 7 November in New York, so a New York profile asks about the same
+    // day a minute later than a Tokyo one does. Two profiles, one instant, two windows.
+    expect(localDateString("America/New_York", new Date("2026-11-07T15:00:00Z"))).toBe(
+      "2026-11-07",
+    );
+  });
 });
 
 describe("fetchCurrentTarget", () => {

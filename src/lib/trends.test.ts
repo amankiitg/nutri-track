@@ -179,6 +179,7 @@ describe("isEmptyPeriod", () => {
     end: "2026-09-11",
     bucket: "day",
     window_days: 11,
+    excluded: null,
     buckets: [bucket(0)],
     totals: totals(),
     ...over,

@@ -25,15 +25,32 @@ import { axisWidth, bucketTick } from "@/lib/trends";
  * a glance, and the colour comes from the database's own verdict rather than from the
  * chart re-deriving it.
  */
-export function CalorieBars({ buckets, bucket }: { buckets: PeriodBucket[]; bucket: Bucket }) {
+export function CalorieBars({
+  buckets,
+  bucket,
+  excluded = null,
+}: {
+  buckets: PeriodBucket[];
+  bucket: Bucket;
+  /** The day drawn but not counted, or null. Marked on the axis and named under the chart. */
+  excluded?: string | null;
+}) {
   const chartData = buckets.map((entry) => ({
     bucketStart: entry.bucket_start,
+    // A bucket that contains the excluded day is the one still being lived in. The star is the only
+    // honest thing to put on it: its bar is low because the day is not over, and a reader who is not
+    // told that sees a bad day.
+    inProgress: excluded !== null && entry.bucket_start <= excluded && excluded <= entry.bucket_end,
     tick: bucketTick(entry.bucket_start, bucket),
     calories: Math.round(entry.calories),
     target: entry.target_calories === null ? null : Math.round(entry.target_calories),
     status: entry.status,
     logged: entry.meal_count > 0,
   }));
+
+  const labelled = chartData.map((entry) =>
+    entry.inProgress ? { ...entry, tick: `${entry.tick}*` } : entry,
+  );
 
   // Both series: the target line can sit above every bar, and its label has to fit too.
   const yAxisWidth = axisWidth([
@@ -42,63 +59,70 @@ export function CalorieBars({ buckets, bucket }: { buckets: PeriodBucket[]; buck
   ]);
 
   return (
-    <div className="h-56 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        {/* ComposedChart, not BarChart. A `Line` inside a `BarChart` is accepted by the
-            type definitions and silently not drawn, so the target simply would not
-            appear — which is how this shipped for one round of review. */}
-        <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--border)" />
-          <XAxis
-            dataKey="tick"
-            tickLine={false}
-            axisLine={false}
-            minTickGap={16}
-            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-          />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            width={yAxisWidth}
-            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-          />
-          <Tooltip
-            cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
-            contentStyle={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "0.75rem",
-              fontSize: "0.75rem",
-            }}
-            labelFormatter={(label) => String(label)}
-            formatter={(value, name) => [
-              value === null ? "not logged" : `${Number(value).toLocaleString()} kcal`,
-              name === "calories" ? "Eaten" : "Target",
-            ]}
-          />
-          <Bar dataKey="calories" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-            {chartData.map((entry) => (
-              <Cell
-                key={entry.bucketStart}
-                fill={entry.status === "over" ? "var(--destructive)" : "var(--chart-1)"}
-                // A bucket nobody logged is drawn in the grid colour rather than at zero
-                // height, so "nothing eaten" and "ate nothing" do not look identical.
-                opacity={entry.logged ? 1 : 0.25}
-              />
-            ))}
-          </Bar>
-          <Line
-            type="stepAfter"
-            dataKey="target"
-            stroke="var(--muted-foreground)"
-            strokeWidth={2}
-            strokeDasharray="4 3"
-            dot={false}
-            connectNulls
-            isAnimationActive={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div className="space-y-1">
+      <div className="h-56 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          {/* ComposedChart, not BarChart. A `Line` inside a `BarChart` is accepted by the
+              type definitions and silently not drawn, so the target simply would not
+              appear — which is how this shipped for one round of review. */}
+          <ComposedChart data={labelled} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--border)" />
+            <XAxis
+              dataKey="tick"
+              tickLine={false}
+              axisLine={false}
+              minTickGap={16}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={yAxisWidth}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            />
+            <Tooltip
+              cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
+              contentStyle={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "0.75rem",
+                fontSize: "0.75rem",
+              }}
+              labelFormatter={(label) => String(label)}
+              formatter={(value, name) => [
+                value === null ? "not logged" : `${Number(value).toLocaleString()} kcal`,
+                name === "calories" ? "Eaten" : "Target",
+              ]}
+            />
+            <Bar dataKey="calories" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+              {labelled.map((entry) => (
+                <Cell
+                  key={entry.bucketStart}
+                  fill={entry.status === "over" ? "var(--destructive)" : "var(--chart-1)"}
+                  // A bucket nobody logged is drawn in the grid colour rather than at zero
+                  // height, so "nothing eaten" and "ate nothing" do not look identical.
+                  opacity={entry.logged ? 1 : 0.25}
+                />
+              ))}
+            </Bar>
+            <Line
+              type="stepAfter"
+              dataKey="target"
+              stroke="var(--muted-foreground)"
+              strokeWidth={2}
+              strokeDasharray="4 3"
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      {excluded === null ? null : (
+        <p className="text-[11px] leading-tight text-muted-foreground">
+          * Today is still in progress. It is drawn here and left out of the figures above.
+        </p>
+      )}
     </div>
   );
 }

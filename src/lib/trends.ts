@@ -227,7 +227,10 @@ const periodSummary = z.object({
   start: z.string(),
   end: z.string(),
   bucket: z.string(),
+  /** The days the tiles divide by. One fewer than the bars when today is still running. */
   window_days: numeric,
+  /** The day drawn but left out of the totals, or null when the period has finished. */
+  excluded: z.string().nullable(),
   buckets: z.array(periodBucket),
   totals: periodTotals,
 });
@@ -262,15 +265,28 @@ export function bucketFor(granularity: Granularity): Bucket {
   return granularity === "year" ? "week" : "day";
 }
 
-/** One row per bucket in the range, plus the period's totals. One round trip. */
+/**
+ * One row per bucket in the range, plus the period's totals. One round trip.
+ *
+ * `exclude` is today when the range still contains it. The database draws that day as a bar and
+ * leaves it out of the totals, because a part-day averaged against a whole day's target moves every
+ * time somebody eats breakfast. Passing it is what stops the tiles disagreeing with each other
+ * before lunch; the date itself is decided by the profile's timezone, so the browser does not
+ * compute yesterday for itself.
+ */
 export async function fetchPeriodSummary(
   period: Period,
   bucket: Bucket = "day",
+  exclude: string | null = null,
 ): Promise<PeriodSummary> {
   const { data, error } = await supabase.rpc("get_period_summary", {
     p_start: period.start,
     p_end: period.end,
     p_bucket: bucket,
+    // The generated signature says `string | undefined`, and `exactOptionalPropertyTypes` forbids
+    // passing an explicit `undefined`, so the argument is present only when a day is left out.
+    // Omitting it is the same thing to Postgres: the parameter's default is null.
+    ...(exclude === null ? {} : { p_exclude: exclude }),
   });
   if (error) throw error;
 

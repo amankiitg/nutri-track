@@ -484,12 +484,15 @@ export type Database = {
         }[];
       };
       email_canonical: { Args: { p_email: string }; Returns: string };
-      get_period_summary:
-        | { Args: { p_end: string; p_start: string }; Returns: Json }
-        | {
-            Args: { p_bucket?: string; p_end: string; p_start: string };
-            Returns: Json;
-          };
+      get_period_summary: {
+        Args: {
+          p_bucket?: string;
+          p_end: string;
+          p_exclude?: string;
+          p_start: string;
+        };
+        Returns: Json;
+      };
       get_weight_series: {
         Args: { p_end: string; p_start: string };
         Returns: {
@@ -590,6 +593,8 @@ export type Database = {
           days_on_track: number;
           verdict: string;
           window_days: number;
+          window_end: string;
+          window_start: string;
         }[];
       };
     };

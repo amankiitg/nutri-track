@@ -45,6 +45,11 @@ function TrendsPage() {
   // row per future day, and every average would be dragged towards zero by days that have
   // not occurred. The label still names the whole calendar period.
   const range = clampEnd(period, today);
+  // Today is on the chart but not in the tiles. `clampEnd` has already cut the range at today, so an
+  // end equal to today means this period is still running; a finished period ends before it and has
+  // nothing to exclude. Writing it out here rather than inside the fetch keeps the fetch a plain
+  // passthrough, and the date is the profile's own day from `useToday`, never the device's.
+  const exclude = range.end === today ? today : null;
   const label = periodLabel(granularity, period);
   // A year of daily bars is 254 of them and its axis is unreadable; a week per bar is
   // ~37 and can be read. The shorter views stay daily, where each bar is legible.
@@ -52,8 +57,8 @@ function TrendsPage() {
   const enabled = userId !== "";
 
   const summary = useQuery({
-    queryKey: ["period-summary", userId, range.start, range.end, bucket],
-    queryFn: () => fetchPeriodSummary(range, bucket),
+    queryKey: ["period-summary", userId, range.start, range.end, bucket, exclude],
+    queryFn: () => fetchPeriodSummary(range, bucket, exclude),
     enabled,
   });
 
@@ -123,6 +128,11 @@ function TrendsPage() {
       {summary.isSuccess && !isEmptyPeriod(summary.data) && (
         <>
           <StatTiles totals={summary.data.totals} windowDays={summary.data.window_days} />
+          {summary.data.excluded === null ? null : (
+            <p className="text-xs text-muted-foreground">
+              Today is still in progress, so it is not counted in these figures.
+            </p>
+          )}
 
           <ChartCard
             title="Calories by day"
@@ -132,7 +142,11 @@ function TrendsPage() {
                 : "Bars are what you ate; the dashed line is your target on that day."
             }
           >
-            <CalorieBars buckets={summary.data.buckets} bucket={bucket} />
+            <CalorieBars
+              buckets={summary.data.buckets}
+              bucket={bucket}
+              excluded={summary.data.excluded}
+            />
           </ChartCard>
 
           <MacroSplit totals={summary.data.totals} buckets={summary.data.buckets} bucket={bucket} />
