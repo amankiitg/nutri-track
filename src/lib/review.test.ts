@@ -159,6 +159,54 @@ describe("setGrams", () => {
   });
 });
 
+describe("setQuantity", () => {
+  // The bug: Portion changed, the item was marked "Edited by you", and Grams and every nutrient
+  // stayed exactly where they were. A half cup saved as a whole cup, silently.
+  const halfCup = reviewItemFromDraft({ ...DRAFT, quantity: 0.5, grams: 125, calories: 60 });
+
+  it("scales the weight and the nutrients by the portion ratio", () => {
+    const doubled = setQuantity(halfCup, "1");
+
+    // 0.5 cup / 125 g / 60 kcal becomes 1 cup / 250 g / 120 kcal.
+    expect(doubled.quantity).toBe(1);
+    expect(doubled.grams).toBe(250);
+    expect(doubled.calories).toBe(120);
+  });
+
+  it("lands on the same numbers a grams change would, because it is the same rule", () => {
+    // Doubling the portion and doubling the grams are the same edit. If these ever disagree, one
+    // of the two fields is describing a different plate from the other.
+    const byPortion = setQuantity(halfCup, "1");
+    const byGrams = setGrams(halfCup, "250");
+
+    expect(byPortion.grams).toBe(byGrams.grams);
+    expect(byPortion.calories).toBe(byGrams.calories);
+    expect(byPortion.protein_g).toBe(byGrams.protein_g);
+  });
+
+  it("scales nothing when the portion is emptied, because there is no ratio", () => {
+    const cleared = setQuantity(halfCup, "");
+
+    expect(cleared.quantity).toBeNull();
+    expect(cleared.grams).toBe(125);
+    expect(cleared.calories).toBe(60);
+  });
+
+  it("scales nothing when there is no weight to scale", () => {
+    const noWeight = reviewItemFromDraft({ ...DRAFT, quantity: 1, grams: null });
+    const changed = setQuantity(noWeight, "2");
+
+    expect(changed.quantity).toBe(2);
+    expect(changed.grams).toBeNull();
+    expect(changed.calories).toBe(DRAFT.calories);
+  });
+
+  it("still marks the item as edited, whichever branch it took", () => {
+    expect(setQuantity(halfCup, "").userEdited).toBe(true);
+    expect(setQuantity(halfCup, "1").userEdited).toBe(true);
+  });
+});
+
 describe("setNutrient", () => {
   it("sets the field, marks the item edited, and touches nothing else", () => {
     const edited = setNutrient(item(), "protein_g", "12.5");

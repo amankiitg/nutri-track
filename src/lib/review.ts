@@ -389,12 +389,37 @@ export function setText(item: ReviewItem, field: "name" | "unit", value: string)
   };
 }
 
+/**
+ * A portion change is a portion change: when it goes from one known number to another, the weight
+ * and every nutrient move with it, exactly as a grams change does.
+ *
+ * It did not, and that is the worst kind of bug this screen can have. The item was marked "Edited
+ * by you" while its grams and nutrients still described the old portion, so the correction that
+ * this field exists for ("it was one cup, not half") produced a meal whose numbers were wrong in
+ * the direction the person had just tried to fix. Portion is also the field most likely to be
+ * corrected, which made it the most expensive place to be inert.
+ *
+ * The ratio is applied to grams, and the rest is delegated to `rescaleForGrams`, so there is one
+ * rule for scaling rather than two that can disagree. A portion that is emptied, or a change
+ * where either side is unknown or zero, rescales nothing: there is no ratio, and inventing one
+ * would be worse than leaving the numbers as they were. A missing weight is the same case: the
+ * scaling rule needs something to scale to.
+ */
 export function setQuantity(item: ReviewItem, raw: string): ReviewItem {
   const trimmed = raw.trim();
   if (trimmed === "") return { ...item, quantity: null, userEdited: true };
   const value = Number(trimmed);
   if (!Number.isFinite(value)) return item;
-  return { ...item, quantity: roundTo(Math.max(0, value), 2), userEdited: true };
+
+  const next = roundTo(Math.max(0, value), 2);
+  const previous = item.quantity;
+  const updated: ReviewItem = { ...item, quantity: next, userEdited: true };
+
+  const hasRatio =
+    previous !== null && previous > 0 && next > 0 && item.grams !== null && previous !== next;
+  if (!hasRatio || item.grams === null) return updated;
+
+  return rescaleForGrams(updated, roundTo((item.grams * next) / previous));
 }
 
 export interface MealTotals {

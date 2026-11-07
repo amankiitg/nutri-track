@@ -105,7 +105,8 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
       </div>
 
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Changing grams rescales everything below. Editing a nutrient changes only that nutrient.
+        Changing portion or grams rescales everything below. Editing a nutrient changes only that
+        nutrient.
       </p>
 
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
