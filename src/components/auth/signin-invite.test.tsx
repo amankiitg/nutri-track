@@ -132,3 +132,54 @@ describe("signing in with an address that was never invited", () => {
     expect(h.rpc).not.toHaveBeenCalled();
   });
 });
+
+/** The panel, reached the way a person reaches it: a sign-in that could not have worked. */
+async function showPanel(): Promise<void> {
+  h.signInWithPassword.mockResolvedValueOnce(CREDENTIALS_REFUSED);
+  h.rpc.mockResolvedValueOnce({ data: false, error: null });
+  await attemptSignIn("stranger@example.com");
+  await screen.findByRole("heading", { name: /invite-only right now/i });
+}
+
+describe("the address to write to by hand", () => {
+  it("is shown below the button, because the button needs a mail app and a device may have none", async () => {
+    await showPanel();
+
+    expect(screen.getByText(/or email/i)).toHaveTextContent("Or email invites@tracknutri.app");
+    // One press selects the whole address. That is what the failed-copy message points at, so it
+    // is not decoration: without it the fallback is selecting an address character by character.
+    expect(screen.getByText("invites@tracknutri.app")).toHaveClass("select-all");
+  });
+
+  it("copies it when Copy is pressed, and says so", async () => {
+    await showPanel();
+    // Created before the stub is defined: `userEvent.setup` attaches its own clipboard, and
+    // defining the spy first would let that stub replace it.
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+
+    await user.click(screen.getByRole("button", { name: /^copy$/i }));
+
+    expect(writeText).toHaveBeenCalledWith("invites@tracknutri.app");
+    expect(await screen.findByRole("button", { name: /copied/i })).toBeInTheDocument();
+  });
+
+  it("points at the text instead of claiming a copy when the browser refuses", async () => {
+    await showPanel();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn().mockRejectedValue(new Error("NotAllowedError")) },
+      configurable: true,
+      writable: true,
+    });
+
+    await user.click(screen.getByRole("button", { name: /^copy$/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/select the address above/i);
+  });
+});
