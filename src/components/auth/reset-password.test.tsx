@@ -131,7 +131,7 @@ describe("a link that cannot be used", () => {
     // Straight to the reset step, which is what "request a new one" means in practice.
     expect(screen.getByRole("link", { name: /request a new link/i })).toHaveAttribute(
       "href",
-      "/auth?tab=signin&forgot=true",
+      "/auth?forgot=true",
     );
     // No password form to fill in, because there is nothing to attach it to.
     expect(screen.queryByLabelText(/^new password$/i)).toBeNull();

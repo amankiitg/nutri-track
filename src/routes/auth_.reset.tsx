@@ -151,7 +151,7 @@ function ResetPasswordPage() {
               </p>
               <Button asChild className="mt-6 w-fit rounded-full">
                 {/* Straight to the reset step, which is the thing "request a new one" means. */}
-                <Link to="/auth" search={{ tab: "signin", forgot: true }}>
+                <Link to="/auth" search={{ forgot: true }}>
                   Request a new link
                 </Link>
               </Button>
@@ -204,7 +204,7 @@ function ResetPasswordPage() {
           )}
 
           <p className="mt-6 text-xs text-muted-foreground">
-            <Link to="/auth" search={{ tab: "signin" }} className="underline">
+            <Link to="/auth" search={{}} className="underline">
               Back to sign in
             </Link>
           </p>
