@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   VERDICT_DAYS,
   macroFraction,
+  targetZone,
   verdictHasNumbers,
   verdictSentence,
   type DailyTotals,
@@ -39,19 +40,31 @@ export function MacroBars({ totals }: { totals: DailyTotals }) {
           const goal = totals[target];
           const fraction = macroFraction(eaten, goal);
           const goalLabel = goal === null ? "no target" : `${Math.round(goal)} g`;
+          const zone = targetZone(eaten, goal);
+          // Stated in grams as well as shown in colour: "167% of target" is arithmetic, and
+          // "+32 g over" is the thing a person can act on.
+          const overBy = zone === null ? 0 : Math.max(0, eaten - Math.round(goal ?? 0));
+          const valueClass =
+            zone === "over"
+              ? "font-medium text-destructive"
+              : zone === "near"
+                ? "font-medium text-amber-600 dark:text-amber-400"
+                : "text-foreground";
+          const barClass =
+            zone === "over" ? "bg-destructive" : zone === "near" ? "bg-amber-500" : bar;
 
           return (
             <div key={key} className="space-y-1">
               <div className="flex items-baseline justify-between text-sm">
                 <dt className="font-medium">{label}</dt>
                 <dd className="tabular-nums text-muted-foreground">
-                  <span className="text-foreground">{eaten} g</span> / {goalLabel}
+                  <span className={valueClass}>{eaten} g</span> / {goalLabel}
                 </dd>
               </div>
               <div
                 className="h-2 overflow-hidden rounded-full bg-secondary"
                 role="progressbar"
-                aria-label={`${label}: ${eaten} of ${goalLabel}`}
+                aria-label={`${label}: ${eaten} of ${goalLabel}${overBy > 0 ? `, ${overBy} g over` : ""}`}
                 aria-valuenow={eaten}
                 aria-valuemin={0}
                 {...(goal === null ? {} : { "aria-valuemax": Math.round(goal) })}
@@ -60,11 +73,20 @@ export function MacroBars({ totals }: { totals: DailyTotals }) {
                     the user is at zero of something. */}
                 {fraction !== null && (
                   <div
-                    className={`h-full rounded-full transition-[width] ${bar}`}
+                    className={`h-full rounded-full transition-[width] ${barClass}`}
                     style={{ width: `${fraction * 100}%` }}
                   />
                 )}
               </div>
+              {overBy > 0 && (
+                <p
+                  className={`text-right text-[11px] ${
+                    zone === "over" ? "text-destructive" : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  +{overBy} g over
+                </p>
+              )}
             </div>
           );
         })}

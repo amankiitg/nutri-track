@@ -1,4 +1,4 @@
-import { ringGeometry } from "@/lib/dashboard";
+import { ringGeometry, targetZone } from "@/lib/dashboard";
 
 const SIZE = 168;
 const STROKE = 14;
@@ -20,6 +20,21 @@ export function CalorieRing({ consumed, target }: { consumed: number; target: nu
   const { fraction, over, remaining } = ringGeometry(consumed, target);
   const dash = CIRCUMFERENCE * fraction;
   const isOver = over > 0;
+  // The same rule the macro bars use, so "over" is one idea on this screen: amber once the
+  // target is passed, destructive past 110%, which is where `calorie_status` draws the line too.
+  const zone = targetZone(consumed, target);
+  const strokeClass =
+    zone === "over"
+      ? "stroke-destructive"
+      : zone === "near"
+        ? "stroke-amber-500"
+        : "stroke-primary";
+  const summaryClass =
+    zone === "over"
+      ? "text-destructive"
+      : zone === "near"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-muted-foreground";
 
   const summary =
     target === null
@@ -56,7 +71,7 @@ export function CalorieRing({ consumed, target }: { consumed: number; target: nu
               strokeWidth={STROKE}
               strokeLinecap="round"
               strokeDasharray={`${dash} ${CIRCUMFERENCE}`}
-              className={isOver ? "stroke-destructive" : "stroke-primary"}
+              className={strokeClass}
             />
           )}
         </svg>
@@ -71,9 +86,7 @@ export function CalorieRing({ consumed, target }: { consumed: number; target: nu
         </div>
       </div>
 
-      <p
-        className={`text-sm font-medium tabular-nums ${isOver ? "text-destructive" : "text-muted-foreground"}`}
-      >
+      <p className={`text-sm font-medium tabular-nums ${summaryClass}`}>
         {target === null
           ? "Finish onboarding to set a target."
           : isOver

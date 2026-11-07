@@ -5,6 +5,7 @@ import {
   mealTypeLabel,
   quantityLabel,
   ringGeometry,
+  targetZone,
   verdictHasNumbers,
   verdictSentence,
   weekdayName,
@@ -13,6 +14,28 @@ import {
   type TimelineItem,
   type WeekVerdict,
 } from "./dashboard";
+
+describe("targetZone", () => {
+  // One rule for the calorie ring and every macro bar, so "over" means the same thing on the
+  // whole screen. 110% is the same boundary `calorie_status` calls "over" in the database, which
+  // is the rule the verdict line has used all along.
+  it("is under while the target is not reached", () => {
+    expect(targetZone(47, 48)).toBe("under");
+    expect(targetZone(48, 48)).toBe("under");
+  });
+
+  it("warns once the target is passed, and reddens only past 110%", () => {
+    expect(targetZone(49, 48)).toBe("near");
+    expect(targetZone(52, 48)).toBe("near"); // 108%
+    expect(targetZone(53, 48)).toBe("over"); // 110.4%
+    expect(targetZone(80, 48)).toBe("over"); // the fat day from the report, 167%
+  });
+
+  it("has no opinion without a target, rather than calling it under", () => {
+    expect(targetZone(0, null)).toBeNull();
+    expect(targetZone(500, 0)).toBeNull();
+  });
+});
 
 const verdict = (over: Partial<WeekVerdict> = {}): WeekVerdict => ({
   window_days: 7,

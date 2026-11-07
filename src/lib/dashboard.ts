@@ -229,6 +229,32 @@ export function macroFraction(consumed: number, target: number | null): number |
   return Math.min(Math.max(consumed / target, 0), 1);
 }
 
+/** Where a day, or one macro, sits against its target. */
+export type TargetZone = "under" | "near" | "over";
+
+/**
+ * The point at which "over" becomes the alarming kind of over, as a multiple of the target.
+ *
+ * 1.1 is not a feeling: it is the same boundary `calorie_status` uses to call a day "over" in
+ * the database, which is what the verdict line has been using all along. One number, two readers.
+ */
+export const OVER_TARGET_RATIO = 1.1;
+
+/**
+ * One rule for the calorie ring and every macro bar, so "over" is one idea on the screen.
+ *
+ * Two bands rather than one, because passing a target and missing it by a third are different
+ * facts. `near` is the band between the target and 110% of it: worth marking, not worth the same
+ * alarm as a fat day at 167%. A null or zero target has no opinion at all, which is not the same
+ * as "under" — the same distinction the dashboard makes everywhere else.
+ */
+export function targetZone(consumed: number, target: number | null): TargetZone | null {
+  if (target === null || target <= 0) return null;
+  if (consumed > target * OVER_TARGET_RATIO) return "over";
+  if (consumed > target) return "near";
+  return "under";
+}
+
 /**
  * The weekday for a `YYYY-MM-DD` date from Postgres.
  *
