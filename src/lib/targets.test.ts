@@ -5,7 +5,9 @@ import {
   bmr,
   computeTargets,
   minSafeWeightKg,
+  projectionFor,
   projectedTargetDate,
+  targetReached,
   tdee,
 } from "./targets";
 
@@ -141,5 +143,72 @@ describe("helpers", () => {
     // 5 kg at 0.5 kg/week = 10 weeks = 70 days
     expect(d?.toISOString().slice(0, 10)).toBe("2026-03-12");
     expect(projectedTargetDate(70, 65, 0, from)).toBeNull();
+  });
+});
+
+describe("targetReached", () => {
+  it("is true only in the direction the goal points", () => {
+    // Losing means at or below; gaining means at or above. The same pair of numbers answers
+    // differently for the two goals, which is why direction cannot be read off the distance.
+    expect(targetReached("lose", 70, 72)).toBe(true);
+    expect(targetReached("lose", 75, 72)).toBe(false);
+    expect(targetReached("gain", 72, 70)).toBe(true);
+    expect(targetReached("gain", 68, 70)).toBe(false);
+    // Landing exactly on it counts as arrived.
+    expect(targetReached("lose", 72, 72)).toBe(true);
+    expect(targetReached("gain", 70, 70)).toBe(true);
+  });
+
+  it("does not apply to maintain, or when a number is missing", () => {
+    expect(targetReached("maintain", 70, 72)).toBeNull();
+    expect(targetReached("lose", null, 72)).toBeNull();
+    expect(targetReached("lose", 70, null)).toBeNull();
+  });
+});
+
+describe("projectionFor", () => {
+  const from = new Date("2026-11-06T00:00:00Z");
+
+  it("gives a future date for a target still ahead", () => {
+    const date = projectionFor({
+      goal: "lose",
+      currentKg: 80,
+      targetKg: 70,
+      paceKgPerWeek: 0.5,
+      from,
+    });
+
+    expect(date).not.toBeNull();
+    expect(date?.getTime()).toBeGreaterThan(from.getTime());
+  });
+
+  it("gives no date for a target already passed, in either direction", () => {
+    expect(
+      projectionFor({ goal: "lose", currentKg: 69, targetKg: 70, paceKgPerWeek: 0.5, from }),
+    ).toBeNull();
+    expect(
+      projectionFor({ goal: "gain", currentKg: 71, targetKg: 70, paceKgPerWeek: 0.5, from }),
+    ).toBeNull();
+  });
+
+  it("gives no date when there is nothing to project", () => {
+    expect(
+      projectionFor({ goal: "maintain", currentKg: 80, targetKg: 70, paceKgPerWeek: 0.5, from }),
+    ).toBeNull();
+    expect(
+      projectionFor({ goal: "lose", currentKg: 80, targetKg: 70, paceKgPerWeek: null, from }),
+    ).toBeNull();
+    expect(
+      projectionFor({ goal: "lose", currentKg: null, targetKg: 70, paceKgPerWeek: 0.5, from }),
+    ).toBeNull();
+  });
+
+  it("never dates a target the weight has overshot, which is the bug this replaced", () => {
+    // `projectedTargetDate` alone would happily return a future date here, because it is handed a
+    // distance and a distance has no direction.
+    expect(projectedTargetDate(65, 70, 0.5, from)).not.toBeNull();
+    expect(
+      projectionFor({ goal: "lose", currentKg: 65, targetKg: 70, paceKgPerWeek: 0.5, from }),
+    ).toBeNull();
   });
 });

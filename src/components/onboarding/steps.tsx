@@ -5,11 +5,13 @@
  * profile form (all groups stacked), so the two never drift apart.
  */
 import { Slider } from "@/components/ui/slider";
+import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import {
   ACTIVITY_LABELS,
   ACTIVITY_MULTIPLIERS,
   PACE_OPTIONS,
-  projectedTargetDate,
+  projectionFor,
+  targetReached,
 } from "@/lib/targets";
 import { DIETARY_TAG_OPTIONS } from "@/lib/profile";
 import { formatPace, formatWeight } from "@/lib/units";
@@ -127,10 +129,14 @@ export function ActivityStep({ form, setField }: StepProps) {
 }
 
 export function GoalStep({ form, errors, setField }: StepProps) {
-  const projectedOn =
-    form.goal !== "maintain" && form.target_weight_kg != null && form.weight_kg != null
-      ? projectedTargetDate(form.weight_kg, form.target_weight_kg, form.pace_kg_per_week)
-      : null;
+  const reached = targetReached(form.goal, form.weight_kg, form.target_weight_kg);
+  // Null whenever there is nothing honest to print, including a target already passed.
+  const projectedOn = projectionFor({
+    goal: form.goal,
+    currentKg: form.weight_kg,
+    targetKg: form.target_weight_kg,
+    paceKgPerWeek: form.pace_kg_per_week,
+  });
 
   return (
     <>
@@ -175,6 +181,10 @@ export function GoalStep({ form, errors, setField }: StepProps) {
               ))}
             </div>
           </fieldset>
+
+          {reached === true && (
+            <TargetReachedNotice onSwitch={() => setField("goal", "maintain")} />
+          )}
 
           {projectedOn && (
             <p className="text-sm text-muted-foreground">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createFileRoute, getRouteApi } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,8 +7,11 @@ import { CalorieRing } from "@/components/dashboard/CalorieRing";
 import { MacroBars, VerdictLine } from "@/components/dashboard/MacroBars";
 import { MealTimeline } from "@/components/dashboard/MealTimeline";
 import { WeightEntry } from "@/components/dashboard/WeightEntry";
+import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import { EditMealSheet } from "@/components/review/EditMealSheet";
-import { localDateString, refreshTargetIfStale } from "@/lib/profile";
+import { localDateString, refreshTargetIfStale, saveProfileWithTargets } from "@/lib/profile";
+import { formFromProfile, toProfileInsert } from "@/lib/onboarding";
+import { targetReached } from "@/lib/targets";
 import {
   VERDICT_DAYS,
   deleteMeal,
@@ -46,6 +49,7 @@ function TodayPage() {
    */
   const [editingMeal, setEditingMeal] = useState<TimelineMeal | null>(null);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const enabled = userId !== "";
 
@@ -73,6 +77,20 @@ function TodayPage() {
     enabled,
   });
 
+  /**
+   * Whether the goal's target is already behind this person, so the screen can say so instead of
+   * quietly keeping a deficit they no longer need.
+   *
+   * The latest weigh-in answers it when there is one, because that is the number the app uses
+   * everywhere else; the profile's stored weight is the fallback for somebody who has never logged
+   * one.
+   */
+  const latestWeightKg = weights.data?.[0]?.weight_kg ?? profile?.weight_kg ?? null;
+  const atTarget =
+    profile === null || profile === undefined
+      ? null
+      : targetReached(profile.goal, latestWeightKg, profile.target_weight_kg ?? null);
+
   function refreshDay(): void {
     void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
     void queryClient.invalidateQueries({ queryKey: ["timeline"] });
@@ -89,6 +107,34 @@ function TodayPage() {
     refreshDay();
     toast.success("Meal updated");
   }
+
+  /**
+   * "Switch to Maintain" from the notice, which is a tap rather than a form.
+   *
+   * It goes through the same save the settings form uses, so the targets are recomputed the same
+   * way and there is no second path that could disagree with them. What differs is that there is
+   * no Save button afterwards, which is the point of the tap. The route's profile is reloaded with
+   * the queries, because the notice is drawn from it and would otherwise keep saying the target
+   * has been reached until the next navigation.
+   */
+  const switchToMaintain = useMutation({
+    mutationFn: async () => {
+      if (profile === null || profile === undefined) return;
+      await saveProfileWithTargets(
+        toProfileInsert({ ...formFromProfile(profile), goal: "maintain" }, profile.user_id),
+      );
+    },
+    onSuccess: () => {
+      void router.invalidate();
+      void queryClient.invalidateQueries();
+      toast.success("Goal set to Maintain. Your target is no longer a deficit.");
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : "Could not change your goal. Try again.",
+      );
+    },
+  });
 
   const remove = useMutation({
     mutationFn: (meal: TimelineMeal) => deleteMeal(meal.id),
@@ -198,6 +244,14 @@ function TodayPage() {
               <CalorieRing consumed={totals.data.calories} target={totals.data.target_calories} />
             </CardContent>
           </Card>
+
+          {/* Under the ring, because that is the number the deficit is baked into. */}
+          {atTarget === true && (
+            <TargetReachedNotice
+              pending={switchToMaintain.isPending}
+              onSwitch={() => switchToMaintain.mutate()}
+            />
+          )}
 
           <MacroBars totals={totals.data} />
         </>

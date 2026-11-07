@@ -189,6 +189,52 @@ export function projectedTargetDate(
   return d;
 }
 
+/**
+ * Whether the target has already been passed, in the direction the goal points.
+ *
+ * `null` means the question does not apply: maintain has no destination, and a missing weight or
+ * target is not a reached one. The direction is the whole point — somebody losing weight who is
+ * *below* their target has passed it, while somebody gaining who is below theirs has not — and
+ * getting it backwards turns "2 kg to go" into "you have already arrived".
+ */
+export function targetReached(
+  goal: Goal,
+  currentKg: number | null,
+  targetKg: number | null,
+): boolean | null {
+  if (goal === "maintain") return null;
+  if (currentKg === null || targetKg === null) return null;
+  if (goal === "lose") return currentKg <= targetKg;
+  return currentKg >= targetKg;
+}
+
+/**
+ * The date to show for a goal, or null when there is nothing honest to show.
+ *
+ * This is the one place that decides, so no screen can print a date for a target that is already
+ * behind the person. `projectedTargetDate` on its own cannot know: it is handed a distance, and a
+ * distance has no direction. Anything that is not a goal still to be reached gets no date, which
+ * is why both "does not apply" and "already there" come back null.
+ */
+export function projectionFor(input: {
+  goal: Goal;
+  currentKg: number | null;
+  targetKg: number | null;
+  paceKgPerWeek: number | null;
+  from?: Date;
+}): Date | null {
+  if (targetReached(input.goal, input.currentKg, input.targetKg) !== false) return null;
+  if (input.currentKg === null || input.targetKg === null || input.paceKgPerWeek === null) {
+    return null;
+  }
+  return projectedTargetDate(
+    input.currentKg,
+    input.targetKg,
+    input.paceKgPerWeek,
+    input.from ?? new Date(),
+  );
+}
+
 /** Minimum weight (kg) that keeps BMI at or above the safe threshold. */
 export function minSafeWeightKg(heightCm: number): number {
   const m = heightCm / 100;
