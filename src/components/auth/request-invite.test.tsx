@@ -196,11 +196,22 @@ describe("the honeypot", () => {
 describe("somebody already signed in", () => {
   it("goes to Today, because there is nothing to request", async () => {
     vi.resetModules();
-    // The signed-in case is one getSession away from the same page, so the module is re-mocked with
-    // a session rather than the component being told about it.
+    // The signed-in case is one session away from the same page, so the module is re-mocked with a
+    // session and a finished profile rather than the component being told about it. The profile is
+    // what makes the answer Today rather than the wizard.
     vi.doMock("@/integrations/supabase/client", () => ({
       supabase: {
-        auth: { getSession: () => Promise.resolve({ data: { session: { access_token: "t" } } }) },
+        auth: {
+          getSession: () => Promise.resolve({ data: { session: { access_token: "t" } } }),
+          getUser: () => Promise.resolve({ data: { user: { id: "user-1" } }, error: null }),
+        },
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: { user_id: "user-1" }, error: null }),
+            }),
+          }),
+        }),
       },
     }));
     const { Route: Fresh } = await import("@/routes/auth_.request");

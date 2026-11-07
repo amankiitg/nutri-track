@@ -1,14 +1,13 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandMark } from "@/components/app/BrandMark";
 import { InviteAddress } from "@/components/invite/InviteAddress";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
-import { safeRedirect } from "@/lib/auth-redirect";
+import { signedInVisit } from "@/lib/post-signin";
 import { requestInvite, type InviteResult } from "@/lib/invite-request";
 
 /**
@@ -50,9 +49,11 @@ export const Route = createFileRoute("/auth_/request")({
   /**
    * `email` prefills the field, which is how the sign-in page hands over an address the person
    * already typed, and how the approval email's link can land on a form that is nearly filled in.
+   * `redirect` is carried so a signed-in visitor still ends up where they were going.
    */
-  validateSearch: (search: Record<string, unknown>): { email?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { email?: string; redirect?: string } => ({
     ...(typeof search["email"] === "string" ? { email: search["email"] } : {}),
+    ...(typeof search["redirect"] === "string" ? { redirect: search["redirect"] } : {}),
   }),
   component: RequestInvitePage,
 });
@@ -80,12 +81,18 @@ function RequestInvitePage() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    // Already signed in: there is nothing to request. `/today` rather than the redirect they arrived
-    // with, which is for the journey that started before signing in.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.history.replace(safeRedirect(undefined));
+    let active = true;
+    // Already signed in: there is nothing to request. The profile decides where - Today for somebody
+    // who has finished, the wizard for somebody who has not - rather than assuming this page's
+    // visitor is always midway through signing up.
+    void signedInVisit(search.redirect).then((visit) => {
+      if (!active || visit.kind === "signed_out") return;
+      router.history.replace(visit.kind === "ready" ? visit.to : "/onboarding");
     });
-  }, [router]);
+    return () => {
+      active = false;
+    };
+  }, [router, search.redirect]);
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();

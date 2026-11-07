@@ -16,6 +16,7 @@ import {
   isInvalidCredentials,
 } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
+import { signedInVisit } from "@/lib/post-signin";
 import { authEntryState } from "@/lib/invite-request";
 
 /**
@@ -161,12 +162,18 @@ function AuthPage() {
   const autoRan = useRef(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      // Somebody already signed in has no business on this page. `/today` rather than the redirect
-      // they arrived with, because the redirect is for the journey they were on before signing in.
-      if (data.session) router.history.replace(destination);
+    let active = true;
+    // Somebody already signed in has no business on this page. Where they go is decided by the same
+    // profile check the guard uses: a finished user to Today (or the `?redirect=` they arrived with),
+    // a user who has not answered the questions yet to the wizard.
+    void signedInVisit(search.redirect).then((visit) => {
+      if (!active || visit.kind === "signed_out") return;
+      router.history.replace(visit.kind === "ready" ? visit.to : "/onboarding");
     });
-  }, [router, destination]);
+    return () => {
+      active = false;
+    };
+  }, [router, search.redirect]);
 
   /**
    * Legacy links: `?tab=signup` means the email step, and `?request=1` means the invite request page,

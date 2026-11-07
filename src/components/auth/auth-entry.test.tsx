@@ -62,6 +62,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
       getSession: () => Promise.resolve({ data: { session: null } }),
+      getUser: () => Promise.resolve({ data: { user: null }, error: { message: "no session" } }),
       signInWithPassword: h.signInWithPassword,
       signInWithOtp: h.signInWithOtp,
       signInWithOAuth: h.signInWithOAuth,

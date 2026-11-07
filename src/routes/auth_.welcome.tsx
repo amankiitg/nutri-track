@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { BrandMark } from "@/components/app/BrandMark";
 import { PasswordInput } from "@/components/auth/PasswordInput";
-import { fetchProfile } from "@/lib/profile";
+import { signedInVisit } from "@/lib/post-signin";
 import { friendlyAuthError } from "@/lib/auth-errors";
 
 /**
@@ -30,6 +30,13 @@ const SESSION_POLL_INTERVAL_MS = 150;
 
 export const Route = createFileRoute("/auth_/welcome")({
   ssr: false,
+  /**
+   * `redirect` is carried through from a link minted for a particular destination, so it is honoured
+   * once the person is through here rather than being dropped.
+   */
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    ...(typeof search["redirect"] === "string" ? { redirect: search["redirect"] } : {}),
+  }),
   head: () => ({
     meta: [{ title: "Finish setting up — NutriTrack" }, { name: "robots", content: "noindex" }],
   }),
@@ -38,6 +45,7 @@ export const Route = createFileRoute("/auth_/welcome")({
 
 function WelcomePage() {
   const router = useRouter();
+  const search = Route.useSearch();
   const [status, setStatus] = useState<"checking" | "ready" | "expired">("checking");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -56,12 +64,14 @@ function WelcomePage() {
         const { data } = await supabase.auth.getSession();
         if (!active) return;
         if (data.session) {
-          // Already set up: this screen has nothing to say to them. `/today` rather than the page's
-          // own next step, because the next step was taken the first time.
-          const profile = await fetchProfile(data.session.user.id).catch(() => null);
+          // Signed in. A user who has already answered the questions has nothing to do here - Today
+          // is where they belong, and the profile is what says so. Everybody else is the person this
+          // page exists for: a new invitee with no profile, who sets a password and then answers the
+          // questions.
+          const visit = await signedInVisit(search.redirect);
           if (!active) return;
-          if (profile) {
-            router.history.replace("/today");
+          if (visit.kind === "ready") {
+            router.history.replace(visit.to);
             return;
           }
           setStatus("ready");
@@ -76,7 +86,7 @@ function WelcomePage() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, search.redirect]);
 
   async function savePassword(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -98,7 +108,19 @@ function WelcomePage() {
     }
     toast.success("Password set");
     setVisible(false);
-    router.history.replace("/onboarding");
+    // The same question as on arrival, asked again because the answer can have changed: a user who
+    // now has a profile belongs on Today, and one who does not belongs in the wizard.
+    const visit = await signedInVisit(search.redirect);
+    router.history.replace(visit.kind === "ready" ? visit.to : "/onboarding");
+  }
+
+  /**
+   * "Skip, take me in": no password this time. Same destination question, so a user who somehow
+   * arrives here finished is still sent to Today rather than to the wizard.
+   */
+  async function skip(): Promise<void> {
+    const visit = await signedInVisit(search.redirect);
+    router.history.replace(visit.kind === "ready" ? visit.to : "/onboarding");
   }
 
   return (
@@ -183,7 +205,7 @@ function WelcomePage() {
                 type="button"
                 variant="outline"
                 className="mt-3 h-12 w-full rounded-full text-base"
-                onClick={() => router.history.replace("/onboarding")}
+                onClick={() => void skip()}
               >
                 Skip, take me in
               </Button>

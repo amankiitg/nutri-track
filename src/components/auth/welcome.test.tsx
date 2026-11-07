@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 
 const h = vi.hoisted(() => ({
   getSession: vi.fn(),
+  getUser: vi.fn(),
   updateUser: vi.fn(),
   fetchProfile: vi.fn(),
   replace: vi.fn(),
@@ -18,7 +19,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
-  createFileRoute: () => (options: { component: React.ComponentType }) => ({ options }),
+  createFileRoute: () => (options: { component: React.ComponentType }) => ({
+    options,
+    useSearch: () => ({}),
+  }),
   useRouter: () => ({ history: { replace: h.replace } }),
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
     <a href={to}>{children}</a>
@@ -26,7 +30,9 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: { auth: { getSession: h.getSession, updateUser: h.updateUser } },
+  supabase: {
+    auth: { getSession: h.getSession, getUser: h.getUser, updateUser: h.updateUser },
+  },
 }));
 
 vi.mock("@/lib/profile", () => ({ fetchProfile: h.fetchProfile }));
@@ -39,6 +45,7 @@ const Page = (Route as unknown as { options: { component: React.ComponentType } 
 beforeEach(() => {
   vi.clearAllMocks();
   h.getSession.mockResolvedValue({ data: { session: { user: { id: "user-1" } } } });
+  h.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
   h.updateUser.mockResolvedValue({ data: {}, error: null });
   h.fetchProfile.mockResolvedValue(null);
 });
@@ -101,6 +108,7 @@ describe("when the link is not a way in", () => {
   });
 
   it("sends somebody who is already set up to Today", async () => {
+    // The profile is the fact that decides it: a finished user has nothing to do on this screen.
     h.fetchProfile.mockResolvedValue({ user_id: "user-1" });
     render(<Page />);
 
