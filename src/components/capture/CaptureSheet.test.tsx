@@ -255,15 +255,17 @@ describe("when the meal service cannot be reached", () => {
 });
 
 describe("when the day's analyses are used up", () => {
+  const limitMessage =
+    "You've used today's 20 analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.";
   const limitBody = {
     error: {
       code: "rate_limited",
-      message: "You have used all 60 meal analyses for today.",
-      details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+      message: limitMessage,
+      details: { limit: 20, used: 20, retry_after_seconds: 25_200 },
     },
   };
 
-  it("says how long until they come back, from the header the browser can always read", async () => {
+  it("shows the service's sentence as it was written, with the way through in it", async () => {
     vi.stubGlobal("fetch", () =>
       Promise.resolve(jsonResponse(limitBody, 429, { "Retry-After": "25200" })),
     );
@@ -271,12 +273,9 @@ describe("when the day's analyses are used up", () => {
     renderSheet();
     await analyseTypedMeal(user);
 
-    const shown = await alertText();
-    expect(shown).toContain("You have used all 60 meal analyses for today.");
-    expect(shown).toContain("in about 7 hours");
-    // The limit is on reading photos and voice, not on logging; saying so turns a dead
-    // end into a different way to record the meal.
-    expect(shown).toContain("type a meal");
+    // Whole, not `toContain`: the number, the manual path and the reset are one sentence now, and
+    // appending a wait to it said the same thing twice.
+    expect(await alertText()).toBe(limitMessage);
   });
 });
 

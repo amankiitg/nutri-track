@@ -14,17 +14,30 @@ import { z } from "zod";
 export const MAX_PHOTOS = 3;
 
 /**
- * Model calls per user per local day.
+ * Model calls per user per local day, for an ordinary account.
  *
- * It lives here, in the shared contract, because three things need to agree on it:
- * the service that enforces it, the `llm_call_budget()` function that reports what
- * is left, and the Settings screen that displays the two together. A second copy
- * anywhere would be the one that goes stale.
+ * It lives here, in the shared contract, because three things need to agree on it: the service that
+ * enforces it, the `llm_call_budget()` function that reports what is left, and the Settings screen
+ * that displays the two together. A second copy anywhere would be the one that goes stale.
  *
- * Counting calls rather than requests is the conservative reading: a request that
- * needed the retry costs the user two, which is what it costs us.
+ * **The server is the authority.** `DAILY_ANALYSIS_LIMIT` in the service's environment overrides
+ * this, and `/analysis-limit` tells the browser what the service is actually enforcing, so the
+ * screen cannot promise a number the service does not honour. This constant is the default and the
+ * fallback for when that request cannot be made.
+ *
+ * Counting calls rather than requests is the conservative reading: a request that needed the retry
+ * costs the user two, which is what it costs us.
  */
-export const MAX_LLM_CALLS_PER_DAY = 60;
+export const DAILY_ANALYSIS_LIMIT = 20;
+
+/**
+ * The same ceiling for an admin account.
+ *
+ * Larger because the person running the app is the one who has to look at a bad parse, compare two
+ * photos of the same meal, or check what the model does with a weird plate. It is a permission, not a
+ * bypass: an admin is refused at this number exactly like everybody else is refused at theirs.
+ */
+export const ADMIN_DAILY_ANALYSIS_LIMIT = 60;
 
 /** A single item over this many kcal, or with zero kcal, is flagged for review. */
 export const MAX_ITEM_KCAL = 2000;

@@ -288,7 +288,7 @@ export function CaptureSheet({
     // is why the paths are cleared the moment a save succeeds.
     if (!next) {
       // A parse left running behind a closed sheet would resolve into a component the
-      // user is no longer looking at, and would still spend one of their sixty calls.
+      // user is no longer looking at, and would still spend one of their daily analyses.
       cancelInFlight();
       abandonCapture();
     }

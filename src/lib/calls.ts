@@ -1,23 +1,25 @@
 /**
  * The daily meal-analysis budget, and how Settings says it.
  *
- * The number comes from `llm_call_budget()` (migration `20260911200000`), which counts
- * the caller's model calls since midnight *in their profile's timezone* — the same
- * boundary the service enforces. Counting it here instead would mean the number on
- * screen and the number the service acts on were computed by two different clocks,
- * and the only visible symptom of that disagreement is being refused when the screen
- * says there is plenty left.
+ * The *count* comes from `llm_call_budget()` (migration `20260911200000`), which counts the caller's
+ * model calls since midnight *in their profile's timezone* — the same boundary the service enforces.
+ * Counting it here instead would mean the number on screen and the number the service acts on were
+ * computed by two different clocks, and the only visible symptom of that disagreement is being
+ * refused when the screen says there is plenty left.
  *
- * The limit itself is not defined here either. It lives in `shared/meal-parse.ts` with
- * the rest of the parse-meal contract, so the service, this screen and the SQL function
- * cannot drift apart.
+ * The *limit* comes from `GET /analysis-limit` on the service, which is the thing that enforces it.
+ * A constant compiled into the browser would be a promise the service could stop keeping the moment
+ * `DAILY_ANALYSIS_LIMIT` changed on the server, and the failure would look like a bug in the count.
+ * `shared/meal-parse.ts` still holds the default, and it is the fallback for when the service cannot
+ * be reached at all — a screen that says nothing is worse than one that names the default.
  *
- * What is here is presentation: the wording, and the arithmetic that stops a stale read
- * from claiming more than the limit.
+ * What is here is presentation: the wording, and the arithmetic that stops a stale read from claiming
+ * more than the limit.
  */
 import { z } from "zod";
-import { MAX_LLM_CALLS_PER_DAY } from "@shared/meal-parse";
+import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 import { supabase } from "@/integrations/supabase/client";
+import { parseMealUrl } from "@/lib/capture";
 
 /** One row of `llm_call_budget()`. PostgREST returns `int` as a JSON number. */
 const budgetRow = z.object({
@@ -45,19 +47,59 @@ export interface CallBudget {
 export function budgetFrom(
   used: number,
   resetsAt: string,
-  limit: number = MAX_LLM_CALLS_PER_DAY,
+  limit: number = DAILY_ANALYSIS_LIMIT,
 ): CallBudget {
   const bounded = Math.max(0, Math.min(Math.round(used), limit));
   return { used: bounded, limit, remaining: limit - bounded, resetsAt };
 }
 
-export async function fetchCallBudget(): Promise<CallBudget> {
-  const { data, error } = await supabase.rpc("llm_call_budget");
-  if (error) throw new Error(`Could not read today's analyses: ${error.message}`);
+/** What the service says each kind of account is allowed today. */
+export interface AnalysisLimits {
+  /** An ordinary account. */
+  daily: number;
+  /** An admin account. */
+  admin: number;
+  /** Which of the two the caller is. */
+  mine: number;
+}
 
-  const row = budgetRow.safeParse(Array.isArray(data) ? data[0] : null);
-  if (!row.success) throw new Error("The analyses count came back in an unexpected shape.");
-  return budgetFrom(row.data.used, row.data.resets_at);
+const limitsSchema = z.object({ daily: z.number(), admin: z.number(), limit: z.number() });
+
+/**
+ * Asks the service what it enforces, so the screen cannot print a different number.
+ *
+ * A failure throws rather than guessing: `fetchCallBudget` decides what to do about it, because only
+ * it knows whether it can still show a count.
+ */
+export async function fetchAnalysisLimits(): Promise<AnalysisLimits> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (token === undefined || token === "") throw new Error("Sign in again to read the limit.");
+
+  const response = await fetch(new URL("analysis-limit", parseMealUrl()).toString(), {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error("Could not read the daily limit.");
+
+  const parsed = limitsSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new Error("The daily limit came back in an unexpected shape.");
+  return { daily: parsed.data.daily, admin: parsed.data.admin, mine: parsed.data.limit };
+}
+
+export async function fetchCallBudget(): Promise<CallBudget> {
+  // In parallel: the count is a database read and the limit is a service call, and neither waits for
+  // the other. A failed limit falls back to the shared default so the count still appears.
+  const [row, limits] = await Promise.all([
+    supabase.rpc("llm_call_budget").then(({ data, error }) => {
+      if (error) throw new Error(`Could not read today's analyses: ${error.message}`);
+      const parsed = budgetRow.safeParse(Array.isArray(data) ? data[0] : null);
+      if (!parsed.success) throw new Error("The analyses count came back in an unexpected shape.");
+      return parsed.data;
+    }),
+    fetchAnalysisLimits().catch(() => null),
+  ]);
+
+  return budgetFrom(row.used, row.resets_at, limits?.mine ?? DAILY_ANALYSIS_LIMIT);
 }
 
 /** Midnight in the profile's zone, as a clock time: the budget resets at local 00:00. */
@@ -99,7 +141,7 @@ export function presentBudget(budget: CallBudget, timeZone: string): BudgetPrese
     reset: `Resets at midnight — ${resetClock(budget.resetsAt, timeZone)} in ${timeZone}.`,
     exhausted:
       budget.remaining === 0
-        ? `You have used all ${budget.limit} analyses for today. Meals added by typing still work — it is only the reading of photos and voice notes that is limited.`
+        ? `You've used today's ${budget.limit} analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.`
         : null,
   };
 }

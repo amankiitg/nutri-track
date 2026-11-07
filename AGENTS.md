@@ -313,9 +313,12 @@ reloadDocument: true })` in `_authenticated/route.tsx` and `onboarding.tsx` — 
   `ApiError.message` is written for that reader: no provider names, no status codes, no
   Supabase internals. The technical detail belongs in `details` and in the logs, which is
   what `UPSTREAM_MESSAGES` and `SUPABASE_FAILURE_MESSAGE` are for. The daily limit is
-  defined once, in `shared/meal-parse.ts`, because the service that enforces it, the
-  `llm_call_budget()` function that reports it and the Settings card that shows it all
-  need the same number.
+  **enforced by `DAILY_ANALYSIS_LIMIT` / `ADMIN_DAILY_ANALYSIS_LIMIT`** in the service's
+  environment, defaulting to `DAILY_ANALYSIS_LIMIT` and `ADMIN_DAILY_ANALYSIS_LIMIT` in
+  `shared/meal-parse.ts`. The browser never holds its own copy: `GET /analysis-limit`
+  returns what the service enforces, and the Settings card and the admin page print that.
+  A hardcoded limit in `src/` is a bug, because it would survive a change to the variable
+  the service acts on.
 - **A model refusal is not retried, deliberately.** `finishReason` of SAFETY, RECITATION,
   BLOCKLIST, PROHIBITED_CONTENT, SPII or IMAGE_SAFETY means the model declined, and
   asking again produces the same refusal: retrying costs the user a second call out of
@@ -361,7 +364,8 @@ reloadDocument: true })` in `_authenticated/route.tsx` and `onboarding.tsx` — 
   and two histories.
 - `src/lib/calls.ts` — the meal-analysis budget for the signed-in user; the admin page
   reads everyone's from `admin_spend()`, which shares `local_day_start()` with
-  `llm_call_budget()` so there is one day-boundary rule and not two.
+  `llm_call_budget()` so there is one day-boundary rule and not two. The limit itself comes
+  from `GET /analysis-limit`, never from a constant here: see the note above on why.
 - Deployment is documented in README.md, "Deploying to production": two Render services
   from `render.yaml` and a Cloudflare Worker for the frontend.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset

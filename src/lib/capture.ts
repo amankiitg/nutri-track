@@ -239,7 +239,7 @@ export function parseMealUrl(): string {
  * each model call 60 s and runs a second attempt when the first reply is unusable,
  * so a genuinely slow meal can legitimately take 120 s. Timing out below that would
  * abort requests that were about to succeed, and each abort costs the user two of
- * their sixty daily calls when they retry. 150 s leaves room for the photo download
+ * their daily analyses when they retry. 150 s leaves room for the photo download
  * and the upload either side of the model and still ends in a message rather than an
  * indefinite spinner.
  */
@@ -326,29 +326,16 @@ export function messageFromErrorBody(text: string): string | null {
 }
 
 /**
- * Rounds a wait to something a person would say out loud.
- *
- * Deliberately coarse. "in about 7 hours" is a decision; "in 6 hours 47 minutes" is
- * a number pretending to be one, and it is wrong by the time the screen has rendered.
- */
-export function describeWait(seconds: number): string {
-  if (seconds <= 90) return "in a minute";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `in about ${minutes} minutes`;
-  const hours = Math.round(minutes / 60);
-  if (hours === 1) return "in about an hour";
-  if (hours < 20) return `in about ${hours} hours`;
-  return "tomorrow";
-}
-
-/**
  * What to say about a failed parse, from the phone's point of view.
  *
- * The service's own message is used whenever there is one, because it knows things
- * this file cannot: that the model declined, that the photos could not be read. Only
- * the cases the service cannot describe — it never heard the request — are written
- * here. The one exception is the daily limit, where the service supplies the reset
- * time in `details` and the sentence is better for using it.
+ * The service's own message is used whenever there is one, because it knows things this file cannot:
+ * that the model declined, that the photos could not be read, which daily limit this account has.
+ * Only the cases the service cannot describe — it never heard the request — are written here.
+ *
+ * The daily limit used to be the one exception, with the wait appended from `Retry-After`. It is not
+ * any more: the service's sentence now carries the number, the way through (typing the meal) and when
+ * the count resets, and adding "they come back in about seven hours" on top said the same thing twice
+ * in two different words. One fact, one sentence, one place.
  */
 export function describeParseFailure(failure: ParseFailure): string {
   switch (failure.kind) {
@@ -359,11 +346,6 @@ export function describeParseFailure(failure: ParseFailure): string {
     case "cancelled":
       return "Analysis cancelled. Nothing was logged.";
     case "service":
-      if (failure.code === "rate_limited") {
-        const when =
-          failure.retryAfterSeconds === null ? "tomorrow" : describeWait(failure.retryAfterSeconds);
-        return `${failure.message} They come back ${when}. You can still type a meal — it is only the reading of photos that is limited.`;
-      }
       return failure.message;
   }
 }

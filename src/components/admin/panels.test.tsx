@@ -71,7 +71,11 @@ function serviceSays(status: number, body: unknown) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
-      requests.push({ url, body: JSON.parse(String(init.body)) });
+      // A GET has no body, and one of the panel's calls is a GET. Parsing a missing body would throw
+      // and turn the reply into a network failure.
+      const sent =
+        init?.body === undefined || init.body === null ? null : JSON.parse(String(init.body));
+      requests.push({ url, body: sent });
       return new Response(JSON.stringify(body), {
         status,
         headers: { "content-type": "application/json" },
@@ -464,34 +468,54 @@ describe("requests from people who are not on the list", () => {
 });
 
 describe("the spend panel", () => {
-  it("shows tokens and says there is no price", async () => {
+  /** Two rows: the reader (an admin) and an ordinary account. Their ceilings differ. */
+  function spendRows(): void {
     client.rpc.mockImplementation((name: string) => {
       if (name === "admin_spend") {
+        const row = (userId: string, email: string) => ({
+          user_id: userId,
+          email,
+          timezone: "America/New_York",
+          calls_today: 11,
+          resets_today: "2026-09-12T04:00:00.000Z",
+          calls_month: 38,
+          tokens_month: 150_045,
+          calls_total: 1_203,
+          tokens_total: 4_511_002,
+          last_call_at: "2026-09-07T18:02:00.000Z",
+        });
         return Promise.resolve({
-          data: [
-            {
-              user_id: "user-1",
-              email: "aman.iitg@gmail.com",
-              timezone: "America/New_York",
-              calls_today: 11,
-              resets_today: "2026-09-12T04:00:00.000Z",
-              calls_month: 38,
-              tokens_month: 150_045,
-              calls_total: 1_203,
-              tokens_total: 4_511_002,
-              last_call_at: "2026-09-07T18:02:00.000Z",
-            },
-          ],
+          data: [row("user-1", "aman.iitg@gmail.com"), row("user-2", "friend@example.com")],
           error: null,
         });
       }
       return Promise.resolve({ data: [], error: null });
     });
+  }
 
-    renderWithQuery(<SpendPanel />);
+  it("shows tokens and says there is no price", async () => {
+    spendRows();
+    // The limits come from the service, which is what makes the two rows below say different
+    // numbers. A test without this would be exercising the fallback instead.
+    serviceSays(200, { daily: 20, admin: 60, limit: 60 });
+
+    renderWithQuery(<SpendPanel viewerId="user-1" />);
 
     expect(await screen.findByText("49 of 60 left today")).toBeInTheDocument();
-    expect(screen.getByText(/150,045 tokens this month/)).toBeInTheDocument();
+    // Two rows, so this line appears twice; the assertion is about its shape, not its count.
+    expect(screen.getAllByText(/150,045 tokens this month/)[0]).toBeInTheDocument();
     expect(screen.getByText(/no price in here on purpose/i)).toBeInTheDocument();
+  });
+
+  it("counts each row down from that row's own ceiling", async () => {
+    spendRows();
+    serviceSays(200, { daily: 20, admin: 60, limit: 60 });
+
+    renderWithQuery(<SpendPanel viewerId="user-1" />);
+
+    // The reader's row is an admin's: 60 - 11. Everybody else's is 20 - 11, which is the number a
+    // normal account reads on this page and in Settings.
+    expect(await screen.findByText("49 of 60 left today")).toBeInTheDocument();
+    expect(screen.getByText("9 of 20 left today")).toBeInTheDocument();
   });
 });

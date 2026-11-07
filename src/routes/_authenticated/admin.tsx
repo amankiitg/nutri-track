@@ -42,7 +42,7 @@ function AdminPage() {
 
       <InviteRequestsPanel />
       <InviteList adminId={user.id} />
-      <SpendPanel />
+      <SpendPanel viewerId={user.id} />
 
       <Card>
         <CardContent className="py-4 text-xs text-muted-foreground">

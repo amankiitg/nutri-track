@@ -8,7 +8,7 @@
  * produces, and (in the migration) what the database will accept.
  */
 import { describe, expect, it } from "vitest";
-import { MAX_LLM_CALLS_PER_DAY } from "@shared/meal-parse";
+import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 import {
   formatCount,
   inviteStatus,
@@ -76,23 +76,29 @@ describe("presentSpend", () => {
     lastCallAt: "2026-09-07T18:02:00.000Z",
   };
 
-  it("counts down from the same limit the service enforces", () => {
+  it("counts down from the limit it is given, and defaults to twenty", () => {
     const shown = presentSpend(base);
-    expect(shown.today).toBe(
-      `${MAX_LLM_CALLS_PER_DAY - 11} of ${MAX_LLM_CALLS_PER_DAY} left today`,
-    );
+    expect(shown.today).toBe(`${DAILY_ANALYSIS_LIMIT - 11} of ${DAILY_ANALYSIS_LIMIT} left today`);
+    expect(shown.today).toBe("9 of 20 left today");
     expect(shown.exhausted).toBe(false);
   });
 
+  it("counts an admin's own row down from sixty", () => {
+    // Per row, not per page: the person reading this list has a different ceiling from the people
+    // on it.
+    const shown = presentSpend(base, ADMIN_DAILY_ANALYSIS_LIMIT);
+    expect(shown.today).toBe("49 of 60 left today");
+  });
+
   it("says so plainly when the day is used up", () => {
-    const shown = presentSpend({ ...base, callsToday: MAX_LLM_CALLS_PER_DAY });
+    const shown = presentSpend({ ...base, callsToday: DAILY_ANALYSIS_LIMIT });
     expect(shown.exhausted).toBe(true);
     expect(shown.today).toContain("All");
     expect(shown.todayFraction).toBe(1);
   });
 
   it("never reports more than full, however stale the read", () => {
-    expect(presentSpend({ ...base, callsToday: MAX_LLM_CALLS_PER_DAY + 9 }).todayFraction).toBe(1);
+    expect(presentSpend({ ...base, callsToday: DAILY_ANALYSIS_LIMIT + 9 }).todayFraction).toBe(1);
   });
 
   it("shows tokens with separators and no currency", () => {

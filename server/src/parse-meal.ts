@@ -9,7 +9,6 @@
 import {
   classifyModelResponse,
   guessMealType,
-  MAX_LLM_CALLS_PER_DAY,
   modelContractSchema,
   SYSTEM_PROMPT,
   type MealItemDraft,
@@ -26,10 +25,15 @@ import type { ParseMealRequest } from "./schemas";
 import { secondsUntilNextLocalMidnight, startOfLocalDay } from "./time";
 
 /**
- * Re-exported so the service's own tests keep importing it from the module that
- * enforces it. The value is defined once, in the shared contract.
+ * The refusal, in the words the person reads on their phone.
+ *
+ * The second sentence is not padding: the only thing a refusal can do is send somebody away, so it
+ * has to say what still works. Typing the numbers is a real path through this app, which is why it is
+ * named rather than left as "try again tomorrow".
  */
-export { MAX_LLM_CALLS_PER_DAY };
+export function dailyLimitMessage(limit: number): string {
+  return `You've used today's ${limit} analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.`;
+}
 
 /** A bounded output budget: the reply is a short JSON object, not an essay. */
 export const MAX_OUTPUT_TOKENS = 2048;
@@ -147,22 +151,22 @@ export async function parseMeal(
   const now = deps.now?.() ?? new Date();
   const timeZone = await deps.store.timeZone();
 
+  // The admin gets a larger ceiling: running the app means looking at more parses than using it does.
+  // It is the same check with a different number, not a second code path.
+  const admin = await deps.store.isAdmin();
+  const limit = admin ? deps.config.ADMIN_DAILY_ANALYSIS_LIMIT : deps.config.DAILY_ANALYSIS_LIMIT;
+
   const usedToday = await deps.store.countCallsSince(startOfLocalDay(now, timeZone));
-  if (usedToday >= MAX_LLM_CALLS_PER_DAY) {
+  if (usedToday >= limit) {
     const retryAfterSeconds = secondsUntilNextLocalMidnight(now, timeZone);
-    throw new ApiError(
-      429,
-      "rate_limited",
-      `You have used all ${MAX_LLM_CALLS_PER_DAY} meal analyses for today.`,
-      {
-        headers: { "Retry-After": String(retryAfterSeconds) },
-        details: {
-          limit: MAX_LLM_CALLS_PER_DAY,
-          used: usedToday,
-          retry_after_seconds: retryAfterSeconds,
-        },
+    throw new ApiError(429, "rate_limited", dailyLimitMessage(limit), {
+      headers: { "Retry-After": String(retryAfterSeconds) },
+      details: {
+        limit,
+        used: usedToday,
+        retry_after_seconds: retryAfterSeconds,
       },
-    );
+    });
   }
 
   const photos = input.photoPaths.length > 0 ? await deps.store.loadPhotos(input.photoPaths) : [];

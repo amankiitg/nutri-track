@@ -62,6 +62,16 @@ services:
       - key: TEXT_THINKING_BUDGET
         sync: false
 
+      # --- Daily analysis limit -----------------------------------------------
+      # How many meal analyses one account gets per local day. Empty means the
+      # defaults in `shared/meal-parse.ts`: 20 for a normal account, 60 for an
+      # admin. `/analysis-limit` reports whatever is set here, so the app cannot
+      # display a different number from the one this service enforces.
+      - key: DAILY_ANALYSIS_LIMIT
+        sync: false
+      - key: ADMIN_DAILY_ANALYSIS_LIMIT
+        sync: false
+
       # --- CORS ---------------------------------------------------------------
       # Comma-separated. Must list the origin the frontend is actually served from.
       # Locally that is http://localhost:8080; in production it is the deployed

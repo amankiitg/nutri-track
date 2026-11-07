@@ -12,7 +12,8 @@ import type { Config } from "../src/config";
 import { ApiError } from "../src/errors";
 import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
-import { MAX_LLM_CALLS_PER_DAY, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
+import { dailyLimitMessage, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
+import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
 import { SUBJECT } from "../../shared/invite-email";
 
 const USER: VerifiedUser = { id: "user-1", email: "aman@example.com" };
@@ -28,6 +29,9 @@ const CONFIG: Config = {
   GEMINI_API_KEY: "gemini-example",
   GEMINI_VISION_MODEL: "gemini-3.8-flash",
   ALLOWED_ORIGINS: ["http://localhost:8080"],
+  // The defaults, which is what a deployment without the variables gets.
+  DAILY_ANALYSIS_LIMIT,
+  ADMIN_DAILY_ANALYSIS_LIMIT,
 };
 
 /** Macros agree with the calories: 4*10 + 4*54 + 9*6 = 310 against a claimed 300. */
@@ -72,6 +76,8 @@ interface HarnessOptions {
   /** Overrides for the invite feature's configuration. */
   gmail?: GmailDraftClient | null;
   inviteSender?: string | null;
+  /** Overrides the whole configuration, for the limit variables. */
+  config?: Config;
   /** Makes the model client fail the way an unreachable upstream does. */
   llmThrows?: boolean;
   body?: unknown;
@@ -159,7 +165,7 @@ function buildHarness(options: HarnessOptions = {}) {
       : options.gmail;
 
   const app = createApp({
-    config: CONFIG,
+    config: options.config ?? CONFIG,
     llm,
     async verifyToken(token) {
       verifiedTokens.push(token);
@@ -630,7 +636,7 @@ describe("photos", () => {
   });
 
   it("does not read photos when the rate limit is already reached", async () => {
-    const { app, loadedPaths } = buildHarness({ usedToday: MAX_LLM_CALLS_PER_DAY });
+    const { app, loadedPaths } = buildHarness({ usedToday: DAILY_ANALYSIS_LIMIT });
     await post(app, PHOTO_MEAL);
     expect(loadedPaths).toHaveLength(0);
   });
@@ -646,21 +652,102 @@ describe("the rate limit", () => {
   });
 
   it("refuses the call once the day's allowance is used, and says when to retry", async () => {
-    const { app, completions, recorded } = buildHarness({ usedToday: MAX_LLM_CALLS_PER_DAY });
+    const { app, completions, recorded } = buildHarness({ usedToday: DAILY_ANALYSIS_LIMIT });
     const response = await post(app, TYPED_MEAL);
 
     expect(response.status).toBe(429);
     expect(response.body.error.code).toBe("rate_limited");
-    expect(response.body.error.details).toMatchObject({ limit: MAX_LLM_CALLS_PER_DAY, used: 60 });
+    // Twenty, not sixty: the number a normal account is refused at, and the same number the body
+    // carries so the app does not have to guess which refusal it received.
+    expect(response.body.error.details).toMatchObject({
+      limit: 20,
+      used: DAILY_ANALYSIS_LIMIT,
+    });
+    expect(response.body.error.message).toBe(dailyLimitMessage(20));
+    // The sentence names what still works, because a refusal is only useful if it leaves a way in.
+    expect(response.body.error.message).toContain("typing the numbers yourself");
     expect(Number(response.headers["retry-after"])).toBeGreaterThan(0);
     expect(completions).toHaveLength(0);
     expect(recorded).toHaveLength(0);
   });
 
+  it("gives an admin a different ceiling, refused at sixty", async () => {
+    // Nineteen used: an ordinary account is fine, an admin is fine too. Fifty-nine used: only the
+    // admin is fine. This is the whole difference, and it is one number rather than a code path.
+    const ordinaryAt59 = buildHarness({ usedToday: 59, isAdmin: false });
+    expect((await post(ordinaryAt59.app, TYPED_MEAL)).status).toBe(429);
+
+    const adminAt59 = buildHarness({ usedToday: 59, isAdmin: true });
+    expect((await post(adminAt59.app, TYPED_MEAL)).status).toBe(200);
+
+    const adminAt60 = buildHarness({ usedToday: ADMIN_DAILY_ANALYSIS_LIMIT, isAdmin: true });
+    const refused = await post(adminAt60.app, TYPED_MEAL);
+    expect(refused.status).toBe(429);
+    expect(refused.body.error.details).toMatchObject({ limit: 60 });
+    expect(refused.body.error.message).toBe(dailyLimitMessage(60));
+  });
+
   it("still allows the last call within the allowance", async () => {
-    const { app } = buildHarness({ usedToday: MAX_LLM_CALLS_PER_DAY - 1 });
+    const { app } = buildHarness({ usedToday: DAILY_ANALYSIS_LIMIT - 1 });
     const response = await post(app, TYPED_MEAL);
     expect(response.status).toBe(200);
+  });
+
+  it("follows the configured limit rather than the compiled one", async () => {
+    // The env var is the authority: a deployment that sets 5 must refuse the sixth call even though
+    // the shared default is 20.
+    const { app } = buildHarness({ usedToday: 5, config: { ...CONFIG, DAILY_ANALYSIS_LIMIT: 5 } });
+    const response = await post(app, TYPED_MEAL);
+    expect(response.status).toBe(429);
+    expect(response.body.error.details).toMatchObject({ limit: 5 });
+    expect(response.body.error.message).toBe(dailyLimitMessage(5));
+  });
+});
+
+/**
+ * The number the app prints, asked of the service that enforces it.
+ *
+ * Before this route the browser had a constant, so an operator setting `DAILY_ANALYSIS_LIMIT=10`
+ * moved the enforcement and left "of 20 left today" on the screen. These pin that the answer comes
+ * from the configuration, is per-caller, and needs a token.
+ */
+describe("GET /analysis-limit", () => {
+  const get = (app: ReturnType<typeof createApp>, token: string | null = TOKEN) => {
+    const agent = request(app).get("/analysis-limit");
+    if (token !== null) agent.set("Authorization", `Bearer ${token}`);
+    return agent;
+  };
+
+  it("answers with the configured limits for an ordinary account", async () => {
+    const { app } = buildHarness();
+    const response = await get(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ daily: 20, admin: 60, limit: 20 });
+  });
+
+  it("answers with the admin ceiling for an admin, and both numbers for the panel", async () => {
+    const { app } = buildHarness({ isAdmin: true });
+    const response = await get(app);
+
+    // `limit` is the caller's own, which is what Settings prints. `daily` and `admin` are what the
+    // admin page needs, because it prints a number per row rather than just its own.
+    expect(response.body).toEqual({ daily: 20, admin: 60, limit: 60 });
+  });
+
+  it("follows the configured values rather than the compiled defaults", async () => {
+    const { app } = buildHarness({
+      isAdmin: true,
+      config: { ...CONFIG, DAILY_ANALYSIS_LIMIT: 10, ADMIN_DAILY_ANALYSIS_LIMIT: 99 },
+    });
+    const response = await get(app);
+    expect(response.body).toEqual({ daily: 10, admin: 99, limit: 99 });
+  });
+
+  it("refuses a caller with no token, because the answer depends on who is asking", async () => {
+    const { app } = buildHarness();
+    const response = await get(app, null);
+    expect(response.status).toBe(401);
   });
 });
 

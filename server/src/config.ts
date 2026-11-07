@@ -12,6 +12,7 @@
  * cannot leak.
  */
 import { z } from "zod";
+import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
 
 /** An origin or URL we can hand to `cors` and `fetch`. Shared with the sweeper's config. */
 export const httpUrl = z
@@ -53,6 +54,23 @@ const optionalWholeNumber = z
     message: "must be a whole number, or absent",
   });
 
+/**
+ * A whole number that defaults when it is absent.
+ *
+ * Zero is refused rather than accepted as "no analyses": a limit of zero is a service nobody can
+ * use, and it is far more likely to be a typo or an empty dashboard field than a decision. The
+ * default comes from the shared contract, so the number the app shows before any environment is set
+ * is the number in the code.
+ */
+const wholeNumberOrDefault = (fallback: number) =>
+  z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined || value.trim() === "" ? fallback : Number(value)))
+    .refine((value) => Number.isInteger(value) && value >= 1, {
+      message: "must be a whole number of at least 1",
+    });
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** Render injects PORT; the default is for local development. */
@@ -81,6 +99,18 @@ export const envSchema = z.object({
   ALLOWED_ORIGINS: commaSeparated,
 
   /**
+   * How many meal analyses one ordinary account gets per local day.
+   *
+   * The service enforces this number, `/analysis-limit` reports it so the Settings card cannot
+   * promise something the service does not honour, and the 429 body carries it so a refusal says
+   * which number it was. Absent means the shared default, which is the same value the browser falls
+   * back to when it cannot reach this service at all.
+   */
+  DAILY_ANALYSIS_LIMIT: wholeNumberOrDefault(DAILY_ANALYSIS_LIMIT),
+  /** The same ceiling for an admin account. A permission, not a bypass. */
+  ADMIN_DAILY_ANALYSIS_LIMIT: wholeNumberOrDefault(ADMIN_DAILY_ANALYSIS_LIMIT),
+
+  /**
    * The admin invite feature's Google credentials, and the only secrets this service holds.
    *
    * Optional on purpose. The parse-meal route is what people use every day, and it must start
@@ -106,6 +136,8 @@ const EXPECTED = [
   "GEMINI_VISION_MODEL",
   "ALLOWED_ORIGINS",
   "PORT (optional, defaults to 8787)",
+  "DAILY_ANALYSIS_LIMIT (optional, defaults to 20)",
+  "ADMIN_DAILY_ANALYSIS_LIMIT (optional, defaults to 60)",
   "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
   "  INVITE_SENDER_ADDRESS (all optional; without them /invite says it is not set up)",
 ];

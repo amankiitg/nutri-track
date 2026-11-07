@@ -38,6 +38,8 @@ import {
   revokedRequests,
   type InviteRequest,
 } from "@/lib/admin";
+import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
+import { fetchAnalysisLimits } from "@/lib/calls";
 
 /** One error line, so every panel fails the same way. */
 function PanelError({ message }: { message: string }) {
@@ -453,8 +455,24 @@ export function InviteRequestsPanel() {
   );
 }
 
-export function SpendPanel() {
+export function SpendPanel({ viewerId }: { viewerId?: string }) {
   const spend = useQuery({ queryKey: ["admin-spend"], queryFn: fetchSpend });
+  /**
+   * The two ceilings, from the service that enforces them.
+   *
+   * Per row rather than one number, because an admin's own ceiling is not the ceiling of the people
+   * in this list. A failure here falls back to the shared defaults, so the panel still renders.
+   */
+  const limits = useQuery({
+    queryKey: ["analysis-limits"],
+    queryFn: fetchAnalysisLimits,
+    retry: false,
+  });
+  const limitFor = (userId: string): number => {
+    if (limits.isSuccess) return userId === viewerId ? limits.data.admin : limits.data.daily;
+    // Nobody else can reach this page, so the only account here that might be an admin is the reader.
+    return DAILY_ANALYSIS_LIMIT;
+  };
 
   return (
     <Card className="card-soft">
@@ -479,7 +497,7 @@ export function SpendPanel() {
         {spend.isSuccess && (
           <ul className="space-y-4">
             {spend.data.map((row) => {
-              const shown = presentSpend(row);
+              const shown = presentSpend(row, limitFor(row.userId));
               return (
                 <li
                   key={row.userId}

@@ -28,6 +28,42 @@ describe("loadConfig", () => {
       GEMINI_API_KEY: "gemini-example",
       GEMINI_VISION_MODEL: "gemini-3.8-flash",
       ALLOWED_ORIGINS: ["http://localhost:8080", "https://nutritrack.example.com"],
+      // Absent means the shared defaults, which is what a deployment that has never heard of these
+      // variables gets.
+      DAILY_ANALYSIS_LIMIT: 20,
+      ADMIN_DAILY_ANALYSIS_LIMIT: 60,
+    });
+  });
+
+  describe("the analysis limits", () => {
+    it("default to twenty and sixty", () => {
+      const config = loadConfig(VALID);
+      expect(config.DAILY_ANALYSIS_LIMIT).toBe(20);
+      expect(config.ADMIN_DAILY_ANALYSIS_LIMIT).toBe(60);
+    });
+
+    it("read a whole number when one is set", () => {
+      const config = loadConfig({
+        ...VALID,
+        DAILY_ANALYSIS_LIMIT: "5",
+        ADMIN_DAILY_ANALYSIS_LIMIT: "500",
+      });
+      expect(config.DAILY_ANALYSIS_LIMIT).toBe(5);
+      expect(config.ADMIN_DAILY_ANALYSIS_LIMIT).toBe(500);
+    });
+
+    it("treat an empty value as absent, which is how a dashboard leaves a variable", () => {
+      expect(loadConfig({ ...VALID, DAILY_ANALYSIS_LIMIT: "" }).DAILY_ANALYSIS_LIMIT).toBe(20);
+    });
+
+    it("refuse zero and refuse a typo, rather than starting with a limit nobody can use", () => {
+      // Zero would be a service nobody can use, and it is far more likely a slip than a decision.
+      expect(() => loadConfig({ ...VALID, DAILY_ANALYSIS_LIMIT: "0" })).toThrow(
+        /DAILY_ANALYSIS_LIMIT/,
+      );
+      expect(() => loadConfig({ ...VALID, ADMIN_DAILY_ANALYSIS_LIMIT: "sixty" })).toThrow(
+        /ADMIN_DAILY_ANALYSIS_LIMIT/,
+      );
     });
   });
 

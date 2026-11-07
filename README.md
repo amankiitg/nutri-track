@@ -203,10 +203,13 @@ because the ordinary advice ("add a short note about what it was") describes a n
 refused for exactly the same reason. A reply that fails the contract is the opposite case: worth
 one more go, told precisely what was wrong with the first.
 
-**Analyses are capped at sixty per user per local day**, counted in Postgres rather than in the
-browser. The number is defined once, in `shared/meal-parse.ts`, because three things have to agree
-about it: the service that enforces it, the `llm_call_budget()` function that reports it, and the
-Settings card that shows it.
+**Analyses are capped at twenty per user per local day**, and sixty for an admin account, counted in
+Postgres rather than in the browser. `DAILY_ANALYSIS_LIMIT` and `ADMIN_DAILY_ANALYSIS_LIMIT` on the
+parse-meal service are the authority, and both default to the numbers in `shared/meal-parse.ts`. The
+app does not compile a limit into the browser: `GET /analysis-limit` answers with the number the
+service is actually enforcing (and which of the two applies to the caller), so an operator changing
+the variable moves the promise on screen along with the enforcement. The `llm_call_budget()` function
+reports the count, the service enforces the cap, and `render.yaml` carries both variables.
 
 ```sh
 cd server

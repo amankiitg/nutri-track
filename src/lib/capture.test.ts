@@ -4,7 +4,6 @@ import { MAX_EDGE } from "./capture";
 import { buildParseRequest, fitWithin, messageFromErrorBody, parseResponseSchema } from "./capture";
 import {
   describeParseFailure,
-  describeWait,
   firstAbortOf,
   ParseFailure,
   parseApiError,
@@ -173,14 +172,14 @@ describe("parseApiError", () => {
     const body = JSON.stringify({
       error: {
         code: "rate_limited",
-        message: "You have used all 60 meal analyses for today.",
-        details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+        message: "You've used today's 20 analyses.",
+        details: { limit: 20, used: 20, retry_after_seconds: 25_200 },
       },
     });
     expect(parseApiError(body)).toEqual({
       code: "rate_limited",
-      message: "You have used all 60 meal analyses for today.",
-      details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+      message: "You've used today's 20 analyses.",
+      details: { limit: 20, used: 20, retry_after_seconds: 25_200 },
     });
   });
 
@@ -191,19 +190,6 @@ describe("parseApiError", () => {
       message: "No such route.",
       details: null,
     });
-  });
-});
-
-describe("describeWait", () => {
-  it.each([
-    [5, "in a minute"],
-    [90, "in a minute"],
-    [600, "in about 10 minutes"],
-    [3_600, "in about an hour"],
-    [25_200, "in about 7 hours"],
-    [90_000, "tomorrow"],
-  ])("says %i seconds as %s", (seconds, expected) => {
-    expect(describeWait(seconds)).toBe(expected);
   });
 });
 
@@ -320,12 +306,17 @@ describe("requestParseMeal: what the phone is told when it fails", () => {
     expect(describeParseFailure(error as ParseFailure)).toContain("cancelled");
   });
 
-  it("carries the daily limit's reset time out of the envelope and into the sentence", async () => {
+  it("shows the service's sentence for the daily limit, unchanged", async () => {
+    // The number, the way through, and the reset all live in the service's sentence now. Appending
+    // a wait to it said the same thing twice in two different words, so this is a whole-message
+    // assertion rather than a `toContain`.
+    const message =
+      "You've used today's 20 analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.";
     const body = {
       error: {
         code: "rate_limited",
-        message: "You have used all 60 meal analyses for today.",
-        details: { limit: 60, used: 60, retry_after_seconds: 25_200 },
+        message,
+        details: { limit: 20, used: 20, retry_after_seconds: 25_200 },
       },
     };
     const error = await requestParseMeal(
@@ -340,14 +331,10 @@ describe("requestParseMeal: what the phone is told when it fails", () => {
     expect(failure.kind).toBe("service");
     expect(failure.code).toBe("rate_limited");
     expect(failure.status).toBe(429);
-    // Read from the header, which is what a browser can always see, rather than from
-    // the body, which a CORS refusal would have hidden.
+    // Still read from the header, which is what a browser can always see, even though the sentence
+    // no longer uses it.
     expect(failure.retryAfterSeconds).toBe(25_200);
-
-    const shown = describeParseFailure(failure);
-    expect(shown).toContain("You have used all 60 meal analyses for today.");
-    expect(shown).toContain("in about 7 hours");
-    expect(shown).toContain("type a meal");
+    expect(describeParseFailure(failure)).toBe(message);
   });
 
   it("shows the service's own message for an ordinary failure, since it knows more", async () => {

@@ -19,7 +19,7 @@
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { parseMealUrl } from "@/lib/capture";
-import { MAX_LLM_CALLS_PER_DAY } from "@shared/meal-parse";
+import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 
 /** The one place the normalisation rule is written in the browser. */
 export function normalizeEmail(input: string): string {
@@ -322,7 +322,7 @@ export function readableAdminError(message: string): string {
 // ---------------------------------------------------------------------------
 
 export interface SpendPresentation {
-  /** "11 of 60 today", or "limit reached". */
+  /** "11 of 20 left today", or "All 20 used today". */
   today: string;
   todayFraction: number;
   exhausted: boolean;
@@ -339,14 +339,15 @@ export function formatCount(value: number): string {
   return value.toLocaleString("en-GB");
 }
 
-export function presentSpend(spend: UserSpend): SpendPresentation {
-  const remaining = Math.max(0, MAX_LLM_CALLS_PER_DAY - spend.callsToday);
+export function presentSpend(
+  spend: UserSpend,
+  limit: number = DAILY_ANALYSIS_LIMIT,
+): SpendPresentation {
+  const remaining = Math.max(0, limit - spend.callsToday);
   const exhausted = remaining === 0;
   return {
-    today: exhausted
-      ? `All ${MAX_LLM_CALLS_PER_DAY} used today`
-      : `${remaining} of ${MAX_LLM_CALLS_PER_DAY} left today`,
-    todayFraction: Math.min(1, spend.callsToday / MAX_LLM_CALLS_PER_DAY),
+    today: exhausted ? `All ${limit} used today` : `${remaining} of ${limit} left today`,
+    todayFraction: Math.min(1, spend.callsToday / limit),
     exhausted,
     month: `${formatCount(spend.callsMonth)} calls · ${formatCount(spend.tokensMonth)} tokens this month`,
     total: `${formatCount(spend.callsTotal)} calls · ${formatCount(spend.tokensTotal)} tokens all time`,

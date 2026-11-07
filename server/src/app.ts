@@ -78,6 +78,29 @@ export function createApp(deps: AppDeps): Express {
     res.json({ ok: true });
   });
 
+  /**
+   * What the caller is allowed today, so the app never hardcodes it.
+   *
+   * The Settings card has to print "of 20 left today", and the admin page has to print a per-user
+   * number. Both used to come from a constant compiled into the browser, which meant an operator
+   * changing `DAILY_ANALYSIS_LIMIT` on the server would move the enforcement and leave the promise on
+   * screen behind. This is the one place that answers the question, and it answers it from the same
+   * configuration `parse-meal` enforces.
+   *
+   * It needs a token like every other route: the answer depends on who is asking, because an admin
+   * gets a different number. Nothing secret is in the body.
+   */
+  app.get("/analysis-limit", async (req: Request, res: Response) => {
+    const token = bearerToken(req.get("authorization"));
+    const user = await deps.verifyToken(token);
+
+    const admin = await deps.forCaller(user, token).isAdmin();
+    const daily = deps.config.DAILY_ANALYSIS_LIMIT;
+    const adminLimit = deps.config.ADMIN_DAILY_ANALYSIS_LIMIT;
+
+    res.json({ daily, admin: adminLimit, limit: admin ? adminLimit : daily });
+  });
+
   app.post("/parse-meal", async (req: Request, res: Response) => {
     const token = bearerToken(req.get("authorization"));
     const user = await deps.verifyToken(token);
