@@ -89,14 +89,19 @@ export interface OnboardingForm {
   display_name: string;
   /** ISO `YYYY-MM-DD`. */
   dob: string;
-  sex: Sex;
+  /**
+   * Null until the person chooses. There is no default: the BMR formula needs a body, and picking
+   * one for somebody is a decision about them that they did not make.
+   */
+  sex: Sex | null;
   /** Always centimetres, whatever the display units are. */
   height_cm: number | null;
   /** Always kilograms, whatever the display units are. */
   weight_kg: number | null;
   units: UnitSystem;
   activity_level: ActivityLevel;
-  goal: Goal;
+  /** Null until the person chooses, for the same reason as `sex`. */
+  goal: Goal | null;
   target_weight_kg: number | null;
   pace_kg_per_week: Pace;
   protein_g_per_kg: number;
@@ -129,15 +134,61 @@ export function timeZoneOptions(): string[] {
   return [detectTimeZone(), "UTC"];
 }
 
+/**
+ * Which unit system a new profile starts on, from the device alone.
+ *
+ * A US time zone or an en-US page means imperial, everything else metric. The zones are an allow
+ * list rather than "America/ except…": America/ also holds Toronto, São Paulo, Mexico City and
+ * Bogotá, and guessing imperial for those is wrong in a way the person then has to notice and undo.
+ */
+const US_ZONE_PREFIXES = [
+  "US/",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Phoenix",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "America/Detroit",
+  "America/Boise",
+  "America/Juneau",
+  "America/Sitka",
+  "America/Nome",
+  "America/Adak",
+  "America/Menominee",
+  "America/Indiana/",
+  "America/Kentucky/",
+  "America/North_Dakota/",
+  "America/Puerto_Rico",
+  "America/Virgin",
+  "Pacific/Honolulu",
+  "Pacific/Guam",
+  "Pacific/Saipan",
+  "Pacific/Pago_Pago",
+  "Pacific/Midway",
+];
+
+export function defaultUnits(timeZone: string, language: string): UnitSystem {
+  if (language.toLowerCase().startsWith("en-us")) return "imperial";
+  const imperial = US_ZONE_PREFIXES.some((prefix) => timeZone.startsWith(prefix));
+  return imperial ? "imperial" : "metric";
+}
+
+/** The device's own language, or nothing where there is no device (a server render). */
+export function detectLanguage(): string {
+  return typeof navigator === "undefined" ? "" : navigator.language;
+}
+
 export const DEFAULT_ONBOARDING_FORM: OnboardingForm = {
   display_name: "",
   dob: "",
-  sex: "female",
+  // No default sex and no default goal: both are choices, and the step asks for them.
+  sex: null,
   height_cm: null,
   weight_kg: null,
   units: "metric",
   activity_level: "moderately_active",
-  goal: "lose",
+  goal: null,
   target_weight_kg: null,
   pace_kg_per_week: 0.5,
   protein_g_per_kg: DEFAULT_PROTEIN_G_PER_KG,
@@ -146,6 +197,40 @@ export const DEFAULT_ONBOARDING_FORM: OnboardingForm = {
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Said where a choice the step asks for has not been made. */
+export const CHOOSE_ONE = "Please choose one.";
+
+/**
+ * The target a goal cannot reach, in the words of the goal the person chose.
+ *
+ * Checked in kilograms, after any unit conversion: the boxes hold feet, pounds or kilos, and this
+ * question is about the body rather than about the field. A target equal to the current weight is
+ * not a direction at all, so it gets its own sentence pointing at Maintain.
+ *
+ * The tolerance is 0.05 kg, chosen rather than measured: a pound-to-kilogram round trip lands
+ * within a few grams of where it started, and a form that rejected 72 kg as "above your current
+ * 72 kg" would be unusable.
+ */
+export function targetDirectionMessage(value: {
+  goal: Goal | null;
+  weight_kg: number | null;
+  target_weight_kg: number | null;
+}): string | null {
+  if (value.goal === null || value.goal === "maintain") return null;
+  if (value.weight_kg === null || value.target_weight_kg === null) return null;
+
+  if (Math.abs(value.target_weight_kg - value.weight_kg) <= 0.05) {
+    return "Your target is your current weight. Choose Maintain to stay where you are.";
+  }
+  if (value.goal === "lose" && value.target_weight_kg > value.weight_kg) {
+    return "Your target is above your current weight. Choose Gain weight, or lower the target.";
+  }
+  if (value.goal === "gain" && value.target_weight_kg < value.weight_kg) {
+    return "Your target is below your current weight. Choose Lose weight, or raise the target.";
+  }
+  return null;
+}
 
 const activityLevelSchema = z.custom<ActivityLevel>(
   (value) =>
@@ -158,17 +243,31 @@ const paceSchema = z.custom<Pace>(
   { message: "Choose a pace of 0.25, 0.5, 0.75 or 1 kg per week." },
 );
 
+/**
+ * A choice that can still be unmade.
+ *
+ * The form holds null while the person has not answered, so the schema has to accept that shape and
+ * still refuse to save it: an unset choice is a valid state to be in and an invalid thing to keep.
+ */
+function choiceSchema<T extends string>(options: readonly T[]) {
+  return z
+    .custom<T | null>((value) => value === null || options.includes(value as T), {
+      message: CHOOSE_ONE,
+    })
+    .refine((value) => value !== null, { message: CHOOSE_ONE });
+}
+
 const formShape = {
   display_name: z.string().trim().min(1, "Please add a name.").max(60, "That name is a bit long."),
   dob: z.string().regex(ISO_DATE, "Please add your date of birth."),
-  sex: z.enum(SEX_OPTIONS),
+  sex: choiceSchema(SEX_OPTIONS),
   // The ranges are checked after parsing rather than here, because the wording depends on the
   // unit system the user picked and a field's own message cannot see its siblings.
   height_cm: z.number({ invalid_type_error: "Please add your height." }),
   weight_kg: z.number({ invalid_type_error: "Please add your weight." }),
   units: z.enum(["metric", "imperial"]),
   activity_level: activityLevelSchema,
-  goal: z.enum(GOAL_OPTIONS),
+  goal: choiceSchema(GOAL_OPTIONS),
   target_weight_kg: z.number({ invalid_type_error: "Please add your target weight." }).nullable(),
   pace_kg_per_week: paceSchema,
   protein_g_per_kg: z
@@ -189,7 +288,7 @@ function addAgeIssue(dob: string, ctx: z.RefinementCtx): void {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["dob"],
-      message: `You must be between ${MIN_AGE} and ${MAX_AGE} years old.`,
+      message: `You must be between ${MIN_AGE} and ${MAX_AGE} to use NutriTrack.`,
     });
   }
 }
@@ -274,13 +373,20 @@ function addWeightIssue(value: WeightFields, ctx: z.RefinementCtx): void {
 }
 
 function addTargetWeightIssue(value: BaseForm, ctx: z.RefinementCtx): void {
-  if (value.goal === "maintain") return;
+  // Neither a target nor a direction is asked for before a goal is chosen: the target box is not on
+  // screen then, so a message about it would have nowhere to appear.
+  if (value.goal === null || value.goal === "maintain") return;
   if (value.target_weight_kg == null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["target_weight_kg"],
       message: "Please add your target weight.",
     });
+    return;
+  }
+  const direction = targetDirectionMessage(value);
+  if (direction !== null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target_weight_kg"], message: direction });
     return;
   }
   // The shape already reported a missing height; skip the BMI comparison then.
@@ -318,7 +424,7 @@ const activityStepSchema = onboardingBaseSchema.pick({ activity_level: true });
 const goalStepSchema = onboardingBaseSchema
   .pick({ goal: true, target_weight_kg: true, pace_kg_per_week: true })
   .superRefine((value, ctx) => {
-    if (value.goal !== "maintain" && value.target_weight_kg == null) {
+    if (value.goal !== null && value.goal !== "maintain" && value.target_weight_kg == null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["target_weight_kg"],
@@ -358,8 +464,13 @@ export function validateForm(form: OnboardingForm): FieldErrors {
 
 /** BMI floor on the goal step, which needs the height captured on the body step. */
 function targetWeightError(form: OnboardingForm): FieldErrors {
-  if (form.goal === "maintain") return {};
+  if (form.goal === null || form.goal === "maintain") return {};
   if (form.target_weight_kg == null || form.height_cm == null) return {};
+  // The direction first: a target on the wrong side of the current weight is the likelier slip,
+  // and telling somebody about a BMI floor when they meant to lose weight is answering a question
+  // they did not ask.
+  const direction = targetDirectionMessage(form);
+  if (direction !== null) return { target_weight_kg: direction };
   if (form.target_weight_kg < minSafeWeightKg(form.height_cm)) {
     return {
       target_weight_kg: targetWeightMessage(form.target_weight_kg, form.height_cm, form.units),
@@ -387,6 +498,7 @@ export function validateStep(step: OnboardingStep, form: OnboardingForm): FieldE
 /** Computed targets for the review screen, or null while the form is incomplete. */
 export function computeTargetsFromForm(form: OnboardingForm): TargetResult | null {
   if (form.height_cm == null || form.weight_kg == null || !ISO_DATE.test(form.dob)) return null;
+  if (form.sex === null || form.goal === null) return null;
   return targetsFromProfile({
     sex: form.sex,
     dob: form.dob,
@@ -430,6 +542,10 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
   if (form.height_cm == null || form.weight_kg == null) {
     throw new Error("Cannot build a profile from an incomplete form.");
   }
+  if (form.sex === null || form.goal === null) {
+    throw new Error("Cannot build a profile without a sex and a goal.");
+  }
+  const goal = form.goal;
   return {
     user_id: userId,
     display_name: form.display_name.trim(),
@@ -438,9 +554,9 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
     height_cm: form.height_cm,
     weight_kg: form.weight_kg,
     activity_level: form.activity_level,
-    goal: form.goal,
-    target_weight_kg: form.goal === "maintain" ? null : form.target_weight_kg,
-    pace_kg_per_week: form.goal === "maintain" ? null : form.pace_kg_per_week,
+    goal,
+    target_weight_kg: goal === "maintain" ? null : form.target_weight_kg,
+    pace_kg_per_week: goal === "maintain" ? null : form.pace_kg_per_week,
     protein_g_per_kg: form.protein_g_per_kg,
     units: form.units,
     timezone: form.timezone,

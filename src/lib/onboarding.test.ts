@@ -19,15 +19,19 @@ import {
   toProfileInsert,
   weightMessage,
   DEFAULT_ONBOARDING_FORM,
+  type OnboardingForm,
 } from "./onboarding";
 import { MIN_SAFE_BMI, minSafeWeightKg } from "./targets";
 import { lbToKg } from "./units";
 import type { Profile } from "./profile";
 
-const COMPLETE_FORM = {
+const COMPLETE_FORM: OnboardingForm = {
   ...DEFAULT_ONBOARDING_FORM,
   display_name: "Aman",
   dob: "1994-01-01",
+  // Both of these are choices now, and the default form leaves them unchosen.
+  sex: "female",
+  goal: "lose",
   height_cm: 165,
   weight_kg: 70,
   target_weight_kg: 65,

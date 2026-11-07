@@ -70,6 +70,12 @@ export function AboutStep({ form, errors, setField }: StepProps) {
             title={option === "female" ? "Female" : "Male"}
           />
         ))}
+        {/* Nothing is preselected, so the step has to be able to ask. */}
+        {errors.sex && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.sex}
+          </p>
+        )}
       </fieldset>
     </>
   );
@@ -129,14 +135,18 @@ export function ActivityStep({ form, setField }: StepProps) {
 }
 
 export function GoalStep({ form, errors, setField }: StepProps) {
-  const reached = targetReached(form.goal, form.weight_kg, form.target_weight_kg);
+  const reached =
+    form.goal === null ? null : targetReached(form.goal, form.weight_kg, form.target_weight_kg);
   // Null whenever there is nothing honest to print, including a target already passed.
-  const projectedOn = projectionFor({
-    goal: form.goal,
-    currentKg: form.weight_kg,
-    targetKg: form.target_weight_kg,
-    paceKgPerWeek: form.pace_kg_per_week,
-  });
+  const projectedOn =
+    form.goal === null
+      ? null
+      : projectionFor({
+          goal: form.goal,
+          currentKg: form.weight_kg,
+          targetKg: form.target_weight_kg,
+          paceKgPerWeek: form.pace_kg_per_week,
+        });
 
   return (
     <>
@@ -155,7 +165,13 @@ export function GoalStep({ form, errors, setField }: StepProps) {
         ))}
       </fieldset>
 
-      {form.goal !== "maintain" && (
+      {errors.goal && (
+        <p role="alert" className="text-sm text-destructive">
+          {errors.goal}
+        </p>
+      )}
+
+      {form.goal !== null && form.goal !== "maintain" && (
         <>
           <WeightField
             id="target-weight"

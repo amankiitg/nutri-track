@@ -35,6 +35,9 @@ type Confirm = (profile: ProfileInsert) => Promise<unknown>;
 function renderWizard(onConfirm: Confirm = vi.fn().mockResolvedValue(undefined)) {
   const onSaved = vi.fn();
   render(<OnboardingWizard userId="user-1" onConfirm={onConfirm} onSaved={onSaved} />);
+  // Every fresh start begins at the welcome; a saved draft resumes past it.
+  const start = screen.queryByRole("button", { name: "Start" });
+  if (start) fireEvent.click(start);
   return { onSaved };
 }
 
@@ -57,6 +60,9 @@ function fillAbout(dob: string) {
 }
 
 function fillBody(height: string, weight: string) {
+  // jsdom reports en-US, so the units default is imperial. These numbers are the metric worked
+  // example, so the harness selects metric rather than relying on the default.
+  chooseRadio(/^metric\b/i);
   setInput(/height/i, height);
   setInput(/weight/i, weight);
 }
@@ -82,7 +88,9 @@ describe("onboarding — age validation", () => {
     fillAbout("2020-01-01");
     continueStep();
 
-    expect(screen.getByText(/between 13 and 100 years old/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("You must be between 13 and 100 to use NutriTrack."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "About you" })).toBeInTheDocument();
   });
 
@@ -91,7 +99,9 @@ describe("onboarding — age validation", () => {
     fillAbout("1900-01-01");
     continueStep();
 
-    expect(screen.getByText(/between 13 and 100 years old/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("You must be between 13 and 100 to use NutriTrack."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "About you" })).toBeInTheDocument();
   });
 
@@ -141,6 +151,7 @@ describe("onboarding — BMI floor", () => {
       ...DEFAULT_ONBOARDING_FORM,
       display_name: "Ada",
       dob: WORKED_EXAMPLE_DOB,
+      sex: "female",
       height_cm: 165,
       weight_kg: 70,
       goal: "lose",

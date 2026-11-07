@@ -241,6 +241,21 @@ export function HeightField({
   return <ImperialHeightField valueCm={valueCm} onChange={onChange} error={error} />;
 }
 
+/** Said by the inches box, and only by the inches box. */
+export const INCHES_MESSAGE = "Inches must be 0 to 11.";
+
+/**
+ * Whether an inches box holds something that is not inches.
+ *
+ * Twelve inches is a foot, so a number past eleven is a slip about which box they are in rather
+ * than a measurement, and reading it as one would turn 6 ft 12 in into 7 ft without saying so. An
+ * empty box is zero, which is valid, so only a present number can be out of range.
+ */
+function inchesOutOfRange(text: string): boolean {
+  const value = parseNumber(text);
+  return value !== null && (value < 0 || value > 11);
+}
+
 /**
  * Feet and inches, which are two boxes holding one stored value.
  *
@@ -276,11 +291,18 @@ function ImperialHeightField({
   const [typed, setTyped] = useState<{ feet: string; inches: string } | null>(null);
   const feetText = typed?.feet ?? storedFeet;
   const inchesText = typed?.inches ?? storedInches;
+  /** The inches box speaks for itself first: it is the box the message is about. */
+  const shownError = inchesOutOfRange(inchesText) ? INCHES_MESSAGE : error;
 
   function edit(next: { feet: string; inches: string }): void {
     setTyped(next);
     const feet = parseNumber(next.feet);
     const remaining = parseNumber(next.inches);
+    if (inchesOutOfRange(next.inches)) {
+      // Commit nothing, so Continue stays blocked while the pair is half-written.
+      onChange(null);
+      return;
+    }
     if (feet === null && remaining === null) {
       onChange(null);
       return;
@@ -294,6 +316,9 @@ function ImperialHeightField({
     if (next instanceof HTMLElement && (next.id === "height-ft" || next.id === "height-in")) {
       return;
     }
+    // A rejected box keeps its text: clearing it would take away the only evidence of what went
+    // wrong, and the message would go with it.
+    if (inchesOutOfRange(inchesText)) return;
     setTyped(null);
   }
 
@@ -307,8 +332,8 @@ function ImperialHeightField({
             text={feetText}
             suffix="ft"
             inputMode="numeric"
-            invalid={error !== undefined}
-            describedBy={error ? "height-error" : undefined}
+            invalid={shownError !== undefined}
+            describedBy={shownError ? "height-error" : undefined}
             onBlur={handleBlur}
             onTextChange={(text) => edit({ feet: text, inches: inchesText })}
           />
@@ -319,14 +344,14 @@ function ImperialHeightField({
             text={inchesText}
             suffix="in"
             inputMode="numeric"
-            invalid={error !== undefined}
-            describedBy={error ? "height-error" : undefined}
+            invalid={shownError !== undefined}
+            describedBy={shownError ? "height-error" : undefined}
             onBlur={handleBlur}
             onTextChange={(text) => edit({ feet: feetText, inches: text })}
           />
         </Field>
       </div>
-      <FieldError id="height" message={error} />
+      <FieldError id="height" message={shownError} />
     </fieldset>
   );
 }
@@ -410,6 +435,12 @@ export function ChoiceCard({
         value={value}
         checked={checked}
         onChange={onSelect}
+        /**
+         * Spelled out because the visible label wraps a title and a description in adjacent inline
+         * spans, and those concatenate with no space: the computed name for the units cards was
+         * "Metriccm and kg". Named here, it reads as words.
+         */
+        aria-label={description ? `${title}, ${description}` : title}
         className="mt-1 size-4 accent-primary"
       />
       <span className="flex-1">

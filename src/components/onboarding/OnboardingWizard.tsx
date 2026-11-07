@@ -2,7 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ACTIVITY_LABELS, ACTIVITY_MULTIPLIERS, ageFromDob } from "@/lib/targets";
+import { BrandMark } from "@/components/app/BrandMark";
+import {
+  ACTIVITY_LABELS,
+  ACTIVITY_MULTIPLIERS,
+  ageFromDob,
+  calorieExplanation,
+} from "@/lib/targets";
 import type { ProfileInsert } from "@/lib/profile";
 import { formatHeight, formatPace, formatWeight } from "@/lib/units";
 import {
@@ -12,6 +18,9 @@ import {
   STEP_TITLES,
   clearOnboardingDraft,
   computeTargetsFromForm,
+  defaultUnits,
+  detectLanguage,
+  detectTimeZone,
   loadOnboardingDraft,
   onboardingSchema,
   saveOnboardingDraft,
@@ -21,6 +30,7 @@ import {
   type OnboardingForm,
   type OnboardingStep,
 } from "@/lib/onboarding";
+import type { Sex } from "@/lib/targets";
 import { AboutStep, ActivityStep, BodyStep, GoalStep, PreferencesStep } from "./steps";
 
 export interface OnboardingWizardProps {
@@ -34,8 +44,16 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
   const [draft] = useState(() => loadOnboardingDraft());
   const [form, setForm] = useState<OnboardingForm>(() => ({
     ...DEFAULT_ONBOARDING_FORM,
+    // The one device-derived default the form takes. The draft wins over it, because a choice
+    // already made is the person's and not the browser's.
+    units: defaultUnits(detectTimeZone(), detectLanguage()),
     ...(draft?.form ?? {}),
   }));
+  /**
+   * Whether the welcome has been dismissed. A saved draft means they were already inside, so it is
+   * not shown again to somebody resuming.
+   */
+  const [started, setStarted] = useState(() => draft !== null);
   const [stepIndex, setStepIndex] = useState(() =>
     draft ? Math.max(0, ONBOARDING_STEPS.indexOf(draft.step)) : 0,
   );
@@ -46,8 +64,11 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
   const step: OnboardingStep = ONBOARDING_STEPS[stepIndex] ?? "about";
 
   useEffect(() => {
+    // Nothing is written until they have started, so opening the welcome and leaving does not
+    // leave a draft behind that skips it next time.
+    if (!started) return;
     saveOnboardingDraft({ step, form });
-  }, [step, form]);
+  }, [started, step, form]);
 
   function setField<K extends keyof OnboardingForm>(key: K, value: OnboardingForm[K]) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -114,6 +135,8 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
 
   const targets = computeTargetsFromForm(form);
 
+  if (!started) return <Welcome onStart={() => setStarted(true)} />;
+
   return (
     <div className="space-y-6 pb-6">
       <header className="space-y-3">
@@ -148,7 +171,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
                 label="Date of birth"
                 value={`${form.dob} (age ${ageFromDob(form.dob)})`}
               />
-              <ReviewRow label="Sex" value={form.sex === "female" ? "Female" : "Male"} />
+              <ReviewRow label="Sex" value={sexLabel(form.sex)} />
             </ReviewSection>
 
             <ReviewSection title="Body" onEdit={() => goTo("body")}>
@@ -164,8 +187,11 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
             </ReviewSection>
 
             <ReviewSection title="Goal" onEdit={() => goTo("goal")}>
-              <ReviewRow label="Goal" value={GOAL_COPY[form.goal].title} />
-              {form.goal !== "maintain" && (
+              <ReviewRow
+                label="Goal"
+                value={form.goal === null ? "Not chosen" : GOAL_COPY[form.goal].title}
+              />
+              {form.goal !== null && form.goal !== "maintain" && (
                 <>
                   <ReviewRow
                     label="Target weight"
@@ -192,6 +218,11 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
                   {targets.calories.toLocaleString("en-US")}
                   <span className="ml-2 text-base font-normal text-muted-foreground">kcal</span>
                 </p>
+                {form.goal !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    {calorieExplanation(targets, form.goal, form.units)}
+                  </p>
+                )}
                 <dl className="grid grid-cols-3 gap-3 text-sm">
                   <div>
                     <dt className="text-xs text-muted-foreground">Protein</dt>
@@ -253,6 +284,36 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The review row's wording for a choice that may not have been made. */
+function sexLabel(sex: Sex | null): string {
+  if (sex === "female") return "Female";
+  if (sex === "male") return "Male";
+  return "Not chosen";
+}
+
+/**
+ * The first thing anybody sees: what this is, how long it takes, and one button.
+ *
+ * Outside the step machine on purpose. It asks nothing, so it has no error state, no Back, and no
+ * place in the progress count.
+ */
+function Welcome({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="flex min-h-[60dvh] flex-col justify-center gap-6 py-6">
+      <BrandMark size={56} />
+      <div className="space-y-2">
+        <h1 className="text-3xl font-semibold">NutriTrack</h1>
+        <p className="text-muted-foreground">
+          A few questions to set your daily calorie and protein targets. About a minute.
+        </p>
+      </div>
+      <Button type="button" className="h-12 w-full rounded-full text-base" onClick={onStart}>
+        Start
+      </Button>
     </div>
   );
 }
