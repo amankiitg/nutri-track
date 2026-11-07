@@ -151,7 +151,11 @@ export async function fetchMealItems(mealId: string): Promise<SavedItem[]> {
       "name, quantity, unit, grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, confidence, user_edited",
     )
     .eq("meal_id", mealId)
-    .order("created_at", { ascending: true });
+    // Every item of a meal is inserted by one statement, so they share a `created_at`. Without a
+    // tiebreaker their order is whatever the plan produced, which is how two items swapped on
+    // reload. The id is arbitrary but stable, which is what the screen needs.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw new Error(`Could not read the saved meal: ${error.message}`);
 
   // numeric columns arrive as strings from PostgREST, so they are coerced here rather
@@ -242,7 +246,10 @@ export async function fetchMealForEdit(mealId: string): Promise<MealForEdit> {
       "id, name, quantity, unit, grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, confidence, user_edited, llm_raw",
     )
     .eq("meal_id", mealId)
-    .order("created_at", { ascending: true });
+    // See `fetchMealItems`: same-second rows need a stable tiebreaker or the edit sheet shows a
+    // different item order on every open.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (itemsError) throw new Error(`Could not read the meal's items: ${itemsError.message}`);
 
   // numeric columns arrive as strings from PostgREST, as they do in `fetchMealItems`.

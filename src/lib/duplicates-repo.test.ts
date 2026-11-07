@@ -62,6 +62,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 import {
   fetchMealForEdit,
+  fetchMealItems,
   fetchRecentMeals,
   findMealByPhotoHashes,
   updateMeal,
@@ -82,6 +83,22 @@ describe("the duplicate queries exclude deleted meals", () => {
     await fetchRecentMeals(new Date("2026-09-19T12:00:00Z"));
 
     expect(chain.join(" ")).toContain("is(deleted_at,");
+  });
+});
+
+describe("item order", () => {
+  // Every item of a meal is inserted by one statement, so they share a `created_at`. Ordering by
+  // that alone leaves the order to the plan, which is how two items swapped between visits.
+  it.each([
+    ["the copy query", () => fetchMealItems("meal-1")],
+    ["the edit loader", () => fetchMealForEdit("meal-1")],
+  ])("%s breaks created_at ties on the id", async (_name, load) => {
+    chain.length = 0;
+    await load();
+    const asked = chain.join(" ");
+
+    expect(asked).toContain("order(created_at,");
+    expect(asked).toContain("order(id,");
   });
 });
 
