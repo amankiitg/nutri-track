@@ -40,13 +40,13 @@ function PrivacyPage() {
     <main className="app-shell space-y-8 py-10 text-sm leading-relaxed">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Privacy</h1>
-        <p className="text-muted-foreground">Last updated 17 September 2026.</p>
+        <p className="text-muted-foreground">Last updated 7 November 2026.</p>
       </header>
 
       <p>
         NutriTrack keeps what you tell it about your body and the meals you log. It is yours. There
-        is no analytics, no advertising, and nothing is sold or shared beyond the one place a meal
-        photo is sent to be estimated, which is described below.
+        is no analytics, no advertising, and nothing is sold or shared beyond the services described
+        below.
       </p>
 
       <Section title="What is kept">
@@ -86,6 +86,11 @@ function PrivacyPage() {
           The meal analysis runs on a service hosted by Render, and the website is served by
           Cloudflare. Neither keeps a copy of your data; they pass it through.
         </p>
+        <p>
+          Emails are sent through Resend. For account emails it handles delivery only. For the
+          occasional non-account emails described below it also stores your email address and first
+          name, which is what makes an unsubscribe possible.
+        </p>
       </Section>
 
       <Section title="Who can reach it">
@@ -118,6 +123,28 @@ function PrivacyPage() {
         <p>
           If you use the microphone, your browser transcribes the recording using its own speech
           service, which in most browsers means Google. That audio never reaches this app's servers.
+        </p>
+      </Section>
+
+      <Section title="Email">
+        <p className="font-medium">Your account</p>
+        <p>
+          Account emails, the one that verifies your address when you sign up and the one that
+          resets your password, are sent through Resend from no-reply@tracknutri.app. They are about
+          your account, and they are the only emails NutriTrack has to send you.
+        </p>
+        <p className="pt-2 font-medium">Occasional updates</p>
+        <p>
+          We may send a few emails that are not about your account: a festival greeting, or a note
+          when something worth knowing changes. They go out through Resend, to people who joined
+          NutriTrack or were invited to it. For that, your email address and your first name, if the
+          list we were given has one, are stored in Resend.
+        </p>
+        <p>
+          Every one of those emails has an Unsubscribe link at the bottom. Unsubscribing stops them
+          for good: there is no second list to end up on and nothing to opt back into. Account
+          emails still arrive, because you cannot use the app without being able to verify your
+          address and reset your password.
         </p>
       </Section>
 
@@ -158,6 +185,13 @@ function PrivacyPage() {
         <p>
           If you would like a copy of your data before it goes, ask in the same message and I will
           send you what is stored.
+        </p>
+      </Section>
+
+      <Section title="How to reach me">
+        <p>
+          hello@tracknutri.app and invites@tracknutri.app both forward to the person who runs
+          NutriTrack. Use either one for a question about your data, and for a deletion request.
         </p>
       </Section>
 
