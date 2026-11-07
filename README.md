@@ -98,6 +98,19 @@ Then enable **Authentication → Providers → Google** and paste in your Google
 and secret. Google's own console needs the Supabase callback URL
 (`https://<project-ref>.supabase.co/auth/v1/callback`) as an authorised redirect URI.
 
+### Email delivery before inviting anyone
+
+Supabase's **default SMTP server only delivers to members of the project team**, and it is heavily
+rate limited. That is fine while the only account is yours: your own verification email arrives and
+nobody else is waiting for one. It stops being fine the moment a real person is invited, because
+their verification link is never sent, and the sign-up screen cannot tell them that — it reports
+what Supabase reported, which is success.
+
+Configure custom SMTP before inviting anyone: **Authentication → Emails → SMTP Settings**, with
+Resend, Postmark, SES or any other provider, and set the sender name and address. Then send
+yourself a verification email through the real form and confirm it arrives from the new sender
+before telling somebody else to sign up.
+
 ### Database migrations
 
 Migrations live in `supabase/migrations/` and are the only way the schema changes. **Never
