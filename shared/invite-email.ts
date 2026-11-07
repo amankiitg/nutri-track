@@ -14,7 +14,7 @@
  * converted from the oklch tokens in `src/styles.css` to hex, because no mail client
  * understands oklch: cream `#f0ece4`, card `#fffdf9`, ink `#192217`, quiet ink `#5e6657`, leaf
  * green `#195c2e`, border `#e2ded2`. `--secondary` (pale green) and `--accent` (apricot) are
- * deliberately unused — the pale green belonged to a row of feature chips that read as a
+ * deliberately unused: the pale green belonged to a row of feature chips that read as a
  * product page rather than a note from a friend.
  */
 
@@ -24,7 +24,7 @@ export const SENDER_NAME = "Aman Kesarwani";
  * Matches the email's opening, because a subject that describes the app would undo the first
  * sentence of the body. Easy to change in the draft before sending.
  */
-export const SUBJECT = "Two things surprised me about how I eat";
+export const SUBJECT = "What a month of tracking my food changed";
 
 export interface InviteRecipient {
   /** Their first name, for the greeting. */
@@ -49,8 +49,8 @@ export const PREVIEW: InviteRecipient = {
  *
  * A verified Send-as alias on the Gmail account rather than the account's own address: the draft is
  * created in one mailbox and sent as the app, so the reader sees NutriTrack and not somebody's
- * personal address. Gmail only honours a From it recognises — an unverified alias is silently
- * rewritten to the account address — which is why this is stated here rather than derived from
+ * personal address. Gmail only honours a From it recognises, and an unverified alias is silently
+ * rewritten to the account address, which is why this is stated here rather than derived from
  * configuration: the alias existing in the account's Send-as list is the premise it rests on.
  *
  * The mailbox the draft lands in is still `INVITE_SENDER_ADDRESS`, and it may be a different
@@ -109,8 +109,8 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
         color: #f0ece4;
       "
     >
-      A week of tracking what I eat, and two things surprised me. Sign in with the address this
-      landed in. The invite is tied to it.
+      A month of tracking my food, and what changed. Your invite is tied to the address this
+      landed in.
       &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
     </div>
 
@@ -167,7 +167,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                   </tr>
                 </table>
 
-                <!-- Headline: the finding, not the tagline. -->
+                <!-- Headline -->
                 <p
                   style="
                     margin: 28px 0 0 0;
@@ -179,7 +179,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                     color: #192217;
                   "
                 >
-                  Two things <em style="color: #195c2e">surprised</em> me.
+                  A month in, here&apos;s <em style="color: #195c2e">what changed</em>.
                 </p>
               </td>
             </tr>
@@ -205,19 +205,20 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                 <p style="margin: 0 0 16px 0">Hi ${firstName},</p>
 
                 <p style="margin: 0 0 16px 0">
-                  I've been tracking what I eat for a week, and two things surprised me.
+                  I've been tracking what I eat for over a month now, and it has quietly changed how
+                  I eat.
                 </p>
 
                 <p style="margin: 0 0 16px 0">
-                  I eat far less protein than I assumed. And it isn't the meals that do the damage:
-                  it's the snacks once I'm back from work, the handful of chips while dinner is
-                  cooking. Those are what push a day past where I thought it landed.
+                  A month in, I'm steadily closing in on my target weight. My protein is up, the
+                  evening grazing is mostly gone, and I feel noticeably better. Even moving around
+                  feels easier.
                 </p>
 
                 <p style="margin: 0">
-                  So I built this to track it. You photograph your plate, it reads what's on it, you
-                  fix what it got wrong, and it tells you one thing: whether you're on pace. Saying
-                  or typing a meal works too, if a photo is awkward.
+                  I built NutriTrack to do the tracking. You photograph your plate, it reads what's
+                  on it, you fix what it got wrong, and it tells you one thing: whether you're on
+                  pace. Saying or typing a meal works too, if a photo is awkward.
                 </p>
               </td>
             </tr>
@@ -251,10 +252,9 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                         color: #5e6657;
                       "
                     >
-                      Sign in with
-                      <strong style="color: #192217">${invitedEmail}</strong>. It's invite-only
-                      and your invite is tied to that address, so use that one. If Google offers you
-                      a list of accounts, pick it.
+                      Your invite is tied to
+                      <strong style="color: #192217">${invitedEmail}</strong>. Sign in with Google
+                      using that address, or create an account with it.
                     </td>
                   </tr>
                 </table>
@@ -338,9 +338,9 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
               >
                 <p style="margin: 0 0 16px 0">
                   One honest thing: the numbers come from a photo, so they're estimates, and
-                  portions of calorie-dense things are the roughest part. A bowl of hummus can be
-                  out by more than you'd guess. Nothing saves until you've looked at it, which is
-                  what that screen is for.
+                  portions of calorie-dense foods are the roughest part. A bowl of hummus can be out
+                  by more than you'd guess. Nothing saves until you've checked it, which is what
+                  that screen is for.
                 </p>
 
                 <p style="margin: 0">
@@ -431,24 +431,23 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
 export function renderInviteText({ firstName, invitedEmail }: InviteRecipient): string {
   return `Hi ${firstName},
 
-I've been tracking what I eat for a week, and two things surprised me.
+I've been tracking what I eat for over a month now, and it has quietly changed how I eat.
 
-I eat far less protein than I assumed. And it isn't the meals that do the damage: it's the
-snacks once I'm back from work, the handful of chips while dinner is cooking. Those are what
-push a day past where I thought it landed.
+A month in, I'm steadily closing in on my target weight. My protein is up, the evening grazing
+is mostly gone, and I feel noticeably better. Even moving around feels easier.
 
-So I built this to track it. You photograph your plate, it reads what's on it, you fix what it
-got wrong, and it tells you one thing: whether you're on pace. Saying or typing a meal works
-too, if a photo is awkward.
+I built NutriTrack to do the tracking. You photograph your plate, it reads what's on it, you
+fix what it got wrong, and it tells you one thing: whether you're on pace. Saying or typing a
+meal works too, if a photo is awkward.
 
-Sign in with ${invitedEmail}. It's invite-only and your invite is tied to that address, so use
-that one. If Google offers you a list of accounts, pick it.
+Your invite is tied to ${invitedEmail}. Sign in with Google using that address, or create an
+account with it.
 
 https://tracknutri.app
 
 One honest thing: the numbers come from a photo, so they're estimates, and portions of
-calorie-dense things are the roughest part. A bowl of hummus can be out by more than you'd
-guess. Nothing saves until you've looked at it, which is what that screen is for.
+calorie-dense foods are the roughest part. A bowl of hummus can be out by more than you'd
+guess. Nothing saves until you've checked it, which is what that screen is for.
 
 On an iPhone, add it to your home screen and it behaves like an app. That part is Safari only:
 open tracknutri.app in Safari, tap Share, then Add to Home Screen. And if something breaks or

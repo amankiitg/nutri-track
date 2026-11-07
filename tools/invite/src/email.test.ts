@@ -41,7 +41,7 @@ test("the HTML names the person and the address the invite is tied to", () => {
 
   assert.ok(html.includes("Hi Priya,"));
   assert.ok(html.includes("priya@example.com"));
-  assert.ok(html.includes("invite is tied to that address"));
+  assert.ok(html.includes("Your invite is tied to"));
   assert.ok(html.includes(SENDER_NAME));
   // Real values means no placeholder is left behind.
   assert.ok(!html.includes("{{"));
