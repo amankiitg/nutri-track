@@ -309,8 +309,8 @@ function AuthPage() {
     if (!isPlausibleEmail(address)) return;
     autoRan.current = true;
     void checkAddress(address);
-    // `checkAddress` is stable for this purpose: it only reads state setters and the address.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately not in the dependency list: `checkAddress` only reads state setters and the
+    // address it is given, and adding it would re-run this on every render that recreates it.
   }, [search.email]);
 
   const signIn = async (e: FormEvent) => {
