@@ -37,6 +37,22 @@ const commaSeparated = z
   )
   .pipe(z.array(httpUrl).min(1, "list at least one origin"));
 
+/**
+ * A whole number that may be absent.
+ *
+ * Empty counts as absent, because that is how a dashboard leaves a variable it has been given no
+ * value. Anything else must be a whole number: a typo stops the boot with the variable named,
+ * rather than being read as the default, which is the same rule the sweeper's `SWEEP_DRY_RUN`
+ * switch follows and for the same reason.
+ */
+const optionalWholeNumber = z
+  .string()
+  .optional()
+  .transform((value) => (value === undefined || value.trim() === "" ? undefined : Number(value)))
+  .refine((value) => value === undefined || (Number.isInteger(value) && value >= 0), {
+    message: "must be a whole number, or absent",
+  });
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** Render injects PORT; the default is for local development. */
@@ -52,6 +68,15 @@ export const envSchema = z.object({
    * and a typed description; there is no separate text model to keep in sync.
    */
   GEMINI_VISION_MODEL: z.string().min(1, "required"),
+  /**
+   * How much thinking a *text-only* analysis may do, in tokens.
+   *
+   * Absent means the model's own minimum. A Gemini 3 model documents thinking as a level rather
+   * than as a token range, so the absence of this variable is what selects
+   * `thinkingLevel: "low"` in `server/src/gemini.ts`; setting it sends `thinkingBudget` instead.
+   * Photo analyses get neither, because the photo is the hard part of the job.
+   */
+  TEXT_THINKING_BUDGET: optionalWholeNumber,
   /** Comma-separated. Anything absent from this list is refused by CORS. */
   ALLOWED_ORIGINS: commaSeparated,
 

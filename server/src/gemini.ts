@@ -12,8 +12,10 @@
  *     make matters worse it calls the assistant role "model". Both are translated
  *     here so nothing above this file has to know.
  *
- * There is no thinking-mode switch to fight any more: the Flash models answer
- * directly, so there is nothing to disable.
+ * It also owns the one thinking control in the app, and only for requests that carry no photo:
+ * a typed description is close to a lookup, and the reasoning a Gemini 3 model does by default is
+ * latency the person is watching. A photo keeps the model's default, because reading a plate is
+ * the part worth the tokens.
  */
 import { z } from "zod";
 import { ApiError } from "./errors";
@@ -135,6 +137,45 @@ export interface GeminiOptions {
   /** Injectable so tests can assert the outgoing request without a network call. */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * A token budget for text-only analyses. Absent means the model's own minimum, which for a
+   * Gemini 3 model is a *level* rather than a number of tokens; see `thinkingConfigFor`.
+   */
+  textThinkingBudget?: number | undefined;
+}
+
+/** Whether any part of any message is an image, which is what makes this a photo analysis. */
+function hasImages(messages: ChatMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.content) && message.content.some((part) => part.type === "image"),
+  );
+}
+
+/**
+ * The thinking control for one request, or nothing at all.
+ *
+ * Two spellings of one switch, and the choice between them is Google's, not ours:
+ *
+ *   - `thinkingLevel` is what the `generateContent` reference calls the control for "Gemini 3 or
+ *     later models", and Google's thinking-levels table lists `low`, `medium` and `high` for
+ *     `gemini-3.8-flash`, with `medium` as the default. `low` is therefore the model's minimum,
+ *     and the default here, because a text description wants the shortest path to an answer.
+ *   - `thinkingBudget` is the same control as a number of thoughts tokens. It is what
+ *     `TEXT_THINKING_BUDGET` sends when it is set, so a deployment can name a spend instead of a
+ *     level.
+ *
+ * Never both: one control, two spellings, and sending a pair whose interaction Google does not
+ * document is how a working request becomes a 400. Chosen and documented rather than measured —
+ * the only way to measure it is a paid call against the live model, which the test suite never
+ * makes.
+ */
+function thinkingConfigFor(
+  messages: ChatMessage[],
+  budget: number | undefined,
+): Record<string, unknown> | undefined {
+  if (hasImages(messages)) return undefined;
+  return budget === undefined ? { thinkingLevel: "LOW" } : { thinkingBudget: budget };
 }
 
 export function createGeminiClient(options: GeminiOptions): LlmClient {
@@ -144,6 +185,7 @@ export function createGeminiClient(options: GeminiOptions): LlmClient {
   return {
     async complete(request: CompletionRequest): Promise<Completion> {
       const { contents, systemInstruction } = toGeminiPayload(request.messages);
+      const thinkingConfig = thinkingConfigFor(request.messages, options.textThinkingBudget);
       const startedAt = Date.now();
 
       let response: Response;
@@ -167,6 +209,7 @@ export function createGeminiClient(options: GeminiOptions): LlmClient {
                 maxOutputTokens: request.maxTokens,
                 // Nutrition estimates should not be creative.
                 temperature: 0.2,
+                ...(thinkingConfig === undefined ? {} : { thinkingConfig }),
               },
             }),
             signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),

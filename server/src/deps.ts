@@ -12,7 +12,10 @@ import { createAuthClient, createCallerClient } from "./supabase";
 
 export function createProductionDeps(config: Config): AppDeps {
   const authClient = createAuthClient(config);
-  const llm = createGeminiClient({ apiKey: config.GEMINI_API_KEY });
+  const llm = createGeminiClient({
+    apiKey: config.GEMINI_API_KEY,
+    textThinkingBudget: config.TEXT_THINKING_BUDGET,
+  });
 
   // Built only when all three are present. A half-configured invite feature is worse than an
   // absent one: it would fail on the first admin who tried it. `null` makes /invite say the

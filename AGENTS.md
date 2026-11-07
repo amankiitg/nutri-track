@@ -84,48 +84,48 @@ Supabase, Recharts.
    Zod — including anything a model returns.
 9. **If a requirement conflicts with existing code, stop and ask** rather than guessing.
 10. **Reproduce through the real input, and start from an intermediate state if that is where the
-   bug lives.** A reproduction that begins at a clean, valid value cannot see a defect that lives
-   *between* two valid values. Twice in this codebase a function behaved correctly when called
-   directly while the screen did not: the imperial height pair refused to commit unless its
-   sibling already had, and an emptied grams box re-anchored 200 kcal onto 5 g at the first digit
-   typed into it. Both were found by typing into the field and reading every keystroke, and
-   neither by calling the function with tidy arguments. So when the report involves *editing*,
-   drive the edit: clear the field, type one character at a time, blur it, and assert the whole
-   chain of values rather than the final one. An intermediate value can be saved, so an
-   intermediate value is a real state. An empty day is the same trap in the other direction: the
-   review footer's remaining line read the day's *target* where it needed the day's *remainder*,
-   and on a day with nothing logged those are the same number, so every test passed while the
-   screen was wrong from the first meal onwards. A fixture that is clean in the dimension being
-   tested cannot see a defect that lives in that dimension — 408 left of a 1,771 target is not
-   1,771.
+    bug lives.** A reproduction that begins at a clean, valid value cannot see a defect that lives
+    _between_ two valid values. Twice in this codebase a function behaved correctly when called
+    directly while the screen did not: the imperial height pair refused to commit unless its
+    sibling already had, and an emptied grams box re-anchored 200 kcal onto 5 g at the first digit
+    typed into it. Both were found by typing into the field and reading every keystroke, and
+    neither by calling the function with tidy arguments. So when the report involves _editing_,
+    drive the edit: clear the field, type one character at a time, blur it, and assert the whole
+    chain of values rather than the final one. An intermediate value can be saved, so an
+    intermediate value is a real state. An empty day is the same trap in the other direction: the
+    review footer's remaining line read the day's _target_ where it needed the day's _remainder_,
+    and on a day with nothing logged those are the same number, so every test passed while the
+    screen was wrong from the first meal onwards. A fixture that is clean in the dimension being
+    tested cannot see a defect that lives in that dimension — 408 left of a 1,771 target is not
+    1,771.
 11. **A soft delete is only correct if every reader agrees, so enumerate every query rather than
-   the ones that look relevant.** `meals.deleted_at` means nothing unless the readers that decide
-   whether a meal exists apply it. Three did — `daily_summaries`, `meals_for_day` and the day
-   backfill in `20260917120000` — and three did not: the two duplicate readers in
-   `src/lib/duplicates-repo.ts`, and both lookups in `save_meal`. Each omission looked locally
-   reasonable, and all three were bugs: the duplicate banner named a lunch the person had already
-   deleted, pressing "It is a new meal" found the same hash again and sent no request at all, and
-   `save_meal` returned a deleted meal as `{created: false}` so a save reported success and wrote
-   nothing. None was found by reading the code that seemed related; all three came from
-   enumerating every `from("meals")` in `src/` and `server/` and every `public.meals` in
-   `supabase/migrations/`. Do that enumeration again whenever you touch `deleted_at`.
+    the ones that look relevant.** `meals.deleted_at` means nothing unless the readers that decide
+    whether a meal exists apply it. Three did — `daily_summaries`, `meals_for_day` and the day
+    backfill in `20260917120000` — and three did not: the two duplicate readers in
+    `src/lib/duplicates-repo.ts`, and both lookups in `save_meal`. Each omission looked locally
+    reasonable, and all three were bugs: the duplicate banner named a lunch the person had already
+    deleted, pressing "It is a new meal" found the same hash again and sent no request at all, and
+    `save_meal` returned a deleted meal as `{created: false}` so a save reported success and wrote
+    nothing. None was found by reading the code that seemed related; all three came from
+    enumerating every `from("meals")` in `src/` and `server/` and every `public.meals` in
+    `supabase/migrations/`. Do that enumeration again whenever you touch `deleted_at`.
 
-   The sweeper (`server/src/sweep.ts`) is the one reader that is deliberately unscoped, and it is
-   not an exception to this rule: it asks a different question. Not "does this meal exist?" but
-   "is this photo still named by any row, deleted or not?" — the undo has to be able to put a
-   deleted meal back, so its photos must stay referenced, and the sweep is account-wide because a
-   per-user view would read every other user's references as missing and delete their photos. A
-   divergence is a bug unless it is a different question.
+The sweeper (`server/src/sweep.ts`) is the one reader that is deliberately unscoped, and it is
+not an exception to this rule: it asks a different question. Not "does this meal exist?" but
+"is this photo still named by any row, deleted or not?" — the undo has to be able to put a
+deleted meal back, so its photos must stay referenced, and the sweep is account-wide because a
+per-user view would read every other user's references as missing and delete their photos. A
+divergence is a bug unless it is a different question.
 
-   The same rule reaches into the schema, where a partial unique index is a reader too: both
-   unique indexes on `meals` are `where deleted_at is null`, because filtering `save_meal`'s
-   lookups without them would have swapped a silent no-save for a unique violation
-   (`20260919140000`). One consequence is worth knowing. Restoring a deleted meal, which is what
-   the timeline's undo does, now collides if a live meal shares its fingerprint — the same
-   photo, the same text, the same ten-minute bucket. `restoreMeal` catches `unique_violation`
-   and refuses with a sentence, because the alternative reaches a phone as a constraint name.
-   It does not clear the collision: that would delete the meal that was logged second, which
-   nobody asked for, and a refusal is the smaller harm.
+The same rule reaches into the schema, where a partial unique index is a reader too: both
+unique indexes on `meals` are `where deleted_at is null`, because filtering `save_meal`'s
+lookups without them would have swapped a silent no-save for a unique violation
+(`20260919140000`). One consequence is worth knowing. Restoring a deleted meal, which is what
+the timeline's undo does, now collides if a live meal shares its fingerprint — the same
+photo, the same text, the same ten-minute bucket. `restoreMeal` catches `unique_violation`
+and refuses with a sentence, because the alternative reaches a phone as a constraint name.
+It does not clear the collision: that would delete the meal that was logged second, which
+nobody asked for, and a refusal is the smaller harm.
 
 ## Commands
 
@@ -206,7 +206,7 @@ npm test
   photo storage ever becomes a problem, that retention rule is the fix, not a change to
   what the sweeper protects.
 - **Days are frozen at write time; displayed clock times are not.** A meal's `local_date` never
-  moves, but its *time* is rendered by `formatTimeInZone(meal.eaten_at, timeZone)` using the
+  moves, but its _time_ is rendered by `formatTimeInZone(meal.eaten_at, timeZone)` using the
   profile's **current** zone. Change the zone and meals logged before the change keep their day
   while their clock times shift. Accepted knowingly, and a separate decision from the day boundary:
   if it ever matters, the fix is to store the zone alongside the meal and render with that, not to
@@ -231,7 +231,7 @@ npm test
   `meals.local_date` is set by a `before insert or update of eaten_at` trigger from the profile's
   timezone at that moment (`20260917120000_meals_local_date.sql`), and every reader uses it:
   `daily_summaries` selects it, `meals_for_day` filters on it. Nothing may compute a day from
-  `eaten_at` again. Until this change the day was derived at read time from the *current* profile
+  `eaten_at` again. Until this change the day was derived at read time from the _current_ profile
   timezone, which made the day boundary a function of a setting: changing the timezone re-cut every
   historical day, which is exactly why the app has never followed the device. It still does not.
   The profile zone is a setting changed deliberately, and new meals use it from that point on while
@@ -255,7 +255,7 @@ npm test
   labels.** `axisWidth` in `src/lib/trends.ts` derives the width from the widest value the axis
   can print, plus a character for the rounding of the top tick. Two things bit us here. The
   charts carried `margin.left: -18`, which adds no room — it slides the label band out past the
-  SVG's left edge, so the ticks lost their *leading* digits (`3200` drawn from x=-7.8 read as
+  SVG's left edge, so the ticks lost their _leading_ digits (`3200` drawn from x=-7.8 read as
   `200`). And a constant cannot be right, because the same axis reads `3200` on a daily bucket
   and `12600` on a weekly one. jsdom has no layout engine, so this class of bug cannot be
   caught by a test: measure it in a browser, checking each label's box against the SVG's.
@@ -291,7 +291,10 @@ npm test
   The image travels as raw bytes, not as a data URL, so the provider — not the caller —
   decides the wire encoding. Gemini's response schema is derived from the Zod contract by
   `server/src/response-schema.ts`; never hand-write a second copy of the field list, in the
-  prompt or anywhere else.
+  prompt or anywhere else. A request with **no** photo also carries `thinkingConfig`, one
+  spelling at a time: `thinkingLevel: "low"` by default, or `thinkingBudget` when
+  `TEXT_THINKING_BUDGET` is set. A request with a photo carries neither, because reading the
+  plate is the part worth the tokens.
 - Everything the service says to the user is read on a phone, so
   `ApiError.message` is written for that reader: no provider names, no status codes, no
   Supabase internals. The technical detail belongs in `details` and in the logs, which is

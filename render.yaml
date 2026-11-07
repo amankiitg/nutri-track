@@ -57,6 +57,10 @@ services:
       # The stable model id from AI Studio, e.g. gemini-3.8-flash.
       - key: GEMINI_VISION_MODEL
         sync: false
+      # Optional: a token budget for text-only analyses. Absent means the model's
+      # own minimum, which is the normal case, so the service starts without it.
+      - key: TEXT_THINKING_BUDGET
+        sync: false
 
       # --- CORS ---------------------------------------------------------------
       # Comma-separated. Must list the origin the frontend is actually served from.

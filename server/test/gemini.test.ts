@@ -128,7 +128,69 @@ describe("createGeminiClient", () => {
     expect(config["maxOutputTokens"]).toBe(2048);
     // Nutrition estimates should not be creative.
     expect(config["temperature"]).toBe(0.2);
-    expect(config).not.toHaveProperty("thinkingConfig");
+  });
+
+  it("asks a text-only request to think less, which is the latency this exists to save", async () => {
+    const { calls, fetchImpl } = capture(jsonResponse(okReply()));
+    await createGeminiClient({ apiKey: KEY, fetchImpl }).complete({
+      model: "gemini-3.8-flash",
+      messages: [{ role: "user", content: "two eggs and a slice of toast" }],
+      maxTokens: 100,
+      responseSchema: SCHEMA,
+    });
+
+    const config = bodyOf(calls[0]!)["generationConfig"] as Record<string, unknown>;
+    // A level rather than a budget: the model is a Gemini 3 id, and Google's thinking-levels table
+    // lists low, medium and high for it, with medium as the default. Low is therefore its minimum.
+    expect(config["thinkingConfig"]).toEqual({ thinkingLevel: "LOW" });
+  });
+
+  it("leaves a photo request at the model's own thinking", async () => {
+    const { calls, fetchImpl } = capture(jsonResponse(okReply()));
+    await createGeminiClient({ apiKey: KEY, fetchImpl }).complete({
+      model: "gemini-3.8-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "what is this" },
+            { type: "image", base64: "QUJD", mimeType: "image/jpeg" },
+          ],
+        },
+      ],
+      maxTokens: 100,
+      responseSchema: SCHEMA,
+    });
+
+    // Reading a plate is the part worth the tokens, so nothing is asked of it here.
+    expect(bodyOf(calls[0]!)["generationConfig"]).not.toHaveProperty("thinkingConfig");
+  });
+
+  it("sends a token budget instead when one is configured", async () => {
+    const { calls, fetchImpl } = capture(jsonResponse(okReply()));
+    await createGeminiClient({ apiKey: KEY, fetchImpl, textThinkingBudget: 0 }).complete({
+      model: "gemini-3.8-flash",
+      messages: [{ role: "user", content: "two eggs" }],
+      maxTokens: 100,
+      responseSchema: SCHEMA,
+    });
+
+    const config = bodyOf(calls[0]!)["generationConfig"] as Record<string, unknown>;
+    expect(config["thinkingConfig"]).toEqual({ thinkingBudget: 0 });
+  });
+
+  it("gives a photo request no budget either, even when one is configured", async () => {
+    const { calls, fetchImpl } = capture(jsonResponse(okReply()));
+    await createGeminiClient({ apiKey: KEY, fetchImpl, textThinkingBudget: 512 }).complete({
+      model: "gemini-3.8-flash",
+      messages: [
+        { role: "user", content: [{ type: "image", base64: "QUJD", mimeType: "image/jpeg" }] },
+      ],
+      maxTokens: 100,
+      responseSchema: SCHEMA,
+    });
+
+    expect(bodyOf(calls[0]!)["generationConfig"]).not.toHaveProperty("thinkingConfig");
   });
 
   it("returns the content, the model that answered and the token usage", async () => {

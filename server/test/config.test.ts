@@ -40,6 +40,32 @@ describe("loadConfig", () => {
     expect(config.PORT).toBe(9999);
   });
 
+  describe("TEXT_THINKING_BUDGET", () => {
+    it("is absent by default, which is what selects the model's own minimum", () => {
+      expect(loadConfig(VALID).TEXT_THINKING_BUDGET).toBeUndefined();
+    });
+
+    it("reads a whole number, including zero", () => {
+      expect(loadConfig({ ...VALID, TEXT_THINKING_BUDGET: "0" }).TEXT_THINKING_BUDGET).toBe(0);
+      expect(loadConfig({ ...VALID, TEXT_THINKING_BUDGET: "512" }).TEXT_THINKING_BUDGET).toBe(512);
+    });
+
+    it("treats an empty value as absent, which is how a dashboard leaves it", () => {
+      expect(
+        loadConfig({ ...VALID, TEXT_THINKING_BUDGET: "" }).TEXT_THINKING_BUDGET,
+      ).toBeUndefined();
+    });
+
+    it.each(["low", "1.5", "-1", "many"])(
+      "stops the boot on %s rather than reading it as the default",
+      (value) => {
+        expect(() => loadConfig({ ...VALID, TEXT_THINKING_BUDGET: value })).toThrow(
+          /TEXT_THINKING_BUDGET/,
+        );
+      },
+    );
+  });
+
   it.each([
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",

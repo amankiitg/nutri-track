@@ -69,6 +69,11 @@ Server-only. Copy exactly these into Render's environment panel:
   One id serves photos and text alike, because Flash is multimodal, so there is no
   separate text model to keep in step. Pin a stable version rather than a `-latest`
   alias, which gets hot-swapped underneath you
+- `TEXT_THINKING_BUDGET`: optional, and normally left out. A token budget for text-only
+  analyses: unset means the model's own minimum, which for a Gemini 3 model is the `low`
+  level rather than a token count, so setting it sends that number of thoughts tokens
+  instead. Photo analyses keep the model's default either way, because reading the plate
+  is the part worth the tokens
 - `PORT`: local development only. Render injects its own; the default is 8787
 - `ALLOWED_ORIGINS`: a comma-separated CORS allow-list. Locally `http://localhost:8080`
 
@@ -300,17 +305,16 @@ lives in the dashboard and never in the file).
 
 **Web service: `nutritrack-parse-meal`**
 
-| Key                         | Value                                      | Differs from local `.env`?               |
-| --------------------------- | ------------------------------------------ | ---------------------------------------- |
-| `SUPABASE_URL`              | `https://luxomuhczhtczfxwornl.supabase.co` | No                                       |
-| `SUPABASE_PUBLISHABLE_KEY`  | the `sb_publishable_…` value               | No: public by design                     |
-| `GEMINI_API_KEY`            | your AI Studio key                         | No                                       |
-| `GEMINI_VISION_MODEL`       | `gemini-3.8-flash`                         | No                                       |
-| `ALLOWED_ORIGINS`           | **the deployed frontend origin**           | **Yes**: locally `http://localhost:8080` |
-| `GMAIL_OAUTH_CLIENT_ID`     | the OAuth client from Google Cloud         | **Yes**: not filled in locally           |
-| `GMAIL_OAUTH_CLIENT_SECRET` | as above                                   | **Yes**                                  |
-| `GMAIL_OAUTH_REFRESH_TOKEN` | from `npm run gmail:consent` in `server/`  | **Yes**                                  |
-| `INVITE_SENDER_ADDRESS`     | the mailbox the drafts are created in      | **Yes**: not a secret                    |
+| Key                         | Value                                      | Differs from local `.env`?     |
+| --------------------------- | ------------------------------------------ | ------------------------------ |
+| `SUPABASE_URL`              | `https://luxomuhczhtczfxwornl.supabase.co` | No                             |
+| `SUPABASE_PUBLISHABLE_KEY`  | the `sb_publishable_…` value               | No: public by design           |
+| `GEMINI_API_KEY`            | your AI Studio key                         | No                             |
+| `GEMINI_VISION_MODEL`       | `gemini-3.8-flash`                         | No                             |     | `TEXT_THINKING_BUDGET` | unset, or a whole number of tokens | No: optional |     | `ALLOWED_ORIGINS` | **the deployed frontend origin** | **Yes**: locally `http://localhost:8080` |
+| `GMAIL_OAUTH_CLIENT_ID`     | the OAuth client from Google Cloud         | **Yes**: not filled in locally |
+| `GMAIL_OAUTH_CLIENT_SECRET` | as above                                   | **Yes**                        |
+| `GMAIL_OAUTH_REFRESH_TOKEN` | from `npm run gmail:consent` in `server/`  | **Yes**                        |
+| `INVITE_SENDER_ADDRESS`     | the mailbox the drafts are created in      | **Yes**: not a secret          |
 
 The four Gmail ones are **optional to the service and not to the feature**: with any of them
 missing it still starts and serves `/parse-meal`, and `/invite` answers that invites are not set up.
@@ -462,12 +466,13 @@ both. The sweeper's schedule is in UTC and nothing depends on the hour: the grac
 not the timing, is what protects a capture in progress. It is the only service that reads
 `SUPABASE_SERVICE_ROLE_KEY`, and the web service must never be given it.
 
-Gemini is configured through two names, so swapping models never needs a code change:
+Gemini is configured through three names, so swapping models never needs a code change:
 
-| Variable              | Purpose                                                                                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GEMINI_API_KEY`      | Google AI Studio API key. Must never appear under `src/` or `shared/`                                                                                       |
-| `GEMINI_VISION_MODEL` | Stable model id from AI Studio, e.g. `gemini-3.8-flash`. Multimodal, so it serves photos and text alike; pin a stable version rather than a `-latest` alias |
+| Variable               | Purpose                                                                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`       | Google AI Studio API key. Must never appear under `src/` or `shared/`                                                                                                                     |
+| `GEMINI_VISION_MODEL`  | Stable model id from AI Studio, e.g. `gemini-3.8-flash`. Multimodal, so it serves photos and text alike; pin a stable version rather than a `-latest` alias                               |
+| `TEXT_THINKING_BUDGET` | Optional token budget for text-only analyses. Unset means the model's own minimum, which for a Gemini 3 model is the `low` thinking level; photo analyses always keep the model's default |
 
 All model traffic goes through the service. The key must never reach the browser, and
 never appears under `src/` or `shared/`.
