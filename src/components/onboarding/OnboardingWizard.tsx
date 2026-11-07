@@ -21,6 +21,7 @@ import {
   defaultUnits,
   detectLanguage,
   detectTimeZone,
+  firstInvalidStep,
   loadOnboardingDraft,
   onboardingSchema,
   saveOnboardingDraft,
@@ -41,23 +42,15 @@ export interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizardProps) {
-  const [draft] = useState(() => loadOnboardingDraft());
-  const [form, setForm] = useState<OnboardingForm>(() => ({
-    ...DEFAULT_ONBOARDING_FORM,
-    // The one device-derived default the form takes. The draft wins over it, because a choice
-    // already made is the person's and not the browser's.
-    units: defaultUnits(detectTimeZone(), detectLanguage()),
-    ...(draft?.form ?? {}),
-  }));
+  const [resume] = useState(resumeFromDraft);
+  const [form, setForm] = useState<OnboardingForm>(resume.form);
   /**
    * Whether the welcome has been dismissed. A saved draft means they were already inside, so it is
    * not shown again to somebody resuming.
    */
-  const [started, setStarted] = useState(() => draft !== null);
-  const [stepIndex, setStepIndex] = useState(() =>
-    draft ? Math.max(0, ONBOARDING_STEPS.indexOf(draft.step)) : 0,
-  );
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [started, setStarted] = useState(resume.started);
+  const [stepIndex, setStepIndex] = useState(resume.stepIndex);
+  const [errors, setErrors] = useState<FieldErrors>(resume.errors);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -104,13 +97,11 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
     setSaveError(null);
 
     // Re-check every step; jump back to the first one that is incomplete.
-    for (const candidate of ONBOARDING_STEPS) {
-      const stepErrors = validateStep(candidate, form);
-      if (Object.keys(stepErrors).length > 0) {
-        setErrors(stepErrors);
-        setStepIndex(ONBOARDING_STEPS.indexOf(candidate));
-        return;
-      }
+    const invalid = firstInvalidStep(form);
+    if (invalid !== null) {
+      setErrors(invalid.errors);
+      setStepIndex(ONBOARDING_STEPS.indexOf(invalid.step));
+      return;
     }
 
     const parsed = onboardingSchema.safeParse(form);
@@ -134,6 +125,14 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
   }
 
   const targets = computeTargetsFromForm(form);
+
+  /**
+   * Only Review asks this, and it must be able to refuse.
+   *
+   * One problem at a time, in step order: that is the order they get fixed in, and the same
+   * problem `confirm` would bounce to.
+   */
+  const reviewProblem = step === "review" ? firstInvalidStep(form) : null;
 
   if (!started) return <Welcome onStart={() => setStarted(true)} />;
 
@@ -165,6 +164,14 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
 
         {step === "review" && (
           <>
+            {reviewProblem !== null && (
+              <ReviewProblems
+                step={reviewProblem.step}
+                message={Object.values(reviewProblem.errors)[0] ?? "Please check this step."}
+                onEdit={() => goTo(reviewProblem.step)}
+              />
+            )}
+
             <ReviewSection title="About you" onEdit={() => goTo("about")}>
               <ReviewRow label="Name" value={form.display_name} />
               <ReviewRow
@@ -211,7 +218,8 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
               <ReviewRow label="Time zone" value={form.timezone} />
             </ReviewSection>
 
-            {targets && (
+            {/* A computed target for a form that will not be saved is a number nobody gets. */}
+            {reviewProblem === null && targets && (
               <section className="card-soft space-y-4 p-5">
                 <h2 className="text-lg font-semibold">Your daily targets</h2>
                 <p className="text-4xl font-semibold tabular-nums">
@@ -288,6 +296,52 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
   );
 }
 
+/**
+ * Where a resumed wizard opens, and what it has to say about it.
+ *
+ * A draft is a form written by an earlier run, and the rules can have moved since. It is restored
+ * exactly as it stands, then every step is validated with today's rules: if one no longer holds,
+ * the person opens on that step with its message, not on Review. A draft that never had a value a
+ * rule now requires is the same case, and it is the one that made this necessary — a draft saved
+ * on Review, whose target weight its own goal can no longer reach.
+ *
+ * A sound draft opens where it was left, which is the whole point of saving one.
+ */
+function resumeFromDraft(): {
+  form: OnboardingForm;
+  started: boolean;
+  stepIndex: number;
+  errors: FieldErrors;
+} {
+  const draft = loadOnboardingDraft();
+  const form: OnboardingForm = {
+    ...DEFAULT_ONBOARDING_FORM,
+    // The one device-derived default the form takes. The draft wins over it, because a choice
+    // already made is the person's and not the browser's.
+    units: defaultUnits(detectTimeZone(), detectLanguage()),
+    ...draft?.form,
+  };
+
+  if (draft === null) return { form, started: false, stepIndex: 0, errors: {} };
+
+  const invalid = firstInvalidStep(form);
+  if (invalid !== null) {
+    return {
+      form,
+      started: true,
+      stepIndex: ONBOARDING_STEPS.indexOf(invalid.step),
+      errors: invalid.errors,
+    };
+  }
+
+  return {
+    form,
+    started: true,
+    stepIndex: Math.max(0, ONBOARDING_STEPS.indexOf(draft.step)),
+    errors: {},
+  };
+}
+
 /** The review row's wording for a choice that may not have been made. */
 function sexLabel(sex: Sex | null): string {
   if (sex === "female") return "Female";
@@ -315,6 +369,35 @@ function Welcome({ onStart }: { onStart: () => void }) {
         Start
       </Button>
     </div>
+  );
+}
+
+/**
+ * What Review says instead of a summary it cannot stand behind.
+ *
+ * The message is the step's own, in the words that step uses, and the button goes to the step that
+ * can fix it rather than to the first field on this screen.
+ */
+export function ReviewProblems({
+  step,
+  message,
+  onEdit,
+}: {
+  step: OnboardingStep;
+  message: string;
+  onEdit: () => void;
+}) {
+  return (
+    <section
+      role="alert"
+      className="card-soft space-y-3 border border-destructive/40 p-4 text-sm text-destructive"
+    >
+      <p>{message}</p>
+      <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={onEdit}>
+        <Pencil className="size-3.5" aria-hidden="true" />
+        Edit {STEP_TITLES[step]}
+      </Button>
+    </section>
   );
 }
 

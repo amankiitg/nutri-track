@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { OnboardingWizard } from "./OnboardingWizard";
+import { OnboardingWizard, ReviewProblems } from "./OnboardingWizard";
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { from: vi.fn(), rpc: vi.fn(), auth: { getUser: vi.fn(), getSession: vi.fn() } },
@@ -292,5 +292,48 @@ describe("the review step", () => {
     expect(
       screen.getByText(/^Maintenance ≈ [\d,]+ kcal, with no adjustment\.$/),
     ).toBeInTheDocument();
+  });
+
+  it("has nothing to refuse when every answer holds", () => {
+    toGoal("70");
+    chooseRadio(/^lose weight/i);
+    setInput(/target weight/i, "65");
+    continueStep();
+    continueStep();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your daily targets" })).toBeInTheDocument();
+  });
+});
+
+describe("Review refusing to summarise", () => {
+  /**
+   * The banner is a guard rather than a route: a form that fails is now redirected to its own step
+   * on load, so nothing reaches Review while it fails. It is tested directly because it is exactly
+   * what would have to keep working if that redirect ever missed a case.
+   */
+  it("states the problem in the words of the step that can fix it", () => {
+    render(
+      <ReviewProblems
+        step="goal"
+        message="Your target is above your current weight. Choose Gain weight, or lower the target."
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Your target is above your current weight. Choose Gain weight, or lower the target.",
+    );
+    expect(screen.getByRole("button", { name: "Edit Your goal" })).toBeInTheDocument();
+  });
+
+  it("sends the person to that step, not to the first field on this screen", () => {
+    const onEdit = vi.fn();
+    render(<ReviewProblems step="body" message="That weight looks too low." onEdit={onEdit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Your body" }));
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });

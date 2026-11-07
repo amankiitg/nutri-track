@@ -145,8 +145,9 @@ describe("onboarding — BMI floor", () => {
     expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
   });
 
-  it("refuses to submit a below-floor target even when Confirm is pressed from review", async () => {
-    // A draft restored mid-wizard, so the goal step is never re-entered by hand.
+  it("opens on the goal step for a restored draft whose target is below the floor", () => {
+    // A draft restored mid-wizard, so the goal step is never re-entered by hand. Review used to be
+    // where this was caught, on Confirm; now it cannot be reached at all.
     const draftForm: OnboardingForm = {
       ...DEFAULT_ONBOARDING_FORM,
       display_name: "Ada",
@@ -160,14 +161,76 @@ describe("onboarding — BMI floor", () => {
     };
     saveOnboardingDraft({ step: "review", form: draftForm });
 
-    const onConfirm = vi.fn<Confirm>().mockResolvedValue(undefined);
-    renderWizard(onConfirm);
+    renderWizard();
 
-    fireEvent.click(screen.getByRole("button", { name: /confirm and save/i }));
-
-    expect(onConfirm).not.toHaveBeenCalled();
-    expect(await screen.findByText(/below a BMI of 18.5/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
+    expect(screen.getByText(/below a BMI of 18.5/i)).toBeInTheDocument();
+    // And there is no Confirm button to press while it stands.
+    expect(screen.queryByRole("button", { name: /confirm and save/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("onboarding — a draft that a rule has outgrown", () => {
+  /** The draft that exposed the gap: saved on Review, with a target 8 kg above the current weight. */
+  const STALE_DRAFT: OnboardingForm = {
+    ...DEFAULT_ONBOARDING_FORM,
+    display_name: "Ada",
+    dob: WORKED_EXAMPLE_DOB,
+    sex: "female",
+    height_cm: 170,
+    weight_kg: 77,
+    goal: "lose",
+    target_weight_kg: 85,
+    pace_kg_per_week: 0.5,
+    units: "metric",
+    timezone: "Europe/London",
+  };
+
+  const ABOVE =
+    "Your target is above your current weight. Choose Gain weight, or lower the target.";
+
+  it("lands on the goal step, not on Review, with the message that step would give", () => {
+    saveOnboardingDraft({ step: "review", form: STALE_DRAFT });
+
+    renderWizard();
+
+    expect(screen.getByRole("heading", { name: "Your goal" })).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 6")).toBeInTheDocument();
+    expect(screen.getByText(ABOVE)).toBeInTheDocument();
+    // The summary it used to show, for answers the app would refuse to save.
+    expect(screen.queryByRole("heading", { name: "Review" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/your daily targets/i)).not.toBeInTheDocument();
+  });
+
+  it("marks the target box itself, so the message is next to the answer it is about", () => {
+    saveOnboardingDraft({ step: "review", form: STALE_DRAFT });
+
+    renderWizard();
+
+    expect(screen.getByLabelText(/target weight/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText(/target weight/i)).toHaveValue("85");
+  });
+
+  it("leaves a sound draft where it was, which is the point of saving one", () => {
+    saveOnboardingDraft({ step: "review", form: { ...STALE_DRAFT, target_weight_kg: 70 } });
+
+    renderWizard();
+
+    expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
+    expect(screen.queryByText(ABOVE)).not.toBeInTheDocument();
+  });
+
+  it("sends an older draft that never chose a sex back to the first question", () => {
+    // Written before sex was a choice, so the key holds null rather than a value.
+    saveOnboardingDraft({
+      step: "review",
+      form: { ...STALE_DRAFT, target_weight_kg: 70, sex: null },
+    });
+
+    renderWizard();
+
+    expect(screen.getByRole("heading", { name: "About you" })).toBeInTheDocument();
+    expect(screen.getByText("Please choose one.")).toBeInTheDocument();
   });
 });
 
