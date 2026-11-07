@@ -323,6 +323,48 @@ it has to be revocable on its own and scoped to `gmail.compose` rather than the 
 `npm run gmail:consent` is the one-time step that produces the token, run on a laptop; it writes the
 token outside this repository.
 
+#### Gmail refresh token
+
+The `/invite` route creates a draft in Gmail, on behalf of a mailbox, with a refresh token. The
+token is minted on a laptop and lives only in Render's environment panel. `server/scripts/gmail-consent.ts`
+does the minting: it prints a consent URL, you approve it in your browser, and it writes
+`~/.nutritrack-gmail-refresh-token` (mode `0600`, outside this repository) so the credential cannot be
+committed by accident.
+
+```sh
+cd server
+npm run gmail:consent           # writes the file; prints its path, not the token
+npm run gmail:consent -- --print  # the same, and shows the token on an interactive terminal
+```
+
+`--print` is for pasting the value into Render's panel, and it only prints when stdout is a terminal:
+a redirected or piped stdout is a log, and a credential in a log is a credential that leaks. Clear the
+scrollback afterwards and delete the file (`rm ~/.nutritrack-gmail-refresh-token`) once the value is
+in Render. Nothing in this repository reads the file; the deployed service reads
+`GMAIL_OAUTH_REFRESH_TOKEN` from its environment.
+
+**If `/invite` answers "Google sign-in for drafts has expired"** (and the service logs
+`gmail refresh token expired or was revoked` with `error: invalid_grant`), the token is gone rather
+than wrong, and no retry will help. That is almost always the seven-day expiry described below. Mint
+a new one and replace `GMAIL_OAUTH_REFRESH_TOKEN` on `nutritrack-parse-meal`:
+
+1. Run the script as above, approve the consent screen in your browser.
+2. In Render → `nutritrack-parse-meal` → **Environment**, set `GMAIL_OAUTH_REFRESH_TOKEN` to the new
+   value and save. The service restarts on its own.
+3. `rm ~/.nutritrack-gmail-refresh-token`, and try the invite again from the admin page.
+
+**Keep the OAuth app in Production, or every token dies in seven days.** A Google Cloud project whose
+OAuth consent screen is in **Testing** issues refresh tokens that expire **7 days** after consent —
+this is a rule about the publishing status, not about the app's code, so re-minting a token buys a
+week and no more. Fix it once, in **Google Cloud console → APIs & Services → OAuth consent screen →
+Publishing status → Publish app**, which moves it to **In production**. For this app that needs no
+verification review: it is a single-user personal app under Google's under-100-users exemption, and
+the only reader is the admin already clicking through the "unverified app" screen. Two things do
+change at that point: the token stops expiring on a timer, and the consent screen stops appearing as a
+warning to whoever grants it. Passing 100 users would change the picture — a restricted scope for a
+public app means verification plus an annual security assessment — which is a separate decision from
+this one.
+
 **Cron job: `nutritrack-sweep-orphan-photos`**
 
 | Key                         | Value                                              | Differs from local `.env`?                                                 |

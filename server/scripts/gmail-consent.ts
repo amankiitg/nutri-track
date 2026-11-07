@@ -17,6 +17,11 @@
  *      GMAIL_OAUTH_CLIENT_SECRET.
  *
  * Then run `npm run gmail:consent` from `server/` and follow the one line it prints.
+ *
+ * The token is written to a file outside the repository and its path is printed. `--print` also
+ * shows the token itself, for the case where it has to be pasted somewhere by hand (Render's
+ * environment panel): that only happens on an interactive terminal, because a redirected stdout is
+ * a pipe, and a pipe is a log.
  */
 import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -33,6 +38,16 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 /** Outside the repository on purpose: a file that cannot be committed cannot be committed by accident. */
 const TOKEN_FILE = join(homedir(), ".nutritrack-gmail-refresh-token");
+
+/**
+ * Whether the token itself may be shown.
+ *
+ * Two conditions, both required: the operator asked with `--print`, and stdout is a terminal. The
+ * second is not politeness — `npm run x > out.log`, a CI capture or a piped `tee` would all put the
+ * credential in a file that nobody thinks of as secret, and the whole point of writing it to a
+ * 0600 file instead of printing it is that it does not end up in one.
+ */
+const PRINT_TOKEN = process.argv.includes("--print") && stdout.isTTY === true;
 
 loadRootEnvFile();
 
@@ -97,7 +112,22 @@ async function exchange(code: string): Promise<void> {
       "Done. The refresh token is in:",
       `  ${TOKEN_FILE}`,
       "",
-      "  It was not printed here and should not be. Next:",
+      ...(PRINT_TOKEN
+        ? [
+            "Here it is, because --print was given and this is a terminal. It is on your screen",
+            "and nowhere else: do not paste it into a chat, an issue or a commit.",
+            "",
+            body.refresh_token,
+            "",
+            "Clear the scrollback once it is in Render.",
+            "",
+          ]
+        : [
+            "  It was not printed here and should not be. Read it from the file, in your own",
+            "  terminal, when you paste it into Render.",
+            "",
+          ]),
+      "  Next:",
       "    1. On Render, set GMAIL_OAUTH_REFRESH_TOKEN to the file's contents.",
       "    2. Set GMAIL_OAUTH_CLIENT_ID and GMAIL_OAUTH_CLIENT_SECRET there too.",
       "    3. Set INVITE_SENDER_ADDRESS to the mailbox the drafts belong in.",
