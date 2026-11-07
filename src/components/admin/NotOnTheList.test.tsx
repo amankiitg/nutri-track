@@ -2,17 +2,19 @@
  * The two screens the invite gate can show, and the difference between them.
  *
  * The bug these pin: a failed check was reported as a refusal, so a dropped connection told a
- * signed-in person they had been taken off the list. Access still fails closed — that was never
- * the problem — but the screen must stop asserting something it does not know.
+ * signed-in person they had been taken off the list. Access still fails closed - that was never the
+ * problem - but the screen must stop asserting something it does not know.
  *
- * The second assertion matters as much as the copy: `invite_requests` is the one write an
- * uninvited person can cause, and a check that never completed is no reason to file one on
- * behalf of somebody who may already be on the list.
+ * The second thing they pin is who may undo an admin's decision. This screen asks on the person's
+ * behalf, without anybody pressing anything, so it calls `request_invite` with `auto: true`: a
+ * revoked invitation stays revoked and a declined request stays declined. `auto` being passed is
+ * asserted directly, because the rule lives in the database and this is the only place the flag is
+ * set.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
+import { requestInvite } from "@/lib/invite-request";
 import { NotOnTheList } from "./NotOnTheList";
 
 const invalidate = vi.fn(() => Promise.resolve());
@@ -25,20 +27,20 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { auth: { signOut: vi.fn() } },
 }));
 
-vi.mock("@/lib/admin", () => ({
-  fetchOwnRequest: vi.fn(),
-  recordInviteRequest: vi.fn(),
+vi.mock("@/lib/invite-request", async (importOriginal) => ({
+  // The address constant comes from the real module: `InviteAddress` reads it, and a second copy of
+  // the mailbox in a test is a second copy that can disagree with the one people are told to write
+  // to.
+  ...(await importOriginal<typeof import("@/lib/invite-request")>()),
+  requestInvite: vi.fn(),
 }));
 
-const ownRequest = fetchOwnRequest as unknown as ReturnType<typeof vi.fn>;
-const inviteRequest = recordInviteRequest as unknown as ReturnType<typeof vi.fn>;
+const request = requestInvite as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   invalidate.mockClear();
-  ownRequest.mockReset();
-  inviteRequest.mockReset();
-  ownRequest.mockResolvedValue(null);
-  inviteRequest.mockResolvedValue(true);
+  request.mockReset();
+  request.mockResolvedValue("requested");
 });
 
 describe("a check that could not be completed", () => {
@@ -60,13 +62,10 @@ describe("a check that could not be completed", () => {
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
-  it("does not file an invite request for someone who may already be on the list", async () => {
+  it("does not ask for an invite on behalf of someone who may already be on the list", async () => {
     render(<NotOnTheList email="a@example.com" reason="unavailable" />);
 
-    await waitFor(() => {
-      expect(ownRequest).not.toHaveBeenCalled();
-      expect(inviteRequest).not.toHaveBeenCalled();
-    });
+    await waitFor(() => expect(request).not.toHaveBeenCalled());
   });
 });
 
@@ -78,14 +77,27 @@ describe("a genuine refusal", () => {
     expect(screen.getByText(/isn't on the list yet/i)).toBeInTheDocument();
     // The old copy told a stranger to "ask the account owner", which is not something they can do.
     expect(screen.queryByText(/account owner/i)).toBeNull();
-    await waitFor(() => expect(inviteRequest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
   });
 
-  it("says the request was sent, and offers no button to send it again", async () => {
+  it("asks automatically, and never as an explicit request", async () => {
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
+    await waitFor(() => expect(request).toHaveBeenCalledWith("a@example.com", { auto: true }));
+  });
+
+  it("says the request is in, and offers no button to send it again", async () => {
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByText(/your request is in/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /request access/i })).toBeNull();
+  });
+
+  it("says already asked, in its own words, when the request was already waiting", async () => {
+    request.mockResolvedValueOnce("already_pending");
+    render(<NotOnTheList email="a@example.com" reason="denied" />);
+
+    expect(await screen.findByText(/already requested an invite/i)).toBeInTheDocument();
   });
 
   it("offers the address as well, because a recorded request is not the only way in", async () => {
@@ -94,39 +106,39 @@ describe("a genuine refusal", () => {
     // themselves.
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
+    expect(await screen.findByText(/your request is in/i)).toBeInTheDocument();
     expect(screen.getByText(/or email/i)).toHaveTextContent("Or email invites@tracknutri.app");
     expect(screen.getByRole("button", { name: /^copy$/i })).toBeInTheDocument();
   });
 
-  it("offers it when the row was refused too", async () => {
-    inviteRequest.mockResolvedValueOnce(false);
+  it("offers it when the request was refused too", async () => {
+    request.mockResolvedValueOnce("rate_limited");
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't record/i);
     expect(screen.getByRole("button", { name: /^copy$/i })).toBeInTheDocument();
   });
 
-  it("does not claim a request was sent when the row was not recorded", async () => {
+  it("does not claim a request was sent when nothing was recorded", async () => {
     // The point of this section: never reassure somebody about a request the database refused.
-    inviteRequest.mockResolvedValueOnce(false);
+    request.mockResolvedValueOnce(null);
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't record/i);
-    expect(screen.queryByText(/request sent/i)).toBeNull();
+    expect(screen.queryByText(/your request is in/i)).toBeNull();
     expect(screen.getByRole("button", { name: /request access/i })).toBeInTheDocument();
   });
 
-  it("offers the button when the call throws, and retries when it is pressed", async () => {
-    inviteRequest.mockRejectedValueOnce(new Error("Couldn't reach the server."));
+  it("offers the button when the call fails, and retries when it is pressed", async () => {
+    request.mockResolvedValueOnce(null);
     const user = userEvent.setup();
     render(<NotOnTheList email="a@example.com" reason="denied" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/reach the server/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't record/i);
 
-    inviteRequest.mockResolvedValueOnce(true);
+    request.mockResolvedValueOnce("requested");
     await user.click(screen.getByRole("button", { name: /request access/i }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/request sent/i);
+    expect(await screen.findByText(/your request is in/i)).toBeInTheDocument();
   });
 });

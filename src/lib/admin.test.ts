@@ -15,10 +15,11 @@ import {
   isPlausibleEmail,
   normalizeEmail,
   pendingCount,
+  pendingRequests,
   presentSpend,
   readableAdminError,
   requestStatus,
-  sortRequests,
+  revokedRequests,
   type Invite,
   type InviteRequest,
   type UserSpend,
@@ -145,33 +146,44 @@ describe("requestStatus", () => {
     requestedAt: "2026-09-11T12:00:00.000Z",
     status: "pending",
     handledAt: null,
+    firstName: null,
   };
 
   it.each([
     ["pending", "Waiting"],
     ["approved", "Approved"],
     ["declined", "Declined"],
+    ["revoked", "Removed"],
   ])("calls %s %s", (status, label) => {
     expect(requestStatus({ ...request, status }).label).toBe(label);
   });
+
+  it("gives a revoked request the same quiet tone as a declined one", () => {
+    // Grey, not red: a removed invite is a record of something that happened, not an error to fix.
+    expect(requestStatus({ ...request, status: "revoked" }).tone).toBe("silent");
+  });
 });
 
-describe("sortRequests", () => {
+describe("pendingRequests", () => {
   const at = (id: string, status: string, requestedAt: string): InviteRequest => ({
     id,
     email: `${id}@b.co`,
     requestedAt,
     status,
     handledAt: null,
+    firstName: null,
   });
 
-  it("puts pending first, then newest first, because that is the order they are worked", () => {
-    const sorted = sortRequests([
+  it("is only what is waiting, newest first", () => {
+    // A decided row is not work. Mixing the two is how a list stops meaning "do this next".
+    const pending = pendingRequests([
       at("old-pending", "pending", "2026-09-01T00:00:00.000Z"),
       at("new-approved", "approved", "2026-09-10T00:00:00.000Z"),
       at("new-pending", "pending", "2026-09-09T00:00:00.000Z"),
+      at("declined", "declined", "2026-09-11T00:00:00.000Z"),
+      at("revoked", "revoked", "2026-09-12T00:00:00.000Z"),
     ]);
-    expect(sorted.map((r) => r.id)).toEqual(["new-pending", "old-pending", "new-approved"]);
+    expect(pending.map((r) => r.id)).toEqual(["new-pending", "old-pending"]);
   });
 
   it("does not mutate the array it was given", () => {
@@ -180,17 +192,47 @@ describe("sortRequests", () => {
       at("b", "pending", "2026-09-02T00:00:00.000Z"),
     ];
     const before = input.map((r) => r.id);
-    sortRequests(input);
+    pendingRequests(input);
     expect(input.map((r) => r.id)).toEqual(before);
+  });
+
+  it("picks out the removed ones separately, for the list that offers Approve again", () => {
+    const revoked = revokedRequests([
+      at("gone", "revoked", "2026-09-05T00:00:00.000Z"),
+      at("waiting", "pending", "2026-09-06T00:00:00.000Z"),
+      at("also-gone", "revoked", "2026-09-07T00:00:00.000Z"),
+    ]);
+    expect(revoked.map((r) => r.id)).toEqual(["also-gone", "gone"]);
   });
 });
 
 describe("pendingCount", () => {
   it("counts only what still needs a decision", () => {
     const requests: InviteRequest[] = [
-      { id: "1", email: "a@b.co", requestedAt: "", status: "pending", handledAt: null },
-      { id: "2", email: "c@d.co", requestedAt: "", status: "approved", handledAt: null },
-      { id: "3", email: "e@f.co", requestedAt: "", status: "pending", handledAt: null },
+      {
+        id: "1",
+        email: "a@b.co",
+        requestedAt: "",
+        status: "pending",
+        handledAt: null,
+        firstName: null,
+      },
+      {
+        id: "2",
+        email: "c@d.co",
+        requestedAt: "",
+        status: "approved",
+        handledAt: null,
+        firstName: null,
+      },
+      {
+        id: "3",
+        email: "e@f.co",
+        requestedAt: "",
+        status: "pending",
+        handledAt: null,
+        firstName: null,
+      },
     ];
     expect(pendingCount(requests)).toBe(2);
   });

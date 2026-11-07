@@ -20,6 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   approveRequest,
+  declineRequest,
+  draftApproved,
   draftInvite,
   fetchInviteRequests,
   fetchInvites,
@@ -29,11 +31,12 @@ import {
   inviteStatus,
   isPlausibleEmail,
   normalizeEmail,
-  pendingCount,
+  pendingRequests,
   presentSpend,
   removeInvite,
   requestStatus,
-  sortRequests,
+  revokedRequests,
+  type InviteRequest,
 } from "@/lib/admin";
 
 /** One error line, so every panel fails the same way. */
@@ -89,6 +92,31 @@ export function InviteList({ adminId }: { adminId: string }) {
 
   const normalized = normalizeEmail(draft);
   const canAdd = isPlausibleEmail(draft) && firstName.trim() !== "" && !add.isPending;
+
+  /**
+   * The invitations that were taken away.
+   *
+   * A revoked request is not waiting for anything and is not in the list above, so it needs a home of
+   * its own: the admin's question is "who did I remove, and do I want them back". Reading the same
+   * query the pending card uses keeps the two from disagreeing about a row.
+   */
+  const removed = useQuery({
+    queryKey: ["admin-invite-requests"],
+    queryFn: fetchInviteRequests,
+  });
+  const removedRows = removed.isSuccess ? revokedRequests(removed.data) : [];
+
+  const approveAgain = useMutation({
+    mutationFn: (request: InviteRequest) => approveRequest(request.id),
+    onSuccess: (_email, request) => {
+      toast.success(`${request.email} can sign in again`);
+      void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-invite-requests"] });
+    },
+    onError: (caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : "Could not approve that address again.");
+    },
+  });
 
   return (
     <Card className="card-soft">
@@ -190,6 +218,44 @@ export function InviteList({ adminId }: { adminId: string }) {
           </ul>
         )}
 
+        {removedRows.length > 0 && (
+          <div className="space-y-1">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Removed
+            </h3>
+            <ul className="divide-y divide-border">
+              {removedRows.map((request) => {
+                const status = requestStatus(request);
+                return (
+                  <li key={request.id} className="flex items-center gap-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{request.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Removed {formatDay(request.requestedAt, "UTC")}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 text-muted-foreground">
+                      {status.label}
+                    </Badge>
+                    {/* Putting it back is the same approval as the first time: the RPC adds the
+                        address to the list and marks the request approved. */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 rounded-full"
+                      disabled={approveAgain.isPending}
+                      onClick={() => approveAgain.mutate(request)}
+                    >
+                      Approve again
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         <p className="text-xs text-muted-foreground">
           Removing an address stops a new sign-in. It does not sign anyone out, and it does not
           deactivate an account that already exists.
@@ -202,6 +268,17 @@ export function InviteList({ adminId }: { adminId: string }) {
 export function InviteRequestsPanel() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  /**
+   * A draft that failed while the approval itself went through.
+   *
+   * Kept apart from `error` because it is not a failed approval and must not read like one: the
+   * person is on the list and can sign in, and the only thing missing is the email telling them.
+   */
+  const [draftFailure, setDraftFailure] = useState<{
+    email: string;
+    firstName: string;
+    message: string;
+  } | null>(null);
 
   const requests = useQuery({
     queryKey: ["admin-invite-requests"],
@@ -209,10 +286,34 @@ export function InviteRequestsPanel() {
   });
 
   const approve = useMutation({
-    mutationFn: approveRequest,
-    onSuccess: (email) => {
+    mutationFn: async (request: InviteRequest) => {
+      // The approval comes first and stands on its own: `admin_approve_request` adds the address and
+      // marks the row in one transaction. The draft is a courtesy that follows it, so a failure
+      // there is reported without undoing anything.
+      const email = await approveRequest(request.id);
+      const firstName = request.firstName ?? "";
+      // Approving something already approved drafts nothing. A second draft lands in Gmail as a
+      // second message about the same person, which reads as a mistake, and there is exactly one
+      // place that is supposed to draft again: the Retry button above.
+      if (request.status === "approved") {
+        return { email, firstName, draftError: null as string | null };
+      }
+      try {
+        await draftApproved(email, firstName);
+        return { email, firstName, draftError: null as string | null };
+      } catch (caught) {
+        return {
+          email,
+          firstName,
+          draftError:
+            caught instanceof Error ? caught.message : "Could not create the draft in Gmail.",
+        };
+      }
+    },
+    onSuccess: ({ email, firstName, draftError }) => {
       setError(null);
-      toast.success(`${email} can now sign in`);
+      setDraftFailure(draftError === null ? null : { email, firstName, message: draftError });
+      if (draftError === null) toast.success(`${email} can now sign in`);
       void queryClient.invalidateQueries({ queryKey: ["admin-invite-requests"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
     },
@@ -221,65 +322,130 @@ export function InviteRequestsPanel() {
     },
   });
 
-  const pending = requests.isSuccess ? pendingCount(requests.data) : 0;
+  const decline = useMutation({
+    mutationFn: (request: InviteRequest) => declineRequest(request.id),
+    onSuccess: (_result, request) => {
+      setError(null);
+      toast.success(`Declined ${request.email}`);
+      void queryClient.invalidateQueries({ queryKey: ["admin-invite-requests"] });
+    },
+    onError: (caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : "Could not decline that request.");
+    },
+  });
+
+  const retryDraft = useMutation({
+    mutationFn: (failure: { email: string; firstName: string }) =>
+      draftApproved(failure.email, failure.firstName),
+    onSuccess: (_draft, failure) => {
+      setDraftFailure(null);
+      toast.success(`Draft ready for ${failure.email}`);
+    },
+    onError: (caught: unknown, failure) => {
+      setDraftFailure({
+        ...failure,
+        message: caught instanceof Error ? caught.message : "Could not create the draft in Gmail.",
+      });
+    },
+  });
+
+  const pending = requests.isSuccess ? pendingRequests(requests.data) : [];
 
   return (
     <Card className="card-soft">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">
-          Requests from people who signed in
-          {pending > 0 && (
+          Pending requests
+          {pending.length > 0 && (
             <Badge variant="default" className="ml-2 align-middle">
-              {pending} waiting
+              {pending.length} waiting
             </Badge>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Recorded automatically when someone signs in with Google and is not on the list. One row
-          per address — the same person asking again does nothing.
+          Recorded when somebody asks from the request page, or signs in with Google and is not on
+          the list. One row per mailbox, so the same person asking again does nothing. An approval
+          here adds the address and drafts the welcome email; a decline takes the request out of
+          this list for good.
         </p>
 
         {error !== null && <PanelError message={error} />}
+
+        {draftFailure !== null && (
+          <div
+            role="alert"
+            className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3"
+          >
+            <p className="text-sm text-destructive">{draftFailure.message}</p>
+            <p className="text-xs text-muted-foreground">
+              {draftFailure.email} was approved and can sign in. Only the email is missing, so this
+              can be tried again without touching the list.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-full"
+              disabled={retryDraft.isPending}
+              onClick={() => retryDraft.mutate(draftFailure)}
+            >
+              Retry draft
+            </Button>
+          </div>
+        )}
+
         {requests.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
         {requests.isError && <PanelError message="Could not load the requests." />}
 
-        {requests.isSuccess && requests.data.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nobody has asked yet.</p>
+        {requests.isSuccess && pending.length === 0 && (
+          <p className="text-sm text-muted-foreground">Nobody is waiting.</p>
         )}
 
-        {requests.isSuccess && requests.data.length > 0 && (
+        {pending.length > 0 && (
           <ul className="divide-y divide-border">
-            {sortRequests(requests.data).map((request) => {
-              const status = requestStatus(request);
-              return (
-                <li key={request.id} className="flex items-center gap-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{request.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Asked {formatDay(request.requestedAt, "UTC")}
-                    </p>
-                  </div>
-                  {request.status === "pending" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="rounded-full"
-                      disabled={approve.isPending}
-                      onClick={() => approve.mutate(request.id)}
-                    >
-                      <Check className="mr-1 size-3.5" aria-hidden="true" />
-                      Approve
-                    </Button>
-                  ) : (
-                    <Badge variant={status.tone === "joined" ? "default" : "secondary"}>
-                      {status.label}
-                    </Badge>
+            {pending.map((request) => (
+              <li key={request.id} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  {/* The name first, because it is what the approval email will greet them by and
+                      the one thing on this row that a person chose rather than typed. */}
+                  <p className="truncate text-sm font-medium">
+                    {request.firstName === null || request.firstName === ""
+                      ? request.email
+                      : request.firstName}
+                  </p>
+                  {request.firstName !== null && request.firstName !== "" && (
+                    <p className="truncate text-xs text-muted-foreground">{request.email}</p>
                   )}
-                </li>
-              );
-            })}
+                  <p className="text-xs text-muted-foreground">
+                    Asked {formatDay(request.requestedAt, "UTC")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={approve.isPending || decline.isPending}
+                    onClick={() => approve.mutate(request)}
+                  >
+                    <Check className="mr-1 size-3.5" aria-hidden="true" />
+                    Approve
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-full"
+                    disabled={approve.isPending || decline.isPending}
+                    onClick={() => decline.mutate(request)}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </CardContent>

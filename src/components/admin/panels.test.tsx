@@ -10,7 +10,7 @@
  * in a screenshot, so it is asserted here.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -85,9 +85,28 @@ function renderWithQuery(ui: React.ReactElement) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
+/** The request rows the panels read, replaceable per test. */
+let requestRows: Array<Record<string, unknown>> = [];
+
+/** What `declineRequest` wrote, and the filter it wrote it through. */
+let updated: Array<Record<string, unknown>> = [];
+let updatedBy: Array<[string, unknown]> = [];
+
 beforeEach(() => {
   inserted = [];
   requests = [];
+  updated = [];
+  updatedBy = [];
+  requestRows = [
+    {
+      id: "req-1",
+      email: "hopeful@example.com",
+      requested_at: "2026-09-11T09:00:00.000Z",
+      status: "pending",
+      handled_at: null,
+      first_name: "Hope",
+    },
+  ];
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 
@@ -100,7 +119,7 @@ beforeEach(() => {
     if (name === "admin_invites") return Promise.resolve({ data: INVITE_ROWS, error: null });
     if (name === "admin_spend") return Promise.resolve({ data: [], error: null });
     if (name === "admin_approve_request")
-      return Promise.resolve({ data: "friend@example.com", error: null });
+      return Promise.resolve({ data: "hopeful@example.com", error: null });
     return Promise.resolve({ data: null, error: null });
   });
 
@@ -118,20 +137,23 @@ beforeEach(() => {
     }
     if (table === "invite_requests") {
       return {
+        update: (row: Record<string, unknown>) => {
+          updated.push(row);
+          return {
+            eq: (column: string, value: unknown) => {
+              updatedBy.push([column, value]);
+              // A real update changes the row, and the panel refetches afterwards. A fake that does
+              // not would keep showing the request it just decided, and the test would be asserting
+              // the fake rather than the panel.
+              requestRows = requestRows.map((existing) =>
+                column === "id" && existing["id"] === value ? { ...existing, ...row } : existing,
+              );
+              return Promise.resolve({ error: null });
+            },
+          };
+        },
         select: () => ({
-          order: () =>
-            Promise.resolve({
-              data: [
-                {
-                  id: "req-1",
-                  email: "hopeful@example.com",
-                  requested_at: "2026-09-11T09:00:00.000Z",
-                  status: "pending",
-                  handled_at: null,
-                },
-              ],
-              error: null,
-            }),
+          order: () => Promise.resolve({ data: requestRows, error: null }),
           limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
         }),
       };
@@ -200,6 +222,7 @@ describe("the invite list", () => {
     expect(requests[0]?.body).toEqual({
       email: "new.friend@example.com",
       firstName: "Priya",
+      kind: "invite",
     });
     expect(inserted).toEqual([]);
   });
@@ -239,7 +262,7 @@ describe("the invite list", () => {
     });
   });
 
-  it("shows the service's own refusal, which is written for a phone", async () => {
+  it("shows what the service's own refusal says rather than a generic failure", async () => {
     const user = userEvent.setup();
     serviceSays(403, { error: { code: "forbidden", message: "Only an admin can invite people." } });
     renderWithQuery(<InviteList adminId="admin-1" />);
@@ -250,15 +273,90 @@ describe("the invite list", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Only an admin can invite people.");
   });
+
+  it("shows a removed invitation as Removed, with the one click that puts it back", async () => {
+    requestRows = [
+      {
+        id: "req-gone",
+        email: "gone@example.com",
+        requested_at: "2026-09-11T09:00:00.000Z",
+        status: "revoked",
+        handled_at: "2026-09-12T09:00:00.000Z",
+        first_name: "Hope",
+      },
+    ];
+    const user = userEvent.setup();
+    renderWithQuery(<InviteList adminId="admin-1" />);
+
+    expect(await screen.findByText("gone@example.com")).toBeInTheDocument();
+    const row = screen.getByText("gone@example.com").closest("li");
+    expect(row).not.toBeNull();
+    // Grey, and labelled: a removed invite is a record of something that happened, not an error.
+    expect(within(row as HTMLElement).getByText("Removed")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /approve again/i }));
+
+    // The same RPC as a first approval: it adds the address to the list and marks the row approved.
+    await waitFor(() =>
+      expect(client.rpc).toHaveBeenCalledWith("admin_approve_request", { p_request: "req-gone" }),
+    );
+  });
 });
 
 describe("requests from people who are not on the list", () => {
   it("lists a waiting request with the one click that resolves it", async () => {
     renderWithQuery(<InviteRequestsPanel />);
 
-    expect(await screen.findByText("hopeful@example.com")).toBeInTheDocument();
+    // The name is what the approval email will greet them by, so it is the line the admin reads.
+    expect(await screen.findByText("Hope")).toBeInTheDocument();
+    expect(screen.getByText("hopeful@example.com")).toBeInTheDocument();
     expect(screen.getByText("1 waiting")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /decline/i })).toBeInTheDocument();
+  });
+
+  it("shows only what is waiting, because a decision is not work", async () => {
+    requestRows = [
+      {
+        id: "req-approved",
+        email: "already@example.com",
+        requested_at: "2026-09-10T09:00:00.000Z",
+        status: "approved",
+        handled_at: "2026-09-10T10:00:00.000Z",
+        first_name: "Ada",
+      },
+      {
+        id: "req-declined",
+        email: "refused@example.com",
+        requested_at: "2026-09-11T09:00:00.000Z",
+        status: "declined",
+        handled_at: "2026-09-11T10:00:00.000Z",
+        first_name: "Bo",
+      },
+      {
+        id: "req-revoked",
+        email: "removed@example.com",
+        requested_at: "2026-09-12T09:00:00.000Z",
+        status: "revoked",
+        handled_at: "2026-09-12T10:00:00.000Z",
+        first_name: "Cy",
+      },
+      {
+        id: "req-pending",
+        email: "waiting@example.com",
+        requested_at: "2026-09-13T09:00:00.000Z",
+        status: "pending",
+        handled_at: null,
+        first_name: null,
+      },
+    ];
+    renderWithQuery(<InviteRequestsPanel />);
+
+    expect(await screen.findByText("waiting@example.com")).toBeInTheDocument();
+    expect(screen.queryByText("already@example.com")).toBeNull();
+    expect(screen.queryByText("refused@example.com")).toBeNull();
+    expect(screen.queryByText("removed@example.com")).toBeNull();
+    expect(screen.getByText("1 waiting")).toBeInTheDocument();
   });
 
   it("approves through the RPC that does the insert and the marking in one transaction", async () => {
@@ -270,6 +368,98 @@ describe("requests from people who are not on the list", () => {
     await waitFor(() => {
       expect(client.rpc).toHaveBeenCalledWith("admin_approve_request", { p_request: "req-1" });
     });
+  });
+
+  it("declines by writing the decision onto the row, and shows no request afterwards", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<InviteRequestsPanel />);
+
+    await user.click(await screen.findByRole("button", { name: /decline/i }));
+
+    await waitFor(() =>
+      expect(updated).toEqual([{ status: "declined", handled_at: expect.any(String) }]),
+    );
+    expect(updatedBy).toEqual([["id", "req-1"]]);
+    // A decline approves nothing and drafts nothing.
+    expect(client.rpc).not.toHaveBeenCalledWith("admin_approve_request", expect.anything());
+    expect(requests).toEqual([]);
+    await waitFor(() => expect(screen.queryByText("hopeful@example.com")).toBeNull());
+  });
+
+  it("drafts the approval with the name on the request, through the same /invite route", async () => {
+    const user = userEvent.setup();
+    serviceSays(200, {
+      email: "hopeful@example.com",
+      firstName: "Hope",
+      draftId: "d1",
+      alreadyInvited: true,
+    });
+    renderWithQuery(<InviteRequestsPanel />);
+
+    await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.url).toBe("https://meals.example.com/invite");
+    // The kind is what picks the message; the name is what the greeting uses.
+    expect(requests[0]?.body).toEqual({
+      email: "hopeful@example.com",
+      firstName: "Hope",
+      kind: "approved",
+    });
+  });
+
+  it("does not draft again for something already approved", async () => {
+    // A second Approve on an approved request is the case that would put a second welcome email in
+    // Gmail for the same person. The only thing that may draft again is the Retry button.
+    requestRows = [
+      {
+        id: "req-1",
+        email: "hopeful@example.com",
+        requested_at: "2026-09-11T09:00:00.000Z",
+        status: "approved",
+        handled_at: "2026-09-11T10:00:00.000Z",
+        first_name: "Hope",
+      },
+    ];
+    serviceSays(200, {
+      email: "hopeful@example.com",
+      firstName: "Hope",
+      draftId: "d1",
+      alreadyInvited: true,
+    });
+    renderWithQuery(<InviteRequestsPanel />);
+
+    // The row is not in the pending list at all, which is the first half of the protection.
+    await waitFor(() => expect(screen.getByText("Nobody is waiting.")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /^approve$/i })).toBeNull();
+    expect(requests).toEqual([]);
+  });
+
+  it("keeps the approval when the draft fails, and retries only the draft", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<InviteRequestsPanel />);
+
+    // The draft fails on the first attempt, which is the case the panel has to handle without
+    // making the admin think the approval was lost.
+    serviceSays(502, { error: { message: "Could not create the draft in Gmail." } });
+    await user.click(await screen.findByRole("button", { name: /^approve$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not create the draft in Gmail.");
+    expect(alert).toHaveTextContent(/was approved and can sign in/i);
+
+    serviceSays(200, {
+      email: "hopeful@example.com",
+      firstName: "Hope",
+      draftId: "d1",
+      alreadyInvited: true,
+    });
+    await user.click(screen.getByRole("button", { name: /retry draft/i }));
+
+    await waitFor(() => expect(requests).toHaveLength(2));
+    // The retry drafts again and writes nothing: the approval already happened.
+    expect(client.rpc).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
 

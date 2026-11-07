@@ -170,6 +170,25 @@ function inviteFailure(body: unknown, status: number): string {
 }
 
 export async function draftInvite(email: string, firstName: string): Promise<DraftedInvite> {
+  return postInvite({ email, firstName, kind: "invite" });
+}
+
+/**
+ * Drafts the approval for somebody who asked to join and has already been let in.
+ *
+ * A separate call from `draftInvite` rather than a flag at every call site: the two go to the same
+ * route and differ in one word, and a boolean that means "the other email" is the kind of parameter
+ * that gets passed wrongly at midnight. The server writes nothing to the invite list on this path.
+ */
+export async function draftApproved(email: string, firstName: string): Promise<DraftedInvite> {
+  return postInvite({ email, firstName, kind: "approved" });
+}
+
+async function postInvite(body: {
+  email: string;
+  firstName: string;
+  kind: "invite" | "approved";
+}): Promise<DraftedInvite> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (token === undefined || token === "") {
@@ -183,16 +202,16 @@ export async function draftInvite(email: string, firstName: string): Promise<Dra
     response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ email, firstName }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error("Could not reach the server. Check your connection and try again.");
   }
 
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(inviteFailure(body, response.status));
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(inviteFailure(payload, response.status));
 
-  const parsed = draftedInviteSchema.safeParse(body);
+  const parsed = draftedInviteSchema.safeParse(payload);
   if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
   return parsed.data;
 }
@@ -211,6 +230,8 @@ const requestRow = z.object({
   requested_at: z.string(),
   status: z.string(),
   handled_at: z.string().nullable(),
+  // Added with the email form's request, so an older row simply has no name.
+  first_name: z.string().nullable(),
 });
 
 export interface InviteRequest {
@@ -219,12 +240,14 @@ export interface InviteRequest {
   requestedAt: string;
   status: string;
   handledAt: string | null;
+  /** What to greet them by in the approval draft. Null when nobody gave one. */
+  firstName: string | null;
 }
 
 export async function fetchInviteRequests(): Promise<InviteRequest[]> {
   const { data, error } = await supabase
     .from("invite_requests")
-    .select("id, email, requested_at, status, handled_at")
+    .select("id, email, requested_at, status, handled_at, first_name")
     .order("requested_at", { ascending: false });
   if (error) throw new Error(readableAdminError(error.message));
 
@@ -236,6 +259,7 @@ export async function fetchInviteRequests(): Promise<InviteRequest[]> {
     requestedAt: row.requested_at,
     status: row.status,
     handledAt: row.handled_at,
+    firstName: row.first_name,
   }));
 }
 
@@ -247,57 +271,35 @@ export async function approveRequest(id: string): Promise<string> {
 }
 
 /**
- * Records that someone signed in and was not on the list.
+ * Declines a request. It leaves the pending list and is not shown anywhere afterwards.
  *
- * The only write in this app that an uninvited person can cause, so it is written to be safe by
- * construction rather than by being careful:
- *
- *   - The body carries **no email**. The address comes from the column default, which is the
- *     `email` claim of the caller's signed JWT, and the insert policy checks the stored value
- *     against that same claim. So there is no address for this request to aim at even if the
- *     caller tampers with the body.
- *   - It is a plain insert, and the database skips it if the address has asked before. So a
- *     repeat is not an error and there is nothing to retry in a loop.
- *   - It **never throws**. Asking twice, being offline, or being refused by a burst guard must not
- *     stop the person seeing the screen that tells them what to do. A failure here is a missed
- *     notification, not a broken app.
- *
- * That it needs a session is the point: the address comes from a token, so this can only run once
- * somebody has signed in. A person refused by the *create-account* form has no session and no
- * address on record yet, which is why that screen offers a mailto instead of calling this.
+ * A plain update rather than an RPC, because the policy is the authorisation: the
+ * `invite_requests_admin_update` policy allows an admin to write this row and nobody else to write
+ * any row, and a function that only wrapped those two columns would not add a check that policy does
+ * not already make. The row is kept rather than deleted: a declined request is a record of a decision,
+ * and somebody asking again should find it there rather than appear from nowhere.
  */
-export async function recordInviteRequest(): Promise<boolean> {
-  try {
-    const { error } = await supabase.from("invite_requests").insert({});
-    if (error) {
-      console.warn("could not record the invite request", error.message);
-      return false;
-    }
-    return true;
-  } catch (caught) {
-    console.warn("could not record the invite request", caught);
-    return false;
-  }
+export async function declineRequest(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("invite_requests")
+    .update({ status: "declined", handled_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(readableAdminError(error.message));
 }
 
-/** Whether the caller's own request is already on record, for the gate screen. */
-export async function fetchOwnRequest(): Promise<InviteRequest | null> {
-  const { data, error } = await supabase
-    .from("invite_requests")
-    .select("id, email, requested_at, status, handled_at")
-    .limit(1)
-    .maybeSingle();
-  if (error) return null;
-  const row = requestRow.safeParse(data);
-  if (!row.success) return null;
-  return {
-    id: row.data.id,
-    email: row.data.email,
-    requestedAt: row.data.requested_at,
-    status: row.data.status,
-    handledAt: row.data.handled_at,
-  };
-}
+/**
+ * Records that someone signed in and was not on the list.
+ *
+ * **Gone, and deliberately not replaced here.** This used to be a plain insert into
+ * `invite_requests`, which the insert policy allowed for the signed-in caller's own address. The
+ * gate now calls `request_invite` instead (`src/lib/invite-request.ts`), because the same call has to
+ * serve the email form's visitor, who has no session at all. Two ways to record one request would
+ * drift on the rules that matter - declined stays declined, one row per mailbox, the burst limits -
+ * and the one inside the database is the one that cannot be bypassed.
+ *
+ * The read that used to sit here (`fetchOwnRequest`) went with it: the function's answer already
+ * distinguishes "already waiting" from "just recorded", so the gate has nothing left to look up.
+ */
 
 /**
  * Supabase's wording, replaced with something that survives being read by a person.
@@ -390,18 +392,29 @@ export function inviteStatus(invite: Invite): InviteStatus {
 }
 
 export function requestStatus(request: InviteRequest): InviteStatus {
+  if (request.status === "revoked") return { label: "Removed", tone: "silent" };
   if (request.status === "approved") return { label: "Approved", tone: "joined" };
   if (request.status === "declined") return { label: "Declined", tone: "silent" };
   return { label: "Waiting", tone: "waiting" };
 }
 
-/** Pending first, then newest first: the order they are worked through. */
-export function sortRequests(requests: readonly InviteRequest[]): InviteRequest[] {
-  const rank = (request: InviteRequest): number => (request.status === "pending" ? 0 : 1);
-  return [...requests].sort((a, b) => {
-    if (rank(a) !== rank(b)) return rank(a) - rank(b);
-    return b.requestedAt.localeCompare(a.requestedAt);
-  });
+/**
+ * The requests still waiting, newest first: what the admin's top card shows and nothing else.
+ *
+ * An approved or declined row is a decision that has been made, and a list that mixes decisions with
+ * work is a list nobody reads in the same way.
+ */
+export function pendingRequests(requests: readonly InviteRequest[]): InviteRequest[] {
+  return requests
+    .filter((request) => request.status === "pending")
+    .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+}
+
+/** The requests whose invitation was taken away, which is where "Approve again" lives. */
+export function revokedRequests(requests: readonly InviteRequest[]): InviteRequest[] {
+  return requests
+    .filter((request) => request.status === "revoked")
+    .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
 }
 
 export function pendingCount(requests: readonly InviteRequest[]): number {

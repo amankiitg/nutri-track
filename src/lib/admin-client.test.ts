@@ -17,10 +17,10 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   addInvite,
   approveRequest,
+  declineRequest,
   fetchInviteRequests,
   fetchInvites,
   fetchIsAdmin,
-  recordInviteRequest,
   removeInvite,
 } from "./admin";
 
@@ -36,14 +36,21 @@ const client = supabase as unknown as {
 let inserted: Array<Record<string, unknown>> = [];
 /** Rows sent to `invite_requests`, kept apart from the invite list's own inserts. */
 let requested: Array<Record<string, unknown>> = [];
+/** What `declineRequest` wrote, and the filter it wrote it through. */
+let updated: Array<Record<string, unknown>> = [];
+let updatedBy: Array<[string, unknown]> = [];
 let deletedBy: Array<[string, unknown]> = [];
 let insertResult: { error: { message: string } | null } = { error: null };
+let updateResult: { error: { message: string } | null } = { error: null };
 
 beforeEach(() => {
   inserted = [];
   requested = [];
+  updated = [];
+  updatedBy = [];
   deletedBy = [];
   insertResult = { error: null };
+  updateResult = { error: null };
   vi.clearAllMocks();
 
   client.from.mockImplementation((table: string) => {
@@ -66,6 +73,15 @@ beforeEach(() => {
         insert: (row: Record<string, unknown>) => {
           requested.push(row);
           return Promise.resolve(insertResult);
+        },
+        update: (row: Record<string, unknown>) => {
+          updated.push(row);
+          return {
+            eq: (column: string, value: unknown) => {
+              updatedBy.push([column, value]);
+              return Promise.resolve(updateResult);
+            },
+          };
         },
         select: () => ({
           order: () => Promise.resolve({ data: [], error: null }),
@@ -104,26 +120,21 @@ describe("removeInvite", () => {
   });
 });
 
-describe("recordInviteRequest", () => {
-  it("inserts a row with no address, so the only one it can carry is the token's", async () => {
-    await expect(recordInviteRequest()).resolves.toBe(true);
-    // The empty body is the point: the address comes from a column default that reads the
-    // `email` claim, and the insert policy checks the stored value against that same claim, so
-    // there is no address here for a tampered body to aim at.
-    expect(requested).toEqual([{}]);
+describe("declineRequest", () => {
+  it("writes the decision onto the row, and never touches the list", async () => {
+    await declineRequest("req-1");
+
+    // A decline is a status on the request and nothing else: no address is added, and no row is
+    // deleted, because a decision that vanished could not be checked afterwards.
+    expect(updated).toEqual([{ status: "declined", handled_at: expect.any(String) }]);
+    expect(updatedBy).toEqual([["id", "req-1"]]);
+    expect(inserted).toEqual([]);
+    expect(deletedBy).toEqual([]);
   });
 
-  it("reports a refused insert as false rather than throwing at the screen", async () => {
-    insertResult = { error: { message: "new row violates row-level security policy" } };
-    await expect(recordInviteRequest()).resolves.toBe(false);
-  });
-
-  it("reports a client that throws as false too, because a missed request is not a broken app", async () => {
-    client.from.mockImplementationOnce(() => {
-      throw new Error("no network");
-    });
-
-    await expect(recordInviteRequest()).resolves.toBe(false);
+  it("raises the admin's own wording when the policy refuses it", async () => {
+    updateResult = { error: { message: "new row violates row-level security policy" } };
+    await expect(declineRequest("req-1")).rejects.toThrow(/admin account/i);
   });
 });
 
