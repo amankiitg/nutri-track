@@ -14,22 +14,39 @@
  * "Database error saving new user" must win over the generic fallback, so the specific cases come
  * first.
  */
+/** The provider's own text, which is what every check in this file reads. */
+function rawMessage(error: unknown): string {
+  return typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message: unknown }).message)
+        : "";
+}
+
+/**
+ * Whether the provider refused the credentials themselves.
+ *
+ * Exported because the sign-in screen asks a second question when this is true — is there an
+ * invite at all? — and that question has to be asked for exactly the failures the sentence below
+ * describes. Two copies of this test would drift, and the drift would show up as a screen that
+ * offers the invite panel for one kind of failure and blames the password for another.
+ */
+export function isInvalidCredentials(error: unknown): boolean {
+  const text = rawMessage(error).toLowerCase();
+  return text.includes("invalid login credentials") || text.includes("invalid credentials");
+}
+
 export function friendlyAuthError(error: unknown): string {
-  const raw =
-    typeof error === "string"
-      ? error
-      : error instanceof Error
-        ? error.message
-        : typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message: unknown }).message)
-          : "";
+  const raw = rawMessage(error);
 
   if (raw !== "") console.error("[auth]", raw);
   const text = raw.toLowerCase();
 
   if (text === "") return "Something went wrong. Please try again.";
 
-  if (text.includes("invalid login credentials") || text.includes("invalid credentials")) {
+  if (isInvalidCredentials(error)) {
     return "That email and password don't match. Try again, or create an account.";
   }
   if (text.includes("email not confirmed")) {

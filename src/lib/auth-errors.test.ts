@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { friendlyAuthError } from "./auth-errors";
+import { friendlyAuthError, isInvalidCredentials } from "./auth-errors";
 
 beforeEach(() => {
   // The helper logs the raw message on purpose; the tests are about the sentence it returns.
@@ -42,5 +42,40 @@ describe("friendlyAuthError", () => {
   it("has an answer when there is no message at all", () => {
     expect(friendlyAuthError(null)).toMatch(/something went wrong/i);
     expect(friendlyAuthError(undefined)).toMatch(/something went wrong/i);
+  });
+});
+
+/**
+ * The sign-in screen asks "is there an invite at all?" only for these failures, so the predicate
+ * has to agree with the sentence above it in every case, including the ones it says no to.
+ */
+describe("isInvalidCredentials", () => {
+  it.each([
+    ["Invalid login credentials"],
+    ["invalid credentials"],
+    [{ message: "Invalid login credentials" }],
+    [new Error("Invalid login credentials")],
+  ])("recognises %s, whatever shape it arrives in", (error) => {
+    expect(isInvalidCredentials(error)).toBe(true);
+  });
+
+  it.each([
+    ["Email not confirmed"],
+    ["Email rate limit exceeded"],
+    ["Failed to fetch"],
+    [null],
+    [undefined],
+    [""],
+  ])("says no to %s, which is not a credentials failure", (error) => {
+    expect(isInvalidCredentials(error)).toBe(false);
+  });
+
+  it("agrees with the sentence the same error produces", () => {
+    // One rule, two readers: if these ever disagree, one screen blames the password while
+    // another offers the invite panel for the same failure.
+    const error = { message: "Invalid login credentials" };
+
+    expect(friendlyAuthError(error)).toMatch(/don't match/i);
+    expect(isInvalidCredentials(error)).toBe(true);
   });
 });
