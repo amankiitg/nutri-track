@@ -426,7 +426,7 @@ export function ChoiceCard({
     <label
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-colors",
-        checked ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-accent/40",
+        checked ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-secondary/40",
       )}
     >
       <input
@@ -484,7 +484,7 @@ export function ChipGroup({
                 "rounded-full border px-3 py-1.5 text-sm transition-colors",
                 active
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent/40",
+                  : "border-border bg-card text-muted-foreground hover:bg-secondary/40",
               )}
             >
               {option}
