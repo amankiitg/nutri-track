@@ -8,16 +8,17 @@
  * The refusal screen files a request automatically, because that is the one useful thing it can
  * do for somebody who cannot act on the screen otherwise. It no longer hides the outcome: a
  * request that was not recorded says so and offers the button, because "we have your request"
- * when no row was written is the kind of reassurance that costs a week of waiting. The request is
- * made by `request_invite`, the only write an uninvited person can cause, and it is bounded by
- * the table's own unique index and burst limit.
+ * when no row was written is the kind of reassurance that costs a week of waiting. The write is
+ * `recordInviteRequest`, the only one an uninvited person can cause, and it carries no address:
+ * the row's comes from this person's own token, so there is nothing for a tampered body to aim
+ * at, and the table's unique index and burst limit still bound it.
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchOwnRequest, requestInvite } from "@/lib/admin";
+import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
 
 /** Why the invite gate did not let someone through. Mirrors the layout's `beforeLoad`. */
 export type GateFailure = "denied" | "unavailable";
@@ -57,7 +58,7 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
 
       setRequest("sending");
       try {
-        const recorded = await requestInvite(email);
+        const recorded = await recordInviteRequest();
         if (cancelled) return;
         setRequest(recorded ? "sent" : "failed");
         if (!recorded) setRequestError(COULD_NOT_RECORD);
@@ -78,7 +79,7 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
     setRequest("sending");
     setRequestError(null);
     try {
-      const recorded = await requestInvite(email);
+      const recorded = await recordInviteRequest();
       setRequest(recorded ? "sent" : "failed");
       if (!recorded) setRequestError(COULD_NOT_RECORD);
     } catch (caught) {

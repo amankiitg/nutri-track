@@ -7,10 +7,10 @@
  * same trap the height field taught, so the contract is pinned here instead, at the layer
  * that owns it, where the caller cannot accidentally make it look correct.
  *
- * The most important assertions in this file are about the invite request: the address is
- * normalised before it is sent, and a refusal from the table's burst guard is reported as false
- * rather than as a success. Saying "request sent" when the row was never written is the failure
- * this section of the app exists to remove.
+ * The most important assertions in this file are about the invite request: it carries no address,
+ * because the row's comes from the caller's token, and a failed insert is reported as false rather
+ * than as a success. Saying "request sent" when the row was never written is the failure this
+ * section of the app exists to remove.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,8 +20,8 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchIsAdmin,
+  recordInviteRequest,
   removeInvite,
-  requestInvite,
 } from "./admin";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -34,11 +34,14 @@ const client = supabase as unknown as {
 };
 
 let inserted: Array<Record<string, unknown>> = [];
+/** Rows sent to `invite_requests`, kept apart from the invite list's own inserts. */
+let requested: Array<Record<string, unknown>> = [];
 let deletedBy: Array<[string, unknown]> = [];
 let insertResult: { error: { message: string } | null } = { error: null };
 
 beforeEach(() => {
   inserted = [];
+  requested = [];
   deletedBy = [];
   insertResult = { error: null };
   vi.clearAllMocks();
@@ -61,7 +64,7 @@ beforeEach(() => {
     if (table === "invite_requests") {
       return {
         insert: (row: Record<string, unknown>) => {
-          inserted.push(row);
+          requested.push(row);
           return Promise.resolve(insertResult);
         },
         select: () => ({
@@ -101,35 +104,26 @@ describe("removeInvite", () => {
   });
 });
 
-describe("requestInvite", () => {
-  it("sends the normalised address to the rpc, which is anon's only way in", async () => {
-    client.rpc.mockResolvedValueOnce({ data: true, error: null });
-
-    await expect(requestInvite("  Aman.IITG@Gmail.COM ")).resolves.toBe(true);
-    expect(client.rpc).toHaveBeenCalledWith("request_invite", { _email: "aman.iitg@gmail.com" });
+describe("recordInviteRequest", () => {
+  it("inserts a row with no address, so the only one it can carry is the token's", async () => {
+    await expect(recordInviteRequest()).resolves.toBe(true);
+    // The empty body is the point: the address comes from a column default that reads the
+    // `email` claim, and the insert policy checks the stored value against that same claim, so
+    // there is no address here for a tampered body to aim at.
+    expect(requested).toEqual([{}]);
   });
 
-  it("reports a refusal from the burst guard as false, not as success", async () => {
-    // The server returns false when the guard skipped the row. Thanking somebody for a request
-    // that was not kept is the exact lie this section exists to remove.
-    client.rpc.mockResolvedValueOnce({ data: false, error: null });
-
-    await expect(requestInvite("a@example.com")).resolves.toBe(false);
+  it("reports a refused insert as false rather than throwing at the screen", async () => {
+    insertResult = { error: { message: "new row violates row-level security policy" } };
+    await expect(recordInviteRequest()).resolves.toBe(false);
   });
 
-  it("throws a readable message when the call itself fails", async () => {
-    client.rpc.mockResolvedValueOnce({ data: null, error: { message: "fetch failed" } });
-
-    await expect(requestInvite("a@example.com")).rejects.toThrow(/couldn't record the request/i);
-  });
-
-  it("names an invalid address rather than blaming the connection", async () => {
-    client.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { code: "22023", message: "request_invite: not an email address" },
+  it("reports a client that throws as false too, because a missed request is not a broken app", async () => {
+    client.from.mockImplementationOnce(() => {
+      throw new Error("no network");
     });
 
-    await expect(requestInvite("nope")).rejects.toThrow(/doesn't look like an email/i);
+    await expect(recordInviteRequest()).resolves.toBe(false);
   });
 });
 

@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/app/BrandMark";
-import { isPlausibleEmail, normalizeEmail, requestInvite } from "@/lib/admin";
-import { friendlyAuthError } from "@/lib/auth-errors";
+import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
+import { friendlyAuthError, isInvalidCredentials } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
+import { inviteRequestMailto } from "@/lib/invite-request";
 
 type AuthTab = "signin" | "signup";
 
@@ -86,9 +87,6 @@ function AuthPage() {
   );
   /** The address the current `invite` answer belongs to, so a re-blur does not re-ask. */
   const checkedEmail = useRef("");
-  const [requesting, setRequesting] = useState(false);
-  const [requested, setRequested] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -127,8 +125,6 @@ function AuthPage() {
     if (checkedEmail.current === address) return;
     checkedEmail.current = address;
     setInvite("checking");
-    setRequested(false);
-    setRequestError(null);
     setError(null);
     setInvite(await checkInvite(address));
   }
@@ -168,16 +164,37 @@ function AuthPage() {
     e.preventDefault();
     setBusy("email");
     setError(null);
+    const address = normalizeEmail(email);
     const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: normalizeEmail(email),
+      email: address,
       password,
     });
-    setBusy(null);
-    if (signInError) {
-      setError(friendlyAuthError(signInError));
+
+    if (signInError === null) {
+      setBusy(null);
+      router.history.replace(destination);
       return;
     }
-    router.history.replace(destination);
+
+    // "Invalid login credentials" is what the provider says both for a wrong password and for
+    // an address that was never invited, and the two need different screens: one is worth
+    // retyping, the other never will be. Ask the invite list before blaming the password. It
+    // costs one round trip, only on a failure, and it turns a dead end into the panel that
+    // explains the actual situation.
+    if (isInvalidCredentials(signInError) && isPlausibleEmail(address)) {
+      const verdict = await checkInvite(address);
+      if (verdict === "denied") {
+        checkedEmail.current = address;
+        setInvite("denied");
+        setBusy(null);
+        return;
+      }
+      // Anything else — allowed, or a check that could not be completed — leaves the
+      // provider's own answer standing: it did say the credentials do not match.
+    }
+
+    setBusy(null);
+    setError(friendlyAuthError(signInError));
   };
 
   const signUp = async (e: FormEvent) => {
@@ -259,29 +276,11 @@ function AuthPage() {
     toast.success("Verification email sent again");
   }
 
-  /** Files the request the invite panel offers, and reports a failure rather than claiming it. */
-  async function requestAccess(): Promise<void> {
-    const address = normalizeEmail(email);
-    setRequesting(true);
-    setRequestError(null);
-    try {
-      const recorded = await requestInvite(address);
-      if (!recorded) {
-        setRequestError(
-          "We couldn't record the request just now. Please try again in a little while.",
-        );
-        return;
-      }
-      setRequested(true);
-    } catch (caught) {
-      setRequestError(
-        caught instanceof Error
-          ? caught.message
-          : "We couldn't record the request. Please try again.",
-      );
-    } finally {
-      setRequesting(false);
-    }
+  /** Back to the form, for someone who wants to try another address. */
+  function resetInvite(): void {
+    checkedEmail.current = "";
+    setInvite("unknown");
+    setError(null);
   }
 
   return (
@@ -360,78 +359,37 @@ function AuthPage() {
                 </TabsList>
 
                 <TabsContent value="signin">
-                  <form onSubmit={signIn} className="space-y-4 pt-2">
-                    <EmailPassword
-                      email={email}
-                      password={password}
-                      setEmail={setEmail}
-                      setPassword={setPassword}
-                      autoComplete="current-password"
-                    />
-                    {error && (
-                      <p role="alert" className="text-sm text-destructive">
-                        {error}
-                      </p>
-                    )}
-                    <Button
-                      type="submit"
-                      className="h-12 w-full rounded-full text-base"
-                      disabled={busy !== null}
-                    >
-                      {busy === "email" && <Loader2 className="animate-spin" />}
-                      Sign in
-                    </Button>
-                  </form>
+                  {invite === "denied" ? (
+                    <InviteOnlyPanel email={normalizeEmail(email)} onReset={resetInvite} />
+                  ) : (
+                    <form onSubmit={signIn} className="space-y-4 pt-2">
+                      <EmailPassword
+                        email={email}
+                        password={password}
+                        setEmail={setEmail}
+                        setPassword={setPassword}
+                        autoComplete="current-password"
+                      />
+                      {error && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {error}
+                        </p>
+                      )}
+                      <Button
+                        type="submit"
+                        className="h-12 w-full rounded-full text-base"
+                        disabled={busy !== null}
+                      >
+                        {busy === "email" && <Loader2 className="animate-spin" />}
+                        Sign in
+                      </Button>
+                    </form>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="signup">
                   {invite === "denied" ? (
-                    <div className="space-y-4 pt-2">
-                      <h2 className="text-xl font-semibold">NutriTrack is invite-only right now</h2>
-                      <p className="text-sm text-muted-foreground">
-                        <strong>{normalizeEmail(email)}</strong> isn&apos;t on the list yet. Request
-                        access and you&apos;ll get an email as soon as you&apos;re in.
-                      </p>
-
-                      {requested ? (
-                        <p
-                          role="status"
-                          className="rounded-xl border border-border bg-muted/40 p-3 text-sm"
-                        >
-                          Request sent. We&apos;ll email <strong>{normalizeEmail(email)}</strong>{" "}
-                          when you&apos;re approved.
-                        </p>
-                      ) : (
-                        <Button
-                          type="button"
-                          className="h-11 w-full rounded-full"
-                          disabled={requesting}
-                          onClick={() => void requestAccess()}
-                        >
-                          {requesting ? <Loader2 className="animate-spin" /> : null}
-                          Request access
-                        </Button>
-                      )}
-
-                      {requestError && (
-                        <p role="alert" className="text-sm text-destructive">
-                          {requestError}
-                        </p>
-                      )}
-
-                      <button
-                        type="button"
-                        className="text-xs underline"
-                        onClick={() => {
-                          checkedEmail.current = "";
-                          setInvite("unknown");
-                          setRequested(false);
-                          setRequestError(null);
-                        }}
-                      >
-                        Use a different email
-                      </button>
-                    </div>
+                    <InviteOnlyPanel email={normalizeEmail(email)} onReset={resetInvite} />
                   ) : (
                     <form onSubmit={signUp} className="space-y-4 pt-2">
                       <EmailPassword
@@ -480,6 +438,40 @@ function AuthPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+/**
+ * What both forms show once the invite list has said no.
+ *
+ * One component for the two tabs, because it is one refusal. Arriving from "Create account", or
+ * from a sign-in that could not have worked whatever the password, the person needs the same three
+ * things: what the situation is, a way to ask, and a way out of the address they typed.
+ *
+ * Asking is a mailto and not a button that writes. By this point nobody is signed in, so there is
+ * no token for `recordInviteRequest` to take an address from; the request leaves from the person's
+ * own mailbox instead, and the app records nothing until they are let in.
+ */
+function InviteOnlyPanel({ email, onReset }: { email: string; onReset: () => void }) {
+  return (
+    <div className="space-y-4 pt-2">
+      <h2 className="text-xl font-semibold">NutriTrack is invite-only right now</h2>
+      <p className="text-sm text-muted-foreground">
+        <strong>{email}</strong> isn&apos;t on the list yet. Request access and you&apos;ll get an
+        email as soon as you&apos;re in.
+      </p>
+
+      <Button asChild className="h-11 w-full rounded-full">
+        <a href={inviteRequestMailto(email)}>Request access</a>
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Your email app will open with the request ready to send.
+      </p>
+
+      <button type="button" className="text-xs underline" onClick={onReset}>
+        Use a different email
+      </button>
+    </div>
   );
 }
 

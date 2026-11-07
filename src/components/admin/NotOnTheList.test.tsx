@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { fetchOwnRequest, requestInvite } from "@/lib/admin";
+import { fetchOwnRequest, recordInviteRequest } from "@/lib/admin";
 import { NotOnTheList } from "./NotOnTheList";
 
 const invalidate = vi.fn(() => Promise.resolve());
@@ -27,11 +27,11 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 vi.mock("@/lib/admin", () => ({
   fetchOwnRequest: vi.fn(),
-  requestInvite: vi.fn(),
+  recordInviteRequest: vi.fn(),
 }));
 
 const ownRequest = fetchOwnRequest as unknown as ReturnType<typeof vi.fn>;
-const inviteRequest = requestInvite as unknown as ReturnType<typeof vi.fn>;
+const inviteRequest = recordInviteRequest as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   invalidate.mockClear();
