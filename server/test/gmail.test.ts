@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GMAIL_COMPOSE_SCOPE, createGmailDraftClient } from "../src/gmail";
+import { GMAIL_COMPOSE_SCOPE, GMAIL_FAILURE_MESSAGE, createGmailDraftClient } from "../src/gmail";
 import { isApiError } from "../src/errors";
 
 const CREDENTIALS = {
@@ -125,6 +125,39 @@ describe("createGmailDraftClient", () => {
     await expect(
       createGmailDraftClient(CREDENTIALS, fetchImpl).createDraft(Buffer.from("x")),
     ).rejects.toSatisfy((error: unknown) => isApiError(error) && error.status === 502);
+
+    noSecretsInOutput();
+  });
+
+  it("says the Google sign-in has expired when invalid_grant is the answer", async () => {
+    // The one failure whose next step is not "check the credentials": the token is gone, and it is
+    // gone because Google expires one after seven days while the OAuth app is still in Testing.
+    const fetchImpl = vi.fn(async () => jsonResponse(400, { error: "invalid_grant" }));
+
+    await expect(
+      createGmailDraftClient(CREDENTIALS, fetchImpl).createDraft(Buffer.from("x")),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        isApiError(error) &&
+        error.message ===
+          "Google sign-in for drafts has expired. Reconnect it (see README: Gmail refresh token).",
+    );
+
+    // Logged with today's date, because seven days is the interval that matters.
+    const logged = output.join("\n");
+    expect(logged).toContain("expired or was revoked");
+    expect(logged).toContain(new Date().toISOString().slice(0, 10));
+    noSecretsInOutput();
+  });
+
+  it("keeps the ordinary message for a failure that is not an expired token", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(500, { error: "backend_error" }));
+
+    await expect(
+      createGmailDraftClient(CREDENTIALS, fetchImpl).createDraft(Buffer.from("x")),
+    ).rejects.toSatisfy(
+      (error: unknown) => isApiError(error) && error.message === GMAIL_FAILURE_MESSAGE,
+    );
 
     noSecretsInOutput();
   });

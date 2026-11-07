@@ -34,6 +34,19 @@ export const GMAIL_FAILURE_MESSAGE =
   "Could not create the draft in Gmail. Nothing was added to the invite list. Check the Google " +
   "credentials, then try again.";
 
+/**
+ * The one Gmail failure with a different next step, so it gets its own sentence.
+ *
+ * `invalid_grant` on the refresh exchange means the token is gone, not that it was wrong: Google
+ * expires a refresh token seven days after consent while the OAuth app is still in "Testing", and
+ * revokes one when access is removed from the account's third-party list. No amount of retrying
+ * fixes it, and the ordinary advice — check the credentials — sends the reader to the wrong place.
+ * The recovery is to mint a new token and replace the Render variable; README, "Gmail refresh
+ * token", is the procedure.
+ */
+export const GMAIL_EXPIRED_MESSAGE =
+  "Google sign-in for drafts has expired. Reconnect it (see README: Gmail refresh token).";
+
 export interface GmailCredentials {
   clientId: string;
   clientSecret: string;
@@ -121,9 +134,21 @@ export function createGmailDraftClient(
 
     const payload = await readJson(response);
     if (!response.ok) {
+      const code = shortError(payload);
+      if (code === "invalid_grant") {
+        // Dated rather than merely logged: a refresh token that was working and has stopped is a
+        // fact about a moment, and seven days is the interval that matters (see the message above).
+        // The date is the operator's, so it is written as an ISO date and not a local phrase.
+        log("error", "gmail refresh token expired or was revoked", {
+          status: response.status,
+          error: code,
+          date: new Date().toISOString().slice(0, 10),
+        });
+        throw new ApiError(502, "upstream_error", GMAIL_EXPIRED_MESSAGE);
+      }
       log("error", "gmail rejected the refresh token", {
         status: response.status,
-        error: shortError(payload),
+        error: code,
       });
       throw new ApiError(502, "upstream_error", GMAIL_FAILURE_MESSAGE);
     }
