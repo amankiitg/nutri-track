@@ -30,7 +30,6 @@ export interface InviteOutcome {
 export interface InviteDeps {
   store: Pick<CallerStore, "hasAllowedEmail" | "addAllowedEmail">;
   gmail: GmailDraftClient;
-  senderAddress: string;
 }
 
 /**
@@ -49,7 +48,8 @@ export async function invite(request: InviteRequest, deps: InviteDeps): Promise<
   const firstName = request.firstName.trim();
 
   const alreadyInvited = await deps.store.hasAllowedEmail(email);
-  const mime = await buildInviteMime({ firstName, invitedEmail: email }, deps.senderAddress);
+  // The From is the app's verified alias (see `INVITE_FROM`), not the mailbox the draft sits in.
+  const mime = await buildInviteMime({ firstName, invitedEmail: email });
   const draftId = await deps.gmail.createDraft(mime);
   await deps.store.addAllowedEmail(email);
 

@@ -45,15 +45,26 @@ export const PREVIEW: InviteRecipient = {
 };
 
 /**
+ * The From header the service composes invites with.
+ *
+ * A verified Send-as alias on the Gmail account rather than the account's own address: the draft is
+ * created in one mailbox and sent as the app, so the reader sees NutriTrack and not somebody's
+ * personal address. Gmail only honours a From it recognises — an unverified alias is silently
+ * rewritten to the account address — which is why this is stated here rather than derived from
+ * configuration: the alias existing in the account's Send-as list is the premise it rests on.
+ *
+ * The mailbox the draft lands in is still `INVITE_SENDER_ADDRESS`, and it may be a different
+ * address: where a draft lives and who it is from are two separate things to Gmail.
+ */
+export const INVITE_FROM = { name: "NutriTrack", address: "invites@tracknutri.app" } as const;
+
+/**
  * The message fields both transports hand to their composer.
  *
  * The content is assembled here so that the local tool and the service cannot disagree about
  * what an invite says: they differ only in how they post it, IMAP append versus the Gmail API.
  */
-export function inviteMessageFields(
-  recipient: InviteRecipient,
-  senderAddress: string,
-): {
+export function inviteMessageFields(recipient: InviteRecipient): {
   from: { name: string; address: string };
   to: { name: string; address: string };
   subject: string;
@@ -61,7 +72,7 @@ export function inviteMessageFields(
   html: string;
 } {
   return {
-    from: { name: SENDER_NAME, address: senderAddress },
+    from: { ...INVITE_FROM },
     to: { name: recipient.firstName, address: recipient.invitedEmail },
     subject: SUBJECT,
     text: renderInviteText(recipient),

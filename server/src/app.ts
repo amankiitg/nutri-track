@@ -133,7 +133,6 @@ export function createApp(deps: AppDeps): Express {
     const outcome = await invite(parsed.data, {
       store,
       gmail: deps.gmail,
-      senderAddress: deps.inviteSender,
     });
 
     // The address itself is not logged. Who was invited is recorded in `allowed_emails`, which is

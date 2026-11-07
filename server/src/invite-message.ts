@@ -10,10 +10,7 @@
 import MailComposer from "nodemailer/lib/mail-composer";
 import { inviteMessageFields, type InviteRecipient } from "../../shared/invite-email";
 
-export async function buildInviteMime(
-  recipient: InviteRecipient,
-  senderAddress: string,
-): Promise<Buffer> {
-  const composer = new MailComposer(inviteMessageFields(recipient, senderAddress));
+export async function buildInviteMime(recipient: InviteRecipient): Promise<Buffer> {
+  const composer = new MailComposer(inviteMessageFields(recipient));
   return composer.compile().build();
 }

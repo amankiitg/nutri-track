@@ -249,6 +249,19 @@ describe("POST /invite", () => {
     expect(mime).toContain("multipart/alternative");
   });
 
+  it("drafts the invite from the app's verified alias", async () => {
+    // The draft sits in the mailbox INVITE_SENDER_ADDRESS names and is sent as the app, so the
+    // From is the alias and not whichever mailbox the draft happens to live in.
+    const { app, draftedMime } = buildHarness({ isAdmin: true });
+
+    await request(app).post("/invite").set("Authorization", `Bearer ${TOKEN}`).send(body);
+
+    const mime = draftedMime[0] ?? "";
+    expect(mime).toContain("From: NutriTrack <invites@tracknutri.app>");
+    // The address the drafts are created in is a different thing, and not the From.
+    expect(mime).not.toContain("From: aman@example.com");
+  });
+
   it("rejects a body that is not an email address", async () => {
     const { app, addedEmails, draftedMime } = buildHarness({ isAdmin: true });
 
