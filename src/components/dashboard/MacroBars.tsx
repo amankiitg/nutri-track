@@ -45,21 +45,13 @@ export function MacroBars({ totals }: { totals: DailyTotals }) {
           // Stated in grams as well as shown in colour: "167% of target" is arithmetic, and
           // "+32 g over" is the thing a person can act on.
           const overBy = zone === null ? 0 : Math.max(0, eaten - Math.round(goal ?? 0));
-          const valueClass =
-            zone === "over"
-              ? "font-medium text-destructive"
-              : zone === "near"
-                ? "font-medium text-amber-600 dark:text-amber-400"
-                : "text-foreground";
-          const barClass =
-            zone === "over" ? "bg-destructive" : zone === "near" ? "bg-amber-500" : bar;
 
           return (
             <div key={key} className="space-y-1">
               <div className="flex items-baseline justify-between text-sm">
                 <dt className="font-medium">{label}</dt>
                 <dd className="tabular-nums text-muted-foreground">
-                  <span className={valueClass}>{eaten} g</span> / {goalLabel}
+                  <span className="text-foreground">{eaten} g</span> / {goalLabel}
                 </dd>
               </div>
               <div
@@ -70,15 +62,21 @@ export function MacroBars({ totals }: { totals: DailyTotals }) {
                 aria-valuemin={0}
                 {...(goal === null ? {} : { "aria-valuemax": Math.round(goal) })}
               >
-                {/* No target means no bar, not an empty one: an empty bar would claim
-                    the user is at zero of something. */}
+                {/* The fill is the macro's own colour whether it is under, at, or over the
+                    target: it says "this is protein", and repainting it red made the bar mean
+                    two things at once. The number beside it works the same way, so nothing
+                    above the line below changes colour. No target means no bar, not an empty
+                    one: an empty bar would claim the user is at zero of something. */}
                 {fraction !== null && (
                   <div
-                    className={`h-full rounded-full transition-[width] ${barClass}`}
+                    className={`h-full rounded-full transition-[width] ${bar}`}
                     style={{ width: `${fraction * 100}%` }}
                   />
                 )}
               </div>
+              {/* The warning, and now the only place it appears: amber the moment the target is
+                  passed, red once the day is 110% of it. Two levels rather than one, so a day
+                  that is 2 g over is not dressed the same as one that is 300 g over. */}
               {overBy > 0 && (
                 <p
                   className={`text-right text-[11px] ${
