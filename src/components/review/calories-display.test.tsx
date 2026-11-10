@@ -77,7 +77,9 @@ describe("the calories box", () => {
     const seen: ReviewItem[] = [];
     render(<Harness start={reviewItemFromDraft(draft(200, dressing) as never)} seen={seen} />);
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "2 tsp" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Adjust" }));
+    await user.click(screen.getByRole("button", { name: "2 tsp" }));
 
     expect(seen.at(-1)?.calories).toBe(212.5);
     expect(caloriesBox().value).toBe("213");

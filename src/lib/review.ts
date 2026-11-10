@@ -255,6 +255,33 @@ export function formatFatAmount(tsp: number): string {
   return roundTo(tsp, 1) + " tsp";
 }
 
+/**
+ * "~1 tbsp oil" for the quiet summary line. The model reports teaspoons and the
+ * line speaks tablespoons, so a tablespoon is three teaspoons and an amount that
+ * is not a whole number of tablespoons reads as a simple fraction.
+ */
+export function formatFatEstimate(cookingFat: CookingFat): string {
+  return `~${tbspText(cookingFat.amount_tsp)} tbsp ${cookingFat.type}`;
+}
+
+/** A teaspoon count in tablespoons: whole when it divides, otherwise a simple fraction. */
+function tbspText(tsp: number): string {
+  if (tsp <= 0) return "0";
+  const whole = Math.floor(tsp / 3);
+  const remainder = tsp - whole * 3;
+  if (Math.abs(remainder) < 1e-9) return String(whole);
+  const fraction = TSP_FRACTIONS.find(([value]) => Math.abs(remainder - value) < 1e-9)?.[1];
+  if (fraction !== undefined) return whole === 0 ? fraction : `${whole} ${fraction}`;
+  return String(Math.round((tsp / 3) * 10) / 10);
+}
+
+/** The teaspoon remainders worth rendering as a fraction of a tablespoon. */
+const TSP_FRACTIONS: ReadonlyArray<readonly [number, string]> = [
+  [1, "1/3"],
+  [1.5, "1/2"],
+  [2, "2/3"],
+];
+
 /** What the screen says about where the numbers came from. */
 export interface ReviewMeta {
   source: MealSource;

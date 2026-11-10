@@ -11,7 +11,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   flagsFor,
-  formatFatAmount,
+  formatFatEstimate,
   NUTRIENT_FIELDS,
   NUTRIENT_LABELS,
   setCookingFat,
@@ -104,6 +104,7 @@ function CaloriesInput({
 export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardProps) {
   const flags = flagsFor(item);
   const cookingFat = item.cooking_fat;
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <li className="rounded-2xl border border-border bg-card p-3">
@@ -200,51 +201,73 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
       </div>
 
       {cookingFat !== null && (
-        <div className="mt-3 space-y-2 rounded-xl bg-muted/30 p-2">
-          <p className="text-[11px] text-muted-foreground">
-            Assumes {formatFatAmount(cookingFat.amount_tsp)} {cookingFat.type}
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {FAT_AMOUNTS.map((option) => {
-              const active =
-                option.tsp === null ? cookingFat === null : cookingFat.amount_tsp === option.tsp;
-              return (
-                <button
-                  key={option.label}
-                  type="button"
-                  aria-pressed={active}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-background text-muted-foreground"
-                  }`}
-                  onClick={() => onChange(setCookingFat(item, withAmount(item, option.tsp)))}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+        <div className="mt-3 rounded-xl bg-muted/30 p-2">
+          <div className="flex min-h-6 items-center justify-between gap-2">
+            <p className="min-w-0 text-base text-muted-foreground">
+              Includes {formatFatEstimate(cookingFat)} (estimated)
+            </p>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+              className="shrink-0 text-base font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Adjust
+            </button>
           </div>
-          <div className="flex flex-wrap gap-1">
-            {FAT_TYPES.map((type) => {
-              const active = cookingFat.type === type;
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  aria-pressed={active}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-background text-muted-foreground"
-                  }`}
-                  onClick={() => onChange(setCookingFat(item, withType(item, type)))}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              );
-            })}
-          </div>
+          {expanded && (
+            <div className="mt-2 space-y-2">
+              <div className="flex flex-wrap gap-1">
+                {FAT_AMOUNTS.map((option) => {
+                  const active =
+                    option.tsp === null
+                      ? cookingFat === null
+                      : cookingFat.amount_tsp === option.tsp;
+                  return (
+                    <button
+                      key={option.label}
+                      type="button"
+                      aria-pressed={active}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background text-muted-foreground"
+                      }`}
+                      onClick={() => {
+                        onChange(setCookingFat(item, withAmount(item, option.tsp)));
+                        setExpanded(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {FAT_TYPES.map((type) => {
+                  const active = cookingFat.type === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      aria-pressed={active}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background text-muted-foreground"
+                      }`}
+                      onClick={() => {
+                        onChange(setCookingFat(item, withType(item, type)));
+                        setExpanded(false);
+                      }}
+                    >
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

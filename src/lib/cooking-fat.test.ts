@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { CookingFat, MealItemDraft } from "@shared/meal-parse";
 import {
   formatFatAmount,
+  formatFatEstimate,
   reviewItemFromDraft,
   setCookingFat,
   toSaveMealArgs,
@@ -116,6 +117,20 @@ describe("setCookingFat", () => {
     expect(none.userEdited).toBe(true);
   });
 
+  it("recomputes a two-tablespoon correction", () => {
+    const base = itemWithFat(oil1);
+    const sixTsp = setCookingFat(base, {
+      type: "oil",
+      amount_tsp: 6,
+      kcal_per_tsp: null,
+      fat_per_tsp: null,
+    });
+    // 200 - 1 * 40 + 6 * 40 = 400 kcal, 10 - 1 * 4.5 + 6 * 4.5 = 32.5 g fat.
+    expect(sixTsp.calories).toBe(400);
+    expect(sixTsp.fat_g).toBe(32.5);
+    expect(sixTsp.cooking_fat?.amount_tsp).toBe(6);
+  });
+
   it("keeps the model's original cooking_fat in llm_raw after an edit", () => {
     const item = itemWithFat({ type: "oil", amount_tsp: 2, kcal_per_tsp: null, fat_per_tsp: null });
     const edited = setCookingFat(item, null);
@@ -150,5 +165,30 @@ describe("formatFatAmount", () => {
     expect(formatFatAmount(2)).toBe("2 tsp");
     expect(formatFatAmount(3)).toBe("1 tbsp");
     expect(formatFatAmount(1.5)).toBe("1.5 tsp");
+  });
+});
+
+describe("formatFatEstimate", () => {
+  it("speaks tablespoons, with simple fractions when not whole", () => {
+    expect(
+      formatFatEstimate({ type: "oil", amount_tsp: 3, kcal_per_tsp: null, fat_per_tsp: null }),
+    ).toBe("~1 tbsp oil");
+    expect(
+      formatFatEstimate({ type: "ghee", amount_tsp: 6, kcal_per_tsp: null, fat_per_tsp: null }),
+    ).toBe("~2 tbsp ghee");
+    expect(
+      formatFatEstimate({ type: "butter", amount_tsp: 1, kcal_per_tsp: null, fat_per_tsp: null }),
+    ).toBe("~1/3 tbsp butter");
+    expect(
+      formatFatEstimate({ type: "oil", amount_tsp: 2, kcal_per_tsp: null, fat_per_tsp: null }),
+    ).toBe("~2/3 tbsp oil");
+    expect(
+      formatFatEstimate({
+        type: "dressing",
+        amount_tsp: 1.5,
+        kcal_per_tsp: 30,
+        fat_per_tsp: 3,
+      }),
+    ).toBe("~1/2 tbsp dressing");
   });
 });
