@@ -90,9 +90,15 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
 
   return {
     async countCallsSince(since) {
+      // Scoped to the caller explicitly. RLS alone is not enough here: the select policy
+      // is "own or admin", so for the admin it returned every user's calls and, since the
+      // trial, every trial call (user_id null) too, and those counted against the admin's
+      // own daily limit. llm_call_budget(), which the screens read, already filters the
+      // same way, so the enforced count and the displayed one now agree.
       const { count, error } = await client
         .from("llm_calls")
         .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
         .gte("created_at", since.toISOString());
       if (error) fail("llm_calls count", error);
       return count ?? 0;

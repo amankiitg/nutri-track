@@ -115,14 +115,19 @@ function newRecording(): Recorded {
 }
 
 describe("countCallsSince", () => {
-  it("counts llm_calls since the given instant, with a count-only request", async () => {
+  it("counts the caller's own llm_calls since the given instant, with a count-only request", async () => {
     const recorded = newRecording();
     const store = createCallerStore(fakeClient(recorded, { count: 7 }), "user-1");
 
     expect(await store.countCallsSince(new Date("2026-03-02T05:00:00.000Z"))).toBe(7);
     expect(recorded.table).toBe("llm_calls");
     expect(recorded.head).toBe(true);
-    expect(recorded.filters).toEqual([["created_at", "2026-03-02T05:00:00.000Z"]]);
+    // The user_id filter is what keeps the admin's limit from counting everyone else's
+    // calls and every trial call: the select policy lets the admin see all of them.
+    expect(recorded.filters).toEqual([
+      ["user_id", "user-1"],
+      ["created_at", "2026-03-02T05:00:00.000Z"],
+    ]);
   });
 
   it("reports zero rather than null when Supabase returns no count", async () => {
