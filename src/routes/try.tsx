@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandMark } from "@/components/app/BrandMark";
+import { TrialAlreadyAccess, TrialLinkExpired } from "@/components/trial/LinkStates";
 import { preparePhoto } from "@/lib/capture";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { requestInvite, type InviteResult } from "@/lib/invite-request";
@@ -29,6 +30,7 @@ import {
   parseTrialMeal,
   sendTrialCode,
   storeTrial,
+  TrialRequestError,
   verifyTrialCode,
   type TrialParseResult,
   type TrialPhoto,
@@ -39,8 +41,15 @@ export const Route = createFileRoute("/try")({
   component: TrialPage,
 });
 
-export function TrialPage() {
+/** A personal link (/t/<token>) that has already been verified and stored. */
+export interface TrialLinkProps {
+  firstName: string | null;
+}
+
+export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   const siteKey = turnstileSiteKey();
+  // A personal link has no email, code or Turnstile step, so it does not need the site key.
+  const available = link !== undefined || siteKey !== null;
 
   // The returning-visitor fast path, resolved in an effect because localStorage is not
   // readable while server-rendering.
@@ -53,6 +62,7 @@ export function TrialPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [alreadyAccess, setAlreadyAccess] = useState(false);
+  const [linkExpired, setLinkExpired] = useState(false);
 
   const [result, setResult] = useState<TrialParseResult | null>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
@@ -76,7 +86,7 @@ export function TrialPage() {
   // The per-mailbox scan limit, read from the server so the page never hardcodes a
   // number. Without it the funnel cannot be shown, so a failed read means unavailable.
   useEffect(() => {
-    if (siteKey === null) return;
+    if (!available) return;
     let cancelled = false;
     void getTrialScansLimit()
       .then((limit) => {
@@ -88,7 +98,7 @@ export function TrialPage() {
     return () => {
       cancelled = true;
     };
-  }, [siteKey]);
+  }, [available]);
 
   // Render the Turnstile widget once, when the email step is showing and there is a key.
   useEffect(() => {
@@ -198,6 +208,28 @@ export function TrialPage() {
       setResult(outcome);
       setScansLeft(outcome.scans_left);
     } catch (caught) {
+      const code = caught instanceof TrialRequestError ? caught.code : null;
+      if (code === "trial_exhausted") {
+        // Out of scans already (say, a link reopened after the tenth): the wall, not an alert.
+        setScansLeft(0);
+        return;
+      }
+      if (code === "trial_already_access") {
+        setAlreadyAccess(true);
+        return;
+      }
+      if (code === "trial_link_expired") {
+        clearTrial();
+        setStored(null);
+        if (link !== undefined) {
+          setLinkExpired(true);
+        } else {
+          // The code flow can simply start again: a new code issues a token for the current version.
+          setStep("email");
+          setError("Your trial has ended. Enter your email to start again.");
+        }
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "Could not analyse that meal.");
     } finally {
       setBusy(false);
@@ -216,7 +248,10 @@ export function TrialPage() {
     }
   }, [email, firstName]);
 
-  if (siteKey === null || limitFailed) {
+  if (linkExpired) return <TrialLinkExpired />;
+  if (link !== undefined && alreadyAccess) return <TrialAlreadyAccess email={email} />;
+
+  if (!available || limitFailed) {
     return (
       <main className="paper-grain flex min-h-dvh flex-col">
         <div className="app-shell my-auto py-10">
@@ -249,11 +284,22 @@ export function TrialPage() {
         </Link>
 
         <div className="my-auto animate-rise py-10">
-          <h1 className="text-3xl font-semibold">Free trial</h1>
-          <p className="mt-2 text-muted-foreground">
-            Try NutriTrack free. We&apos;ll email you a code to start. Trial results aren&apos;t
-            saved.
-          </p>
+          {link === undefined ? (
+            <>
+              <h1 className="text-3xl font-semibold">Free trial</h1>
+              <p className="mt-2 text-muted-foreground">
+                Try NutriTrack free. We&apos;ll email you a code to start. Trial results aren&apos;t
+                saved.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-semibold">Hi {link.firstName ?? "there"}, try a meal</h1>
+              <p className="mt-2 text-muted-foreground">
+                Snap your plate or type what you ate. Trial results aren&apos;t saved.
+              </p>
+            </>
+          )}
 
           {alreadyAccess && (
             <div className="mt-6 rounded-xl border border-border bg-muted/40 p-4 text-sm">
@@ -469,15 +515,30 @@ export function TrialPage() {
                 </Button>
               )}
 
-              {inviteResult !== null && inviteResult !== "rate_limited" && (
+              {inviteResult === "already_invited" && (
                 <p
                   role="status"
                   className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
                 >
-                  Request sent. We&apos;ll email you at <strong>{email}</strong> when you&apos;re
-                  approved.
+                  You&apos;re already invited.{" "}
+                  <Link to="/auth" search={{ email }} className="underline">
+                    Sign up with {email}
+                  </Link>{" "}
+                  to keep tracking.
                 </p>
               )}
+
+              {inviteResult !== null &&
+                inviteResult !== "rate_limited" &&
+                inviteResult !== "already_invited" && (
+                  <p
+                    role="status"
+                    className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+                  >
+                    Request sent. We&apos;ll email you at <strong>{email}</strong> when you&apos;re
+                    approved.
+                  </p>
+                )}
 
               {inviteResult === "rate_limited" && (
                 <p role="alert" className="text-sm text-destructive">

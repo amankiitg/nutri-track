@@ -23,6 +23,7 @@ import { Route as AuthCallbackRouteImport } from './routes/auth_.callback'
 import { Route as AuthRequestRouteImport } from './routes/auth_.request'
 import { Route as AuthResetRouteImport } from './routes/auth_.reset'
 import { Route as AuthWelcomeRouteImport } from './routes/auth_.welcome'
+import { Route as TTokenRouteImport } from './routes/t.$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -93,6 +94,11 @@ const AuthWelcomeRoute = AuthWelcomeRouteImport.update({
   path: '/auth/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TTokenRoute = TTokenRouteImport.update({
+  id: '/t/$token',
+  path: '/t/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/auth/request': typeof AuthRequestRoute
   '/auth/reset': typeof AuthResetRoute
   '/auth/welcome': typeof AuthWelcomeRoute
+  '/t/$token': typeof TTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/auth/request': typeof AuthRequestRoute
   '/auth/reset': typeof AuthResetRoute
   '/auth/welcome': typeof AuthWelcomeRoute
+  '/t/$token': typeof TTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/auth_/request': typeof AuthRequestRoute
   '/auth_/reset': typeof AuthResetRoute
   '/auth_/welcome': typeof AuthWelcomeRoute
+  '/t/$token': typeof TTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/auth/request'
     | '/auth/reset'
     | '/auth/welcome'
+    | '/t/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/auth/request'
     | '/auth/reset'
     | '/auth/welcome'
+    | '/t/$token'
   id:
     | '__root__'
     | '/'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/auth_/request'
     | '/auth_/reset'
     | '/auth_/welcome'
+    | '/t/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -201,6 +213,7 @@ export interface RootRouteChildren {
   AuthRequestRoute: typeof AuthRequestRoute
   AuthResetRoute: typeof AuthResetRoute
   AuthWelcomeRoute: typeof AuthWelcomeRoute
+  TTokenRoute: typeof TTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -303,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthWelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/t/$token': {
+      id: '/t/$token'
+      path: '/t/$token'
+      fullPath: '/t/$token'
+      preLoaderRoute: typeof TTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -334,6 +354,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRequestRoute: AuthRequestRoute,
   AuthResetRoute: AuthResetRoute,
   AuthWelcomeRoute: AuthWelcomeRoute,
+  TTokenRoute: TTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

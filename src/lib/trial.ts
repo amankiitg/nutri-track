@@ -100,6 +100,52 @@ const trialSettingsSchema = z.object({
 });
 
 /** The per-mailbox scan limit, read from the server so the page never hardcodes it. */
+/**
+ * A refusal from the trial service, with its code: `trial_exhausted`, `trial_link_expired` and
+ * `trial_already_access` each draw a different screen, and a message is not something to match.
+ */
+export class TrialRequestError extends Error {
+  readonly code: string | null;
+  constructor(message: string, code: string | null) {
+    super(message);
+    this.name = "TrialRequestError";
+    this.code = code;
+  }
+}
+
+/** What a personal trial link (/t/<token>) is worth, as the service answers it. */
+export type TrialLinkResult =
+  | {
+      status: "ok";
+      email: string;
+      firstName: string | null;
+      scansLeft: number;
+      scansTotal: number | null;
+    }
+  | { status: "already_access"; email: string }
+  | { status: "expired" };
+
+const trialLinkResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ok"),
+    email: z.string(),
+    firstName: z.string().nullable(),
+    scansLeft: z.number(),
+    scansTotal: z.number().nullable(),
+  }),
+  z.object({ status: z.literal("already_access"), email: z.string() }),
+  z.object({ status: z.literal("expired") }).passthrough(),
+]);
+
+/** Asks the service whether a personal link is still good. The token is the only credential. */
+export async function verifyTrialLink(token: string): Promise<TrialLinkResult> {
+  const response = await postTrial(trialUrl("/trial/link"), { token });
+  const parsed = trialLinkResponseSchema.safeParse(response);
+  if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
+  if (parsed.data.status === "expired") return { status: "expired" };
+  return parsed.data;
+}
+
 export async function getTrialScansLimit(): Promise<number> {
   const response = await getTrial(trialUrl("/trial/settings"));
   const parsed = trialSettingsSchema.safeParse(response);
@@ -219,7 +265,10 @@ async function readTrialResponse(response: Response): Promise<unknown> {
 
   if (!response.ok) {
     const envelope = parseApiError(text);
-    throw new Error(envelope?.message ?? "Could not start the trial. Try again.");
+    throw new TrialRequestError(
+      envelope?.message ?? "Could not start the trial. Try again.",
+      envelope?.code ?? null,
+    );
   }
 
   return json;
