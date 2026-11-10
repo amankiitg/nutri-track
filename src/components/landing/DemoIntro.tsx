@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Wordmark } from "@/components/app/BrandMark";
-import { DEMO_DURATION_MS } from "@/lib/intro";
+import { DEMO_DURATION_MS, DEMO_GIF, demoVideoSources } from "@/lib/intro";
 
 /** How long the intro takes to fade out; the landing page fades in over the same time. */
 export const INTRO_FADE_MS = 500;
@@ -9,16 +9,22 @@ export const INTRO_FADE_MS = 500;
  * The landing page's opening: the vertical demo, full screen, with a Skip button.
  *
  * It ends on the video's own `ended`, on Skip, on a tap anywhere, or on Escape, and then
- * calls `onDone` once. The MP4 is tried first; if it cannot load or the browser refuses to
- * autoplay it (iOS Low Power Mode refuses even a muted video), the GIF takes its place,
- * and since a GIF loops and reports no end, a timer of the demo's length ends it instead.
+ * calls `onDone` once. The videos are tried in order: on data saver or a 3g-or-slower
+ * connection the short cut first (when the build found one), then the full MP4. A video that
+ * cannot load moves to the next one; when none is left, or the browser refuses to autoplay
+ * (iOS Low Power Mode refuses even a muted video), the GIF takes its place, and since a GIF
+ * loops and reports no end, a timer of the demo's length ends it instead.
  *
  * The media box is 4:5, the demo's own shape (1080x1350), sized by height: at most 75svh
  * tall, so 60svh wide, and never wider than the screen. object-contain on a cream ground,
  * so nothing is cropped and any letterbox matches the frame.
  */
 export function DemoIntro({ onDone }: { onDone: () => void }) {
-  const [media, setMedia] = useState<"mp4" | "gif">("mp4");
+  // Read once, on mount. The intro is only ever mounted in the browser, after the first paint.
+  const [sources] = useState(() => demoVideoSources());
+  const [source, setSource] = useState(0);
+  const media = source < sources.length ? "mp4" : "gif";
+  const videoSrc = sources[source];
   const [leaving, setLeaving] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const skipRef = useRef<HTMLButtonElement>(null);
@@ -44,10 +50,14 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
     // before asking, and treat a refusal as "this browser will not play it" -> the GIF.
     video.muted = true;
     const attempt = video.play() as Promise<void> | undefined;
-    attempt?.catch(() => {
-      if (!doneRef.current) setMedia("gif");
+    attempt?.catch((error: unknown) => {
+      // Only a refusal to autoplay goes straight to the GIF: the next video would be refused
+      // too. A file that cannot load also rejects play(), with another name, and its `error`
+      // event moves on to the next source instead.
+      const refused = error instanceof DOMException && error.name === "NotAllowedError";
+      if (refused && !doneRef.current) setSource(sources.length);
     });
-  }, [media]);
+  }, [media, videoSrc, sources.length]);
 
   useEffect(() => {
     if (media !== "gif") return;
@@ -96,8 +106,9 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
       <div className="aspect-[4/5] w-[min(100%,60svh)] overflow-hidden rounded-3xl bg-[oklch(0.975_0.012_85)] shadow-[0_18px_50px_-20px_rgb(0_0_0/0.35)]">
         {media === "mp4" ? (
           <video
+            key={videoSrc}
             ref={videoRef}
-            src="/demo/meal-demo.mp4"
+            src={videoSrc}
             poster="/demo/meal-demo-poster.png"
             autoPlay
             muted
@@ -107,12 +118,12 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
             className="h-full w-full object-contain"
             onEnded={finish}
             onError={() => {
-              if (!doneRef.current) setMedia("gif");
+              if (!doneRef.current) setSource((index) => index + 1);
             }}
           />
         ) : (
           <img
-            src="/demo/meal-demo.gif"
+            src={DEMO_GIF}
             alt="A meal photo becoming calories and macros in NutriTrack"
             className="h-full w-full object-contain"
             onError={finish}

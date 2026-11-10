@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
@@ -118,6 +120,12 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   for (const [key, value] of Object.entries(env)) {
     envDefine[`import.meta.env.${key}`] = JSON.stringify(value);
   }
+  // Whether the short landing demo exists, decided when the bundle is built. The intro only
+  // asks for it on a slow connection, and asking for a file that is not there would cost
+  // exactly that visitor a round trip to a 404. Adding the file and redeploying turns it on.
+  envDefine["import.meta.env.DEMO_SHORT_MP4"] = JSON.stringify(
+    existsSync(join(projectRoot, "public", "demo", "meal-demo-short.mp4")) ? "1" : "",
+  );
 
   // Only the production build, which is the one that gets deployed. `build:dev` is for
   // looking at a local bundle and is expected to point at a local service.
