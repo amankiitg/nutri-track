@@ -1,6 +1,7 @@
 /**
- * The trial page's two refusals: an invited address is sent to sign in, and a visitor
- * who has used all ten scans meets the wall that asks for an invite.
+ * The meal-first trial page: the visitor starts at the meal step, and only after the
+ * 6-digit code is verified does the meal get analysed. These cover the photo and the
+ * typed paths, the reload that keeps the meal, and the invited/uninvited end screens.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -12,20 +13,30 @@ const mocks = vi.hoisted(() => ({
   sendTrialCode: vi.fn(),
   verifyTrialCode: vi.fn(),
   parseTrialMeal: vi.fn(),
-  getStoredTrial: vi.fn(),
   getTrialScansLimit: vi.fn(),
+  preparePhoto: vi.fn(),
   requestInvite: vi.fn(),
+  turnstileCallback: null as ((token: string) => void) | null,
 }));
 
-vi.mock("@/lib/trial", () => ({
-  getStoredTrial: (...args: unknown[]) => mocks.getStoredTrial(...args),
-  storeTrial: vi.fn(),
-  clearTrial: vi.fn(),
-  sendTrialCode: (...args: unknown[]) => mocks.sendTrialCode(...args),
-  verifyTrialCode: (...args: unknown[]) => mocks.verifyTrialCode(...args),
-  parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
-  getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
-}));
+vi.mock("@/lib/trial", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/trial")>();
+  return {
+    ...actual,
+    sendTrialCode: (...args: unknown[]) => mocks.sendTrialCode(...args),
+    verifyTrialCode: (...args: unknown[]) => mocks.verifyTrialCode(...args),
+    parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
+    getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
+  };
+});
+
+vi.mock("@/lib/capture", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/capture")>();
+  return {
+    ...actual,
+    preparePhoto: (...args: unknown[]) => mocks.preparePhoto(...args),
+  };
+});
 
 vi.mock("@/lib/invite-request", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/invite-request")>();
@@ -40,9 +51,11 @@ vi.mock("@/lib/turnstile", () => ({
   loadTurnstile: async () => {},
   turnstileApi: () => ({
     render: (_el: HTMLElement, options: Record<string, unknown>) => {
-      const callback = options["callback"] as (token: string) => void;
-      callback("test-token");
+      mocks.turnstileCallback = options["callback"] as (token: string) => void;
       return "widget-1";
+    },
+    execute: () => {
+      mocks.turnstileCallback?.("test-token");
     },
     remove: () => {},
   }),
@@ -57,8 +70,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-// The page renders router <Link>s; render them as plain anchors rather than stand up a
-// full router for a two-case test.
+// The page renders router <Link>s; render them as plain anchors carrying the email.
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   const ReactModule = await import("react");
@@ -66,31 +78,46 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     ...actual,
     Link: ({
       to,
+      search,
       children,
       className,
     }: {
       to: string;
+      search?: { email?: string };
       children?: React.ReactNode;
       className?: string;
-    }) => ReactModule.createElement("a", { href: to, className }, children),
+    }) =>
+      ReactModule.createElement(
+        "a",
+        { href: search?.email ? to + "?email=" + search.email : to, className },
+        children,
+      ),
   };
 });
 
 beforeEach(() => {
-  mocks.sendTrialCode.mockReset();
-  mocks.verifyTrialCode.mockReset();
-  mocks.parseTrialMeal.mockReset();
-  mocks.getStoredTrial.mockReset();
-  mocks.getStoredTrial.mockReturnValue(null);
-  mocks.getTrialScansLimit.mockReset();
+  localStorage.clear();
+  sessionStorage.clear();
+  for (const mock of Object.values(mocks)) {
+    if (typeof mock === "function") (mock as { mockReset?: () => void }).mockReset?.();
+  }
+  mocks.turnstileCallback = null;
   mocks.getTrialScansLimit.mockResolvedValue(10);
-  mocks.requestInvite.mockReset();
   mocks.requestInvite.mockResolvedValue("requested");
 });
 
 function parsedWith(scansLeft: number) {
   return {
-    items: [],
+    items: [
+      {
+        name: "Dal",
+        calories: 300,
+        protein_g: 12,
+        carbs_g: 40,
+        fat_g: 8,
+        cooking_fat: null,
+      },
+    ],
     scans_left: scansLeft,
     meal_type: "lunch",
     source: "text",
@@ -99,68 +126,31 @@ function parsedWith(scansLeft: number) {
   };
 }
 
-describe("the trial page", () => {
-  it("opens with the intro and no scan count up front", async () => {
+async function finishCodeStep(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText("Email"), "trial@example.com");
+  await user.click(screen.getByRole("button", { name: /email me a code/i }));
+  await user.type(screen.getByLabelText("Code"), "123456");
+  await user.click(screen.getByRole("button", { name: /continue/i }));
+}
+
+describe("the meal-first trial page", () => {
+  it("opens at the meal step, not the email form", async () => {
     render(<TrialPage />);
 
-    expect(
-      await screen.findByText(
-        "Try NutriTrack free. We'll email you a code to start. Trial results aren't saved.",
-      ),
-    ).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/\bscans?\b/i);
-    expect(document.body.textContent).not.toContain("10");
+    expect(await screen.findByRole("heading", { name: "Try a meal" })).toBeTruthy();
+    expect(screen.getByPlaceholderText(/type what you ate/i)).toBeTruthy();
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(mocks.sendTrialCode).not.toHaveBeenCalled();
   });
 
-  it("shows the scans left only at 3 and at 1", async () => {
-    mocks.getStoredTrial.mockReturnValue({ token: "token-1", email: "trial@example.com" });
-    render(<TrialPage />);
-    const user = userEvent.setup();
-
-    const seen: Array<[number, string | null]> = [];
-    for (const left of [9, 3, 2, 1]) {
-      mocks.parseTrialMeal.mockResolvedValueOnce(parsedWith(left));
-      await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
-      await user.click(screen.getByRole("button", { name: /analyse/i }));
-      await screen.findByRole("button", { name: /scan another meal/i });
-      seen.push([left, screen.queryByRole("status")?.textContent ?? null]);
-      expect(document.body.textContent).not.toMatch(/scans left:/i);
-      await user.click(screen.getByRole("button", { name: /scan another meal/i }));
-    }
-
-    expect(seen).toEqual([
-      [9, null],
-      [3, "3 scans left. Join to keep tracking."],
-      [2, null],
-      [1, "1 scan left. Join to keep tracking."],
-    ]);
-  });
-
-  it("sends an invited address to sign in instead of starting a trial", async () => {
+  it("analyses typed text only after the code is verified, without retyping", async () => {
     mocks.sendTrialCode.mockResolvedValue({
-      status: "already_access",
-      email: "invited@example.com",
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
     });
-
-    render(<TrialPage />);
-    const user = userEvent.setup();
-    await user.type(await screen.findByLabelText("Email"), "invited@example.com");
-    await user.click(screen.getByRole("button", { name: /email me a code/i }));
-
-    expect(await screen.findByText("You already have access.")).toBeTruthy();
-    expect(mocks.sendTrialCode).toHaveBeenCalledWith("invited@example.com", "", expect.any(String));
-  });
-
-  it("shows the wall and asks for an invite when the scans run out", async () => {
-    mocks.getStoredTrial.mockReturnValue({ token: "token-1", email: "trial@example.com" });
-    mocks.parseTrialMeal.mockResolvedValue({
-      items: [],
-      scans_left: 0,
-      meal_type: "lunch",
-      source: "text",
-      model: "fake",
-      attempts: 1,
-    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
 
     render(<TrialPage />);
     const user = userEvent.setup();
@@ -168,12 +158,201 @@ describe("the trial page", () => {
     await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
     await user.click(screen.getByRole("button", { name: /analyse/i }));
 
-    expect(await screen.findByText(/used your 10 free scans/i)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: /request an invite/i }));
+    // No analysis before the email and code.
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
 
-    expect(mocks.requestInvite).toHaveBeenCalledWith(
-      "trial@example.com",
-      expect.objectContaining({ fromTrial: true }),
+    expect(
+      await screen.findByRole("heading", { name: "Enter your email to see your results" }),
+    ).toBeTruthy();
+    await finishCodeStep(user);
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledTimes(1);
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "token-1", text: "dal and roti" }),
     );
+  });
+
+  it("analyses a photo after the email and code, without re-picking it", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+    mocks.preparePhoto.mockResolvedValue({
+      blob: { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer },
+      sha256: "abc",
+      width: 100,
+      height: 100,
+      bytes: 3,
+    });
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+
+    const file = new File(["x"], "plate.jpg", { type: "image/jpeg" });
+    await user.upload(screen.getByLabelText(/snap or upload a photo/i), file);
+
+    expect(
+      await screen.findByRole("heading", { name: "Enter your email to see your results" }),
+    ).toBeTruthy();
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
+
+    await finishCodeStep(user);
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: "token-1",
+        photos: [{ base64: expect.any(String), mimeType: "image/jpeg" }],
+      }),
+    );
+  });
+
+  it("keeps the meal across a reload during the code step", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+
+    const first = render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await user.type(screen.getByLabelText("Email"), "trial@example.com");
+    await user.click(screen.getByRole("button", { name: /email me a code/i }));
+    expect(await screen.findByRole("heading", { name: "Enter the code" })).toBeTruthy();
+
+    // Reload: remount. sessionStorage still holds the pending meal and the code step.
+    first.unmount();
+    render(<TrialPage />);
+
+    expect(await screen.findByRole("heading", { name: "Enter the code" })).toBeTruthy();
+    await user.type(screen.getByLabelText("Code"), "123456");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "dal and roti" }),
+    );
+  });
+
+  it("never calls the parser before the code is verified", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Email"), "trial@example.com");
+    await user.click(screen.getByRole("button", { name: /email me a code/i }));
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Code"), "123456");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    expect(mocks.parseTrialMeal).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives an invited address a code and a trial, with the sign-in line under results", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "invited@example.com",
+      invited: true,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await user.type(screen.getByLabelText("Email"), "invited@example.com");
+    await user.click(screen.getByRole("button", { name: /email me a code/i }));
+    await user.type(screen.getByLabelText("Code"), "123456");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    const signInLink = screen.getByRole("link", { name: "Sign in" });
+    expect(signInLink.getAttribute("href")).toBe("/auth?email=invited@example.com");
+    expect(signInLink.closest("p")?.textContent).toContain("You're invited");
+  });
+
+  it("leads an invited address to sign in when the trial runs out", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "invited@example.com",
+      invited: true,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(0));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await user.type(screen.getByLabelText("Email"), "invited@example.com");
+    await user.click(screen.getByRole("button", { name: /email me a code/i }));
+    await user.type(screen.getByLabelText("Code"), "123456");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByRole("heading", { name: /Your trial is done/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
+      "/auth?email=invited@example.com",
+    );
+    expect(screen.queryByRole("button", { name: /request an invite/i })).toBeNull();
+  });
+
+  it("asks an uninvited visitor for an invite when the trial runs out", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(0));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await user.type(screen.getByLabelText("Email"), "trial@example.com");
+    await user.click(screen.getByRole("button", { name: /email me a code/i }));
+    await user.type(screen.getByLabelText("Code"), "123456");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(await screen.findByRole("heading", { name: /used your 10 free scans/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /request an invite/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
+
+  it("analyses straight away for a returning visitor with a stored token", async () => {
+    localStorage.setItem("nutritrack-trial-token", "token-1");
+    localStorage.setItem("nutritrack-trial-email", "trial@example.com");
+    localStorage.setItem("nutritrack-trial-invited", "0");
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "token-1", text: "dal" }),
+    );
+    expect(mocks.sendTrialCode).not.toHaveBeenCalled();
   });
 });

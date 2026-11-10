@@ -39,20 +39,3 @@ export function TrialLinkExpired() {
     </Frame>
   );
 }
-
-/** The address already has an account, so the trial has nothing to offer it. */
-export function TrialAlreadyAccess({ email }: { email: string }) {
-  return (
-    <Frame>
-      <h1 className="mt-6 text-3xl font-semibold">You already have access</h1>
-      <p className="mt-3 max-w-sm text-muted-foreground">
-        Sign in with {email} to log your meals and see your day.
-      </p>
-      <Button asChild size="lg" className="mt-8 h-12 w-full rounded-full text-base">
-        <Link to="/auth" search={{ email }}>
-          Sign in
-        </Link>
-      </Button>
-    </Frame>
-  );
-}

@@ -14,7 +14,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { BrandMark } from "@/components/app/BrandMark";
-import { TrialAlreadyAccess, TrialLinkExpired } from "@/components/trial/LinkStates";
+import { TrialLinkExpired } from "@/components/trial/LinkStates";
 import { storeTrial, verifyTrialLink } from "@/lib/trial";
 import { TrialPage } from "./try";
 
@@ -33,7 +33,6 @@ function TrialLinkRoute() {
 type LinkState =
   | { kind: "checking" }
   | { kind: "ready"; firstName: string | null }
-  | { kind: "already_access"; email: string }
   | { kind: "expired" }
   | { kind: "unreachable"; message: string };
 
@@ -46,10 +45,8 @@ export function TrialLink({ token }: { token: string }) {
       (result) => {
         if (!active) return;
         if (result.status === "ok") {
-          storeTrial({ token, email: result.email });
+          storeTrial({ token, email: result.email, invited: result.invited });
           setState({ kind: "ready", firstName: result.firstName });
-        } else if (result.status === "already_access") {
-          setState({ kind: "already_access", email: result.email });
         } else {
           setState({ kind: "expired" });
         }
@@ -68,7 +65,6 @@ export function TrialLink({ token }: { token: string }) {
   }, [token]);
 
   if (state.kind === "ready") return <TrialPage link={{ firstName: state.firstName }} />;
-  if (state.kind === "already_access") return <TrialAlreadyAccess email={state.email} />;
   if (state.kind === "expired") return <TrialLinkExpired />;
 
   return (

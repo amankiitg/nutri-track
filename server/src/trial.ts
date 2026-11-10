@@ -40,8 +40,6 @@ export function trialExhaustedMessage(limit: number): string {
 export const TRIAL_LINK_EXPIRED_MESSAGE =
   "This trial link has expired. Email invites@tracknutri.app for a new one.";
 
-export const TRIAL_ALREADY_ACCESS_MESSAGE = "You already have access. Sign in to keep tracking.";
-
 /** Where a personal trial link points. The token is appended as the last path segment. */
 export const TRIAL_LINK_BASE = "https://tracknutri.app/t/";
 
@@ -52,6 +50,7 @@ const trialLinkStatusSchema = z.object({
   token_version: z.number().int().optional(),
   scans_left: z.number().optional(),
   scans_total: z.number().nullable().optional(),
+  invited: z.boolean().optional().default(false),
 });
 
 export type TrialLinkStatus = z.infer<typeof trialLinkStatusSchema>;
@@ -60,6 +59,8 @@ const trialSendResultSchema = z.object({
   status: z.string(),
   code: z.string().optional(),
   email: z.string().optional(),
+  /** True when the canonical email is on the invite list, so the page knows its end screen. */
+  invited: z.boolean().optional().default(false),
 });
 
 const trialScanResultSchema = z.object({
@@ -226,9 +227,6 @@ export function trialScanError(scan: TrialScanResult): ApiError {
   }
   if (scan.status === "revoked") {
     return new ApiError(401, "trial_link_expired", TRIAL_LINK_EXPIRED_MESSAGE);
-  }
-  if (scan.status === "already_access") {
-    return new ApiError(403, "trial_already_access", TRIAL_ALREADY_ACCESS_MESSAGE);
   }
   if (scan.status === "rate_limited") {
     return new ApiError(429, "trial_busy", "Trial is busy right now. Request an invite instead.", {

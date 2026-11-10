@@ -302,11 +302,7 @@ export function createApp(deps: AppDeps): Express {
         text: "Your NutriTrack trial code is " + result.code + ". It expires in 10 minutes.",
       });
       log("info", "trial code sent", { codePresent: true });
-      res.json({ status: "sent", email: result.email });
-      return;
-    }
-    if (result.status === "already_access") {
-      res.json({ status: "already_access", email: result.email ?? parsed.data.email });
+      res.json({ status: "sent", email: result.email, invited: result.invited ?? false });
       return;
     }
     if (result.status === "invalid") {
@@ -370,11 +366,8 @@ export function createApp(deps: AppDeps): Express {
         firstName: link.first_name ?? verified.firstName,
         scansLeft: link.scans_left ?? 0,
         scansTotal: link.scans_total ?? null,
+        invited: link.invited ?? false,
       });
-      return;
-    }
-    if (link.status === "already_access") {
-      res.json({ status: "already_access", email: verified.email });
       return;
     }
     res.json({ status: "expired", message: TRIAL_LINK_EXPIRED_MESSAGE });

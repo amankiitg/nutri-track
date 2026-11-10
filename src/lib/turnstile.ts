@@ -45,6 +45,8 @@ export function loadTurnstile(): Promise<void> {
 
 export interface TurnstileApi {
   render(element: HTMLElement, options: Record<string, unknown>): string;
+  /** Runs an invisible widget's challenge; the render callback receives the token. */
+  execute(widgetId: string): void;
   remove(widgetId: string): void;
 }
 

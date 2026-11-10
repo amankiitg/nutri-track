@@ -14,7 +14,7 @@ import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
 import { dailyLimitMessage, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
 import type { EmailClient } from "../src/resend";
-import type { TrialLinkStatus, TrialScanResult, TrialStore } from "../src/trial";
+import type { TrialLinkStatus, TrialScanResult, TrialSendResult, TrialStore } from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
 import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE } from "../../shared/invite-email";
 import { signTrialToken, TRIAL_TOKEN_TTL_SECONDS, verifyTrialToken } from "../src/trial-token";
@@ -81,6 +81,8 @@ interface HarnessOptions {
   linkStatus?: TrialLinkStatus;
   /** What trial_scan_start answers. */
   scanResult?: TrialScanResult;
+  /** What trial_send_code answers. */
+  sendResult?: TrialSendResult;
   /** The token version admin_trial_link_issue returns. */
   linkVersion?: number;
   /** Makes issuing a trial link fail, as a refused admin check would. */
@@ -88,6 +90,8 @@ interface HarnessOptions {
   /** Overrides for the invite feature's configuration. */
   gmail?: GmailDraftClient | null;
   inviteSender?: string | null;
+  /** The trial-code email client; null (default) makes the trial route report unavailable. */
+  email?: EmailClient | null;
   /** Overrides the whole configuration, for the limit variables. */
   config?: Config;
   /** Makes the model client fail the way an unreachable upstream does. */
@@ -197,7 +201,14 @@ function buildHarness(options: HarnessOptions = {}) {
   // routes gate on the trial secrets before they touch it.
   const trial: TrialStore = {
     async sendCode() {
-      return { status: "invalid", code: undefined, email: undefined };
+      return (
+        options.sendResult ?? {
+          status: "invalid",
+          code: undefined,
+          email: undefined,
+          invited: false,
+        }
+      );
     },
     async verifyCode() {
       return "no_code";
@@ -208,14 +219,14 @@ function buildHarness(options: HarnessOptions = {}) {
     },
     async linkStatus(email, version) {
       linkStatusCalls.push({ email, version });
-      return options.linkStatus ?? { status: "invalid" };
+      return options.linkStatus ?? { status: "invalid", invited: false };
     },
     async logCall() {},
     async getScansLimit() {
       return 10;
     },
   };
-  const email: EmailClient | null = null;
+  const email: EmailClient | null = options.email ?? null;
 
   const app = createApp({
     config: options.config ?? CONFIG,
@@ -1009,7 +1020,37 @@ const OK_LINK: TrialLinkStatus = {
   token_version: 2,
   scans_left: 10,
   scans_total: 10,
+  invited: true,
 };
+
+describe("POST /trial/send-code", () => {
+  it("verifies Turnstile, sends a code, and forwards the invited flag", async () => {
+    const sent: string[] = [];
+    const { app } = buildHarness({
+      config: TRIAL_CONFIG,
+      sendResult: { status: "sent", code: "123456", email: "invited@example.com", invited: true },
+      email: {
+        async send(message) {
+          sent.push(message.to);
+        },
+      },
+    });
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const response = await request(app)
+      .post("/trial/send-code")
+      .send({ email: "Invited@Example.com", firstName: "", turnstileToken: "turnstile-token" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "sent", email: "invited@example.com", invited: true });
+    expect(sent).toEqual(["invited@example.com"]);
+  });
+});
 
 describe("POST /trial/link", () => {
   it("answers ok with the name and scans for a valid link, checking its version", async () => {
@@ -1025,6 +1066,7 @@ describe("POST /trial/link", () => {
       firstName: "Priya",
       scansLeft: 10,
       scansTotal: 10,
+      invited: true,
     });
     expect(linkStatusCalls).toEqual([{ email: "priya@example.com", version: 2 }]);
   });
@@ -1058,22 +1100,14 @@ describe("POST /trial/link", () => {
   });
 
   it("answers expired for a revoked link", async () => {
-    const { app } = buildHarness({ config: TRIAL_CONFIG, linkStatus: { status: "revoked" } });
+    const { app } = buildHarness({
+      config: TRIAL_CONFIG,
+      linkStatus: { status: "revoked", invited: false },
+    });
     const response = await request(app)
       .post("/trial/link")
       .send({ token: linkToken("priya@example.com", { version: 1 }) });
     expect(response.body.status).toBe("expired");
-  });
-
-  it("sends somebody who already has an account to sign in", async () => {
-    const { app } = buildHarness({
-      config: TRIAL_CONFIG,
-      linkStatus: { status: "already_access", email: "priya@example.com" },
-    });
-    const response = await request(app)
-      .post("/trial/link")
-      .send({ token: linkToken("priya@example.com") });
-    expect(response.body).toEqual({ status: "already_access", email: "priya@example.com" });
   });
 
   it("answers 503 when the trial is not configured", async () => {
@@ -1108,19 +1142,6 @@ describe("POST /trial/parse with a personal link", () => {
       code: "trial_link_expired",
       message: "This trial link has expired. Email invites@tracknutri.app for a new one.",
     });
-    expect(completions).toEqual([]);
-  });
-
-  it("refuses a scan once the address has an account", async () => {
-    const { app, completions } = buildHarness({
-      config: TRIAL_CONFIG,
-      scanResult: { status: "already_access", scans_left: 0 },
-    });
-    const response = await request(app)
-      .post("/trial/parse")
-      .send(scanBody(linkToken("priya@example.com")));
-    expect(response.status).toBe(403);
-    expect(response.body.error.code).toBe("trial_already_access");
     expect(completions).toEqual([]);
   });
 

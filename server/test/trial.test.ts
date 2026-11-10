@@ -101,7 +101,7 @@ describe("parseTrialMeal", () => {
     const logged: Array<{ callId: string; model: string }> = [];
     const trial: TrialStore = {
       async sendCode() {
-        return { status: "sent", code: "123456", email: "x@example.com" };
+        return { status: "sent", code: "123456", email: "x@example.com", invited: false };
       },
       async verifyCode() {
         return "ok";
@@ -117,7 +117,7 @@ describe("parseTrialMeal", () => {
         return 10;
       },
       async linkStatus() {
-        return { status: "invalid" };
+        return { status: "invalid", invited: false };
       },
     };
 
@@ -132,7 +132,7 @@ describe("parseTrialMeal", () => {
   it("throws the exhausted error when the scan is refused", async () => {
     const trial: TrialStore = {
       async sendCode() {
-        return { status: "sent", code: "123456", email: "x@example.com" };
+        return { status: "sent", code: "123456", email: "x@example.com", invited: false };
       },
       async verifyCode() {
         return "ok";
@@ -145,7 +145,7 @@ describe("parseTrialMeal", () => {
         return 10;
       },
       async linkStatus() {
-        return { status: "invalid" };
+        return { status: "invalid", invited: false };
       },
     };
 

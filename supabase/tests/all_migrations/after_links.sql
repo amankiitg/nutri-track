@@ -149,7 +149,8 @@ commit;
 update public.trial_settings set daily_budget = 200;
 \echo 'ok - the daily trial budget still applies to a link'
 
--- Once the address has an account, the link and its scans are refused.
+-- Once the address has an account, the link and its scans still work: the "already have
+-- access" wall is gone, so an invited address that already signed up can still preview.
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b3', 'InvitedFriend@gmail.com');
 begin;
 set local role anon;
@@ -158,20 +159,63 @@ DECLARE
   v jsonb;
 BEGIN
   v := public.trial_link_status('links-secret', 'invited.friend@gmail.com', 1);
-  IF v->>'status' <> 'already_access' THEN RAISE EXCEPTION 'not ok - a link for an account answered %', v; END IF;
+  IF v->>'status' <> 'ok' OR (v->>'invited')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'not ok - a link for an account answered %', v;
+  END IF;
   v := public.trial_scan_start('links-secret', 'invited.friend@gmail.com', '198.51.100.1', 1);
-  IF v->>'status' <> 'already_access' THEN RAISE EXCEPTION 'not ok - a scan for an account answered %', v; END IF;
+  IF v->>'status' <> 'ok' THEN RAISE EXCEPTION 'not ok - a scan for an account answered %', v; END IF;
 END $$;
 commit;
-\echo 'ok - a link is blocked once the address has an account'
+\echo 'ok - an account can still preview with a link, and the link says the address is invited'
 
--- The code flow is unchanged: an invited address typed on /try is told it has access.
+-- An invited address typed on /try now gets a code and a trial, with the invited flag, not
+-- an "already access" refusal.
 insert into public.allowed_emails (email) values ('typed.invite@example.com') on conflict do nothing;
+begin;
+set local role anon;
 DO $$
 DECLARE
   v jsonb;
 BEGIN
   v := public.trial_send_code('links-secret', 'typed.invite@example.com', null, '198.51.100.9');
-  IF v->>'status' <> 'already_access' THEN RAISE EXCEPTION 'not ok - /try for an invited address answered %', v; END IF;
+  IF v->>'status' <> 'sent' OR (v->>'invited')::boolean IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'not ok - /try for an invited address answered %', v;
+  END IF;
 END $$;
-\echo 'ok - typing an invited address on /try still answers already_access'
+commit;
+\echo 'ok - typing an invited address on /try sends a code with the invited flag'
+
+-- One counter per person: the code route and the /t/ link spend from the same trial_users
+-- row. admin_trial_link_issue creates the row; trial_send_code reuses it (on conflict), so
+-- a scan before and after the code was sent decrements one count, not two.
+begin;
+set local role authenticated;
+set local "request.jwt.claims" = '{"sub":"00000000-0000-0000-0000-0000000000b1","role":"authenticated"}';
+DO $$ BEGIN PERFORM public.admin_trial_link_issue('Shared@Example.com', null); END $$;
+commit;
+begin;
+set local role anon;
+DO $$
+DECLARE
+  v jsonb;
+BEGIN
+  v := public.trial_link_status('links-secret', 'shared@example.com', 0);
+  IF v->>'status' <> 'ok' OR (v->>'scans_left')::int <> 10 THEN
+    RAISE EXCEPTION 'not ok - the shared row did not start at 10 scans: %', v;
+  END IF;
+
+  v := public.trial_send_code('links-secret', 'shared@example.com', null, '198.51.100.7');
+  IF v->>'status' <> 'sent' THEN RAISE EXCEPTION 'not ok - code for the shared address answered %', v; END IF;
+
+  -- Two scans, one count: the first leaves 9 and the second 8, not 9 and 9.
+  v := public.trial_scan_start('links-secret', 'shared@example.com', '198.51.100.7', 0);
+  IF v->>'status' <> 'ok' OR (v->>'scans_left')::int <> 9 THEN
+    RAISE EXCEPTION 'not ok - first shared scan answered %', v;
+  END IF;
+  v := public.trial_scan_start('links-secret', 'shared@example.com', '198.51.100.7', 0);
+  IF v->>'status' <> 'ok' OR (v->>'scans_left')::int <> 8 THEN
+    RAISE EXCEPTION 'not ok - second shared scan answered %', v;
+  END IF;
+END $$;
+commit;
+\echo 'ok - the code and link routes share one trial_users row (one scan counter)'

@@ -1,6 +1,7 @@
 /**
- * A personal trial link, opened: straight to the capture step for a good link, and the right
- * screen for every way it can be refused, before or after the first scan.
+ * A personal trial link, opened: straight to the meal step for a good link, the sign-in
+ * wall when the invited trial runs out, and the right screen for every way it can be
+ * refused before or after the first scan.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -64,7 +65,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     }) =>
       ReactModule.createElement(
         "a",
-        { href: search?.email ? `${to}?email=${search.email}` : to, className },
+        { href: search?.email ? to + "?email=" + search.email : to, className },
         children,
       ),
   };
@@ -94,6 +95,7 @@ function parsed(scansLeft: number) {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.getTrialScansLimit.mockResolvedValue(10);
   mocks.verifyTrialLink.mockResolvedValue({
@@ -102,6 +104,7 @@ beforeEach(() => {
     firstName: "Priya",
     scansLeft: 10,
     scansTotal: 10,
+    invited: true,
   });
   mocks.requestInvite.mockResolvedValue("requested");
 });
@@ -112,7 +115,7 @@ async function scanOnce(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("a valid personal link", () => {
-  it("greets the person and opens the capture step, with no email, code or Turnstile", async () => {
+  it("greets the person and opens the meal step, with no email, code or Turnstile", async () => {
     render(<TrialLink token={TOKEN} />);
 
     expect(await screen.findByRole("heading", { name: "Hi Priya, try a meal" })).toBeTruthy();
@@ -124,6 +127,7 @@ describe("a valid personal link", () => {
     // Stored where the code flow stores its token, so the scans that follow are ordinary trial scans.
     expect(localStorage.getItem("nutritrack-trial-token")).toBe(TOKEN);
     expect(localStorage.getItem("nutritrack-trial-email")).toBe("priya@example.com");
+    expect(localStorage.getItem("nutritrack-trial-invited")).toBe("1");
   });
 
   it("says Hi there when the admin gave no name", async () => {
@@ -133,12 +137,13 @@ describe("a valid personal link", () => {
       firstName: null,
       scansLeft: 10,
       scansTotal: 10,
+      invited: true,
     });
     render(<TrialLink token={TOKEN} />);
     expect(await screen.findByRole("heading", { name: "Hi there, try a meal" })).toBeTruthy();
   });
 
-  it("scans with the link's token, warns at 3 and at 1, and walls at 0", async () => {
+  it("scans with the link's token, warns at 3 and at 1, and leads to sign in at 0", async () => {
     render(<TrialLink token={TOKEN} />);
     const user = userEvent.setup();
 
@@ -160,35 +165,31 @@ describe("a valid personal link", () => {
 
     mocks.parseTrialMeal.mockResolvedValueOnce(parsed(0));
     await scanOnce(user);
-    expect(await screen.findByText(/used your 10 free scans/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /request an invite/i })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Your trial is done/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
+      "/auth?email=priya@example.com",
+    );
   });
 
-  it("shows the wall, not an alert, when the link is reopened with no scans left", async () => {
+  it("shows the sign-in wall, not an alert, when the link is reopened with no scans left", async () => {
     render(<TrialLink token={TOKEN} />);
     mocks.parseTrialMeal.mockRejectedValueOnce(
       new TrialRequestError("You've used your 10 free scans.", "trial_exhausted"),
     );
     await scanOnce(userEvent.setup());
-    expect(
-      await screen.findByText(/used your 10 free scans\. Join to keep tracking/i),
-    ).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Your trial is done/ })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("tells an invited person at the wall to sign up, not that a request was sent", async () => {
-    mocks.requestInvite.mockResolvedValue("already_invited");
+  it("shows the sign-in line under results for an invited address", async () => {
     render(<TrialLink token={TOKEN} />);
-    const user = userEvent.setup();
-    mocks.parseTrialMeal.mockResolvedValueOnce(parsed(0));
-    await scanOnce(user);
-    await user.click(await screen.findByRole("button", { name: /request an invite/i }));
+    mocks.parseTrialMeal.mockResolvedValueOnce(parsed(9));
+    await scanOnce(userEvent.setup());
+    await screen.findByRole("button", { name: /scan another meal/i });
 
-    expect(await screen.findByText(/You're already invited/)).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "Sign up with priya@example.com" }).getAttribute("href"),
-    ).toBe("/auth?email=priya@example.com");
-    expect(screen.queryByText(/Request sent/)).toBeNull();
+    const signInLink = screen.getByRole("link", { name: "Sign in" });
+    expect(signInLink.getAttribute("href")).toBe("/auth?email=priya@example.com");
+    expect(signInLink.closest("p")?.textContent).toContain("You're invited");
   });
 });
 
@@ -208,20 +209,6 @@ describe("a refused link", () => {
     expect(localStorage.getItem("nutritrack-trial-token")).toBeNull();
   });
 
-  it("already has an account: You already have access, and Sign in", async () => {
-    mocks.verifyTrialLink.mockResolvedValue({
-      status: "already_access",
-      email: "priya@example.com",
-    });
-    render(<TrialLink token={TOKEN} />);
-
-    expect(await screen.findByRole("heading", { name: "You already have access" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
-      "/auth?email=priya@example.com",
-    );
-    expect(localStorage.getItem("nutritrack-trial-token")).toBeNull();
-  });
-
   it("revoked after it was opened: the next scan shows the expired screen and forgets the token", async () => {
     render(<TrialLink token={TOKEN} />);
     mocks.parseTrialMeal.mockRejectedValueOnce(
@@ -232,16 +219,6 @@ describe("a refused link", () => {
     expect(await screen.findByRole("link", { name: "invites@tracknutri.app" })).toBeTruthy();
     expect(screen.getByText(/This trial link has expired/)).toBeTruthy();
     expect(localStorage.getItem("nutritrack-trial-token")).toBeNull();
-  });
-
-  it("an account made after it was opened: the next scan sends them to sign in", async () => {
-    render(<TrialLink token={TOKEN} />);
-    mocks.parseTrialMeal.mockRejectedValueOnce(
-      new TrialRequestError("You already have access.", "trial_already_access"),
-    );
-    await scanOnce(userEvent.setup());
-
-    expect(await screen.findByRole("heading", { name: "You already have access" })).toBeTruthy();
   });
 
   it("says what went wrong when the service cannot be reached", async () => {

@@ -11,6 +11,8 @@ import { parseApiError, parseMealUrl } from "@/lib/capture";
 
 const TRIAL_TOKEN_KEY = "nutritrack-trial-token";
 const TRIAL_EMAIL_KEY = "nutritrack-trial-email";
+const TRIAL_INVITED_KEY = "nutritrack-trial-invited";
+const PENDING_TRIAL_KEY = "nutritrack-pending-trial";
 
 function trialUrl(path: string): string {
   return parseMealUrl().replace(/\/parse-meal$/, "") + path;
@@ -20,14 +22,17 @@ function trialUrl(path: string): string {
 export interface StoredTrial {
   token: string;
   email: string;
+  /** Whether the mailbox is on the invite list, so a returning visitor still gets the right end screen. */
+  invited: boolean;
 }
 
 export function getStoredTrial(): StoredTrial | null {
   try {
     const token = localStorage.getItem(TRIAL_TOKEN_KEY);
     const email = localStorage.getItem(TRIAL_EMAIL_KEY);
+    const invited = localStorage.getItem(TRIAL_INVITED_KEY);
     if (token === null || token === "" || email === null) return null;
-    return { token, email };
+    return { token, email, invited: invited === "1" };
   } catch {
     return null;
   }
@@ -37,6 +42,7 @@ export function storeTrial(stored: StoredTrial): void {
   try {
     localStorage.setItem(TRIAL_TOKEN_KEY, stored.token);
     localStorage.setItem(TRIAL_EMAIL_KEY, stored.email);
+    localStorage.setItem(TRIAL_INVITED_KEY, stored.invited ? "1" : "0");
   } catch {
     // A private-browsing refusal is not worth failing the trial over.
   }
@@ -46,21 +52,23 @@ export function clearTrial(): void {
   try {
     localStorage.removeItem(TRIAL_TOKEN_KEY);
     localStorage.removeItem(TRIAL_EMAIL_KEY);
+    localStorage.removeItem(TRIAL_INVITED_KEY);
   } catch {
     // ignored
   }
 }
 
-export type SendCodeStatus = "sent" | "already_access";
-
 export interface SendCodeResult {
-  status: SendCodeStatus;
+  status: "sent";
   email: string;
+  /** True when the address is on the invite list: the page shows a sign-in line rather than a request-invite one. */
+  invited: boolean;
 }
 
 const sendCodeResponseSchema = z.object({
-  status: z.enum(["sent", "already_access"]),
+  status: z.literal("sent"),
   email: z.string(),
+  invited: z.boolean().default(false),
 });
 
 /** Step 1: ask the server for a code. The Turnstile token is checked server-side first. */
@@ -101,8 +109,8 @@ const trialSettingsSchema = z.object({
 
 /** The per-mailbox scan limit, read from the server so the page never hardcodes it. */
 /**
- * A refusal from the trial service, with its code: `trial_exhausted`, `trial_link_expired` and
- * `trial_already_access` each draw a different screen, and a message is not something to match.
+ * A refusal from the trial service, with its code: `trial_exhausted` and `trial_link_expired`
+ * each draw a different screen, and a message is not something to match.
  */
 export class TrialRequestError extends Error {
   readonly code: string | null;
@@ -121,8 +129,8 @@ export type TrialLinkResult =
       firstName: string | null;
       scansLeft: number;
       scansTotal: number | null;
+      invited: boolean;
     }
-  | { status: "already_access"; email: string }
   | { status: "expired" };
 
 const trialLinkResponseSchema = z.discriminatedUnion("status", [
@@ -132,8 +140,8 @@ const trialLinkResponseSchema = z.discriminatedUnion("status", [
     firstName: z.string().nullable(),
     scansLeft: z.number(),
     scansTotal: z.number().nullable(),
+    invited: z.boolean().default(false),
   }),
-  z.object({ status: z.literal("already_access"), email: z.string() }),
   z.object({ status: z.literal("expired") }).passthrough(),
 ]);
 
@@ -157,6 +165,61 @@ export async function getTrialScansLimit(): Promise<number> {
 export interface TrialPhoto {
   base64: string;
   mimeType: string;
+}
+
+/** The meal a visitor entered before proving their email, kept across a reload. */
+export type PendingTrialMeal =
+  { kind: "text"; text: string } | { kind: "photo"; photos: TrialPhoto[] };
+
+/** What to restore after the visitor left the tab to read their code. */
+export interface PendingTrial {
+  step: "email" | "code";
+  email: string;
+  firstName: string;
+  invited: boolean;
+  meal: PendingTrialMeal;
+}
+
+const pendingTrialSchema = z.object({
+  step: z.enum(["email", "code"]),
+  email: z.string(),
+  firstName: z.string(),
+  invited: z.boolean(),
+  meal: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("text"), text: z.string() }),
+    z.object({
+      kind: z.literal("photo"),
+      photos: z.array(z.object({ base64: z.string(), mimeType: z.string() })),
+    }),
+  ]),
+});
+
+/** sessionStorage, not localStorage: the meal is only needed for this one tab's reload. */
+export function savePendingTrial(pending: PendingTrial): void {
+  try {
+    sessionStorage.setItem(PENDING_TRIAL_KEY, JSON.stringify(pending));
+  } catch {
+    // Unwritable storage means the meal may be lost on a reload; nothing worse.
+  }
+}
+
+export function getPendingTrial(): PendingTrial | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_TRIAL_KEY);
+    if (raw === null) return null;
+    const parsed = pendingTrialSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingTrial(): void {
+  try {
+    sessionStorage.removeItem(PENDING_TRIAL_KEY);
+  } catch {
+    // ignored
+  }
 }
 
 export interface TrialParseInput {
