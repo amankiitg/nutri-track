@@ -15,6 +15,7 @@
     "test": "vitest run --config vitest.config.ts",
     "test:server": "npm test --prefix server",
     "test:invite": "npm test --prefix tools/invite",
+    "test:migrations": "bash supabase/tests/all_migrations_test.sh",
     "smoke": "npm run smoke --prefix server --",
     "sweep": "npm run sweep --prefix server --",
     "sweep:live": "npm run sweep:live --prefix server --",
