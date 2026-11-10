@@ -5,7 +5,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
 import { DemoIntro, INTRO_FADE_MS } from "@/components/landing/DemoIntro";
-import { markIntroSeen, shouldPlayIntro } from "@/lib/intro";
+import {
+  introDeadlinePassed,
+  LANDING_GATE_SCRIPT,
+  landingGate,
+  markIntroSeen,
+  openLandingGate,
+  shouldPlayIntro,
+} from "@/lib/intro";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,6 +29,8 @@ export const Route = createFileRoute("/")({
         content: "Photo-first calorie and nutrient tracking with a daily on-track verdict.",
       },
     ],
+    // Inline and first, so the page's visibility is decided before the app has downloaded.
+    scripts: [{ children: LANDING_GATE_SCRIPT }],
   }),
   component: Landing,
 });
@@ -29,31 +38,45 @@ export const Route = createFileRoute("/")({
 type Phase = "pending" | "intro" | "landing";
 
 /**
- * The landing page opens as an intro: the demo plays full screen, then fades to the page.
+ * The landing page opens as an intro when the demo can start in time, and is the page itself
+ * when it cannot.
  *
- * Nothing is decided while rendering. The server cannot know about the session (it lives
- * in localStorage) or about sessionStorage and reduced motion, so the first paint on both
- * sides is the page, present but invisible, and an effect decides: a signed-in visitor goes
- * to /today with no intro; otherwise the intro plays unless it already played in this
- * browser session or reduced motion is set, in which case the page simply appears.
+ * The page is server-rendered and shown by the gate on <html data-intro>, never by React state:
+ * the inline script in <head> (LANDING_GATE_SCRIPT) opens the gate at once for a visitor who will
+ * not get the intro, and at 3 s from page load otherwise, unless the demo has started playing by
+ * then. On a slow connection the app's JavaScript arrives long after that, so the page is already
+ * up when it does, and the app only confirms the gate is open.
+ *
+ * When the app loads in time it makes the same decision: a signed-in visitor goes to /today with
+ * no intro; a visitor who saw it this session, or prefers reduced motion, gets the page; anyone
+ * else gets the intro, which claims the screen only once its video is actually playing.
  */
 export function Landing() {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<Phase>("pending");
   const [introMounted, setIntroMounted] = useState(false);
+  /** The page-load intro has the 3 s deadline; a replay from "Watch the demo" does not. */
+  const [deadline, setDeadline] = useState(false);
 
-  const playIntro = useCallback(() => {
+  const playIntro = useCallback((onPageLoad: boolean) => {
     markIntroSeen();
+    setDeadline(onPageLoad);
     setIntroMounted(true);
     setPhase("intro");
+  }, []);
+
+  const showPage = useCallback(() => {
+    openLandingGate();
+    setPhase("landing");
   }, []);
 
   useEffect(() => {
     let active = true;
     const decide = () => {
       if (!active) return;
-      if (shouldPlayIntro()) playIntro();
-      else setPhase("landing");
+      const intro = shouldPlayIntro() && landingGate() !== "skip" && !introDeadlinePassed();
+      if (intro) playIntro(true);
+      else showPage();
     };
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
@@ -63,7 +86,7 @@ export function Landing() {
     return () => {
       active = false;
     };
-  }, [navigate, playIntro]);
+  }, [navigate, playIntro, showPage]);
 
   // The intro stays mounted while it fades out over the page, then goes.
   useEffect(() => {
@@ -72,19 +95,13 @@ export function Landing() {
     return () => window.clearTimeout(timer);
   }, [phase, introMounted]);
 
-  const finishIntro = useCallback(() => setPhase("landing"), []);
-  const shown = phase === "landing";
-
   return (
     <main className="paper-grain flex min-h-dvh flex-col">
-      {introMounted && <DemoIntro onDone={finishIntro} />}
-      {/* Keyed so the page's rise animation plays when it is revealed, not while hidden. */}
+      {introMounted && <DemoIntro onDone={showPage} deadline={deadline} />}
       <div
-        key={shown ? "shown" : "hidden"}
         data-testid="landing-page"
-        className={
-          "app-shell flex flex-1 flex-col justify-center py-16" + (shown ? "" : " invisible")
-        }
+        aria-hidden={phase === "intro" ? true : undefined}
+        className="landing-gate app-shell flex flex-1 flex-col justify-center py-16"
       >
         <div className="animate-rise">
           <BrandMark size={56} />
@@ -99,7 +116,7 @@ export function Landing() {
           </p>
           <button
             type="button"
-            onClick={playIntro}
+            onClick={() => playIntro(false)}
             className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4"
           >
             <Play className="size-3.5" aria-hidden="true" />

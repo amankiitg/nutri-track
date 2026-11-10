@@ -52,15 +52,76 @@ export function isSlowConnection(connection: ConnectionHint | undefined = naviga
 }
 
 /**
- * The videos to try, in order. The GIF is not in this list: it is the last fallback, taken when
- * every video here fails or the browser refuses to autoplay one.
+ * What the intro may play, in order, and whether the GIF may stand in when no video plays.
+ *
+ * On data saver or a 3g-or-slower connection: the short cut only, and never the GIF (2.7 MB is
+ * not something to start downloading for a visitor whose connection is already the problem).
+ * If that cut is missing from the build, the full video is the one tried. On any other
+ * connection: the full video, then the GIF.
  */
-export function demoVideoSources(
+export function demoMedia(
   shortAvailable: boolean = DEMO_SHORT_AVAILABLE,
   slow: boolean = isSlowConnection(),
-): string[] {
-  return shortAvailable && slow ? [DEMO_SHORT_MP4, DEMO_MP4] : [DEMO_MP4];
+): { videos: string[]; allowGif: boolean } {
+  if (slow) return { videos: [shortAvailable ? DEMO_SHORT_MP4 : DEMO_MP4], allowGif: false };
+  return { videos: [DEMO_MP4], allowGif: true };
 }
+
+/**
+ * The intro has this long from page load to be playing; after that the landing page shows.
+ * 3 s, chosen rather than measured: the point is a bound, so that no connection waits on the
+ * demo to see the page. Page load is navigation start, which is what performance.now() counts
+ * from, so the bound includes the time spent downloading the app itself.
+ */
+export const INTRO_START_DEADLINE_MS = 3_000;
+
+/** The clock the deadline reads. An object so a test can set it. */
+export const pageClock = { now: (): number => performance.now() };
+
+export function introDeadlinePassed(): boolean {
+  return pageClock.now() >= INTRO_START_DEADLINE_MS;
+}
+
+/**
+ * The landing page's visibility, kept on <html data-intro> rather than in React state, because
+ * the decision has to be made before the app's JavaScript has arrived (on a slow connection
+ * that takes far longer than 3 s). styles.css hides `.landing-gate` until the value is "skip".
+ *
+ *   pending  the gate script ran and the 3 s are counting
+ *   playing  the demo started in time; the intro owns the screen
+ *   skip     the landing page shows
+ */
+export function landingGate(): string | undefined {
+  return document.documentElement.dataset["intro"];
+}
+
+export function openLandingGate(): void {
+  document.documentElement.dataset["intro"] = "skip";
+}
+
+/** Claims the screen for the intro, unless the gate has already opened. Returns whether it did. */
+export function claimLandingGate(): boolean {
+  if (landingGate() === "skip") return false;
+  document.documentElement.dataset["intro"] = "playing";
+  return true;
+}
+
+/**
+ * Runs inline in the landing page's <head>, as soon as the HTML arrives and long before the app
+ * does. It opens the gate at once for a visitor who will not get the intro (seen this session,
+ * or reduced motion), and otherwise opens it at the deadline unless the intro has claimed the
+ * screen by then. The app repeats the same decision when it loads; this is what makes the page
+ * visible on time when the app is slow. Any failure opens the gate.
+ */
+export const LANDING_GATE_SCRIPT = `(function(){var d=document.documentElement;try{
+if(d.dataset.intro){return}
+var seen=false;try{seen=sessionStorage.getItem(${JSON.stringify(INTRO_SEEN_KEY)})==="1"}catch(e){}
+var reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+var left=${INTRO_START_DEADLINE_MS}-performance.now();
+if(seen||reduce||left<=0){d.dataset.intro="skip";return}
+d.dataset.intro="pending";
+setTimeout(function(){if(d.dataset.intro!=="playing"){d.dataset.intro="skip"}},left);
+}catch(e){d.dataset.intro="skip"}})();`;
 
 type Store = Pick<Storage, "getItem" | "setItem">;
 

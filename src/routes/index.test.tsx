@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { Landing } from "./index";
-import { DEMO_GIF_DURATION_MS, INTRO_SEEN_KEY } from "@/lib/intro";
+import { DEMO_GIF_DURATION_MS, INTRO_SEEN_KEY, pageClock } from "@/lib/intro";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -38,8 +38,15 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 const originalMatchMedia = window.matchMedia;
 
+const realClock = pageClock.now;
+/** Milliseconds since "page load" as the deadline sees it; tests move it by hand. */
+let pageAge = 500;
+
 beforeEach(() => {
   window.sessionStorage.clear();
+  document.documentElement.removeAttribute("data-intro");
+  pageAge = 500;
+  pageClock.now = () => pageAge;
   mocks.getSession.mockReset();
   mocks.getSession.mockResolvedValue({ data: { session: null } });
   mocks.navigate.mockReset();
@@ -60,19 +67,23 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  pageClock.now = realClock;
   window.matchMedia = originalMatchMedia;
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 const page = () => screen.getByTestId("landing-page");
+/** The page is visible when the gate on <html> is open; styles.css hides it otherwise. */
+const gate = () => document.documentElement.dataset["intro"];
+const pageShown = () => gate() === "skip";
 
 describe("the landing intro", () => {
   it("plays the vertical demo first, then Skip fades to the page without a demo box", async () => {
     const { container } = render(<Landing />);
 
     const intro = await screen.findByRole("dialog", { name: "NutriTrack demo" });
-    expect(page().className).toContain("invisible");
+    expect(pageShown()).toBe(false);
     const video = intro.querySelector("video");
     expect(video?.getAttribute("src")).toBe("/demo/meal-demo.mp4");
     expect(video?.getAttribute("poster")).toBe("/demo/meal-demo-poster.png");
@@ -84,7 +95,7 @@ describe("the landing intro", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Skip" }));
 
-    expect(page().className).not.toContain("invisible");
+    expect(pageShown()).toBe(true);
     expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Request an invite" })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -95,27 +106,27 @@ describe("the landing intro", () => {
     render(<Landing />);
     const intro = await screen.findByRole("dialog");
     fireEvent.ended(intro.querySelector("video") as HTMLVideoElement);
-    expect(page().className).not.toContain("invisible");
+    expect(pageShown()).toBe(true);
   });
 
   it("fades to the page on a tap anywhere", async () => {
     render(<Landing />);
     const intro = await screen.findByRole("dialog");
     fireEvent.click(intro);
-    expect(page().className).not.toContain("invisible");
+    expect(pageShown()).toBe(true);
   });
 
   it("does not replay in the same browser session", async () => {
     window.sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     render(<Landing />);
-    await waitFor(() => expect(page().className).not.toContain("invisible"));
+    await waitFor(() => expect(pageShown()).toBe(true));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("goes straight to the page when reduced motion is set", async () => {
     mocks.reducedMotion = true;
     render(<Landing />);
-    await waitFor(() => expect(page().className).not.toContain("invisible"));
+    await waitFor(() => expect(pageShown()).toBe(true));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -132,10 +143,72 @@ describe("the landing intro", () => {
   it("replays from Watch the demo", async () => {
     window.sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     render(<Landing />);
-    await waitFor(() => expect(page().className).not.toContain("invisible"));
+    await waitFor(() => expect(pageShown()).toBe(true));
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Watch the demo" }));
     expect(await screen.findByRole("dialog", { name: "NutriTrack demo" })).toBeTruthy();
+  });
+
+  it("claims the screen once the video is playing, and keeps it past the deadline", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<Landing />);
+    const intro = await screen.findByRole("dialog");
+    expect(page().getAttribute("aria-hidden")).toBe("true");
+
+    fireEvent.playing(intro.querySelector("video") as HTMLVideoElement);
+    expect(gate()).toBe("playing");
+
+    pageAge = 10_000;
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(pageShown()).toBe(false);
+  });
+
+  it("shows the page at 3 s from page load when the video has not started", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    pageAge = 1_200;
+    render(<Landing />);
+    await screen.findByRole("dialog");
+
+    // 1.8 s are left of the 3: not yet.
+    act(() => {
+      vi.advanceTimersByTime(1_700);
+    });
+    expect(pageShown()).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(pageShown()).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("button", { name: "Watch the demo" })).toBeTruthy();
+  });
+
+  it("does not open the intro at all when the app arrives after the deadline", async () => {
+    pageAge = 3_400;
+    render(<Landing />);
+    await waitFor(() => expect(pageShown()).toBe(true));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not open the intro when the gate script already showed the page", async () => {
+    document.documentElement.dataset["intro"] = "skip";
+    render(<Landing />);
+    await waitFor(() => expect(mocks.getSession).toHaveBeenCalled());
+    await waitFor(() => expect(pageShown()).toBe(true));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("ends a video that starts after the page is already showing, rather than covering it", async () => {
+    render(<Landing />);
+    const intro = await screen.findByRole("dialog");
+    // The gate script's own timer opened the page a moment before the video's first frame.
+    document.documentElement.dataset["intro"] = "skip";
+    fireEvent.playing(intro.querySelector("video") as HTMLVideoElement);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(pageShown()).toBe(true);
   });
 
   it("falls back to the GIF when autoplay is refused, and ends one loop after it has loaded", async () => {
@@ -148,24 +221,49 @@ describe("the landing intro", () => {
     await waitFor(() =>
       expect(intro.querySelector("img")?.getAttribute("src")).toBe("/demo/meal-demo.gif"),
     );
-    expect(page().className).toContain("invisible");
 
-    // Still downloading: no amount of waiting ends the intro on an empty frame.
-    act(() => {
-      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS * 3);
-    });
-    expect(page().className).toContain("invisible");
-
-    // Arrived: one loop, then the page.
+    // Arrived before the deadline: it has started, so one loop, then the page.
     fireEvent.load(intro.querySelector("img") as HTMLImageElement);
+    expect(gate()).toBe("playing");
     act(() => {
       vi.advanceTimersByTime(DEMO_GIF_DURATION_MS - 1);
     });
-    expect(page().className).toContain("invisible");
+    expect(pageShown()).toBe(false);
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(page().className).not.toContain("invisible");
+    expect(pageShown()).toBe(true);
+  });
+
+  it("shows the page at the deadline when the GIF is still downloading", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(HTMLMediaElement.prototype.play).mockImplementation(() =>
+      Promise.reject(new DOMException("refused", "NotAllowedError")),
+    );
+    render(<Landing />);
+    await screen.findByRole("dialog");
+    act(() => {
+      vi.advanceTimersByTime(2_500);
+    });
+    expect(pageShown()).toBe(true);
+  });
+
+  it("on a replay, waits for the GIF however long it takes: the visitor asked, and Skip is there", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    window.sessionStorage.setItem(INTRO_SEEN_KEY, "1");
+    vi.mocked(HTMLMediaElement.prototype.play).mockImplementation(() =>
+      Promise.reject(new DOMException("refused", "NotAllowedError")),
+    );
+    render(<Landing />);
+    await waitFor(() => expect(pageShown()).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Watch the demo" }));
+    const intro = await screen.findByRole("dialog");
+    await waitFor(() => expect(intro.querySelector("img")).not.toBeNull());
+
+    act(() => {
+      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS * 3);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -173,7 +271,7 @@ describe("the landing copy", () => {
   it("offers the trial as Try it now, with no scan count and no em dash", async () => {
     window.sessionStorage.setItem(INTRO_SEEN_KEY, "1");
     render(<Landing />);
-    await waitFor(() => expect(page().className).not.toContain("invisible"));
+    await waitFor(() => expect(pageShown()).toBe(true));
 
     expect(screen.getByRole("link", { name: "Try it now" }).getAttribute("href")).toBe("/try");
     expect(page().textContent).not.toMatch(/scans?/i);

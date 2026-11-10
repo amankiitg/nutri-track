@@ -267,3 +267,24 @@
   background-image: radial-gradient(oklch(0.3 0.03 140 / 4%) 0.5px, transparent 0.5px);
   background-size: 6px 6px;
 }
+
+/*
+ * The landing page's gate (see LANDING_GATE_SCRIPT in src/lib/intro.ts). The page is hidden only
+ * while the intro may still start, and never for more than the 3 s the intro is allowed: the
+ * inline script opens it with data-intro="skip". If that script never ran (blocked, or no
+ * JavaScript at all), there is no data-intro, and a delayed animation shows the page after the
+ * same 3 s instead, so nothing can keep it hidden for good.
+ */
+html:not([data-intro="skip"]) .landing-gate {
+  visibility: hidden;
+}
+
+html:not([data-intro]) .landing-gate {
+  animation: landing-gate-open 0s linear 3s forwards;
+}
+
+@keyframes landing-gate-open {
+  to {
+    visibility: visible;
+  }
+}

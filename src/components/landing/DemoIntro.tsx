@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Wordmark } from "@/components/app/BrandMark";
-import { DEMO_GIF_DURATION_MS, DEMO_GIF, demoVideoSources } from "@/lib/intro";
+import {
+  claimLandingGate,
+  DEMO_GIF,
+  DEMO_GIF_DURATION_MS,
+  demoMedia,
+  INTRO_START_DEADLINE_MS,
+  pageClock,
+} from "@/lib/intro";
 
 /** How long the intro takes to fade out; the landing page fades in over the same time. */
 export const INTRO_FADE_MS = 500;
@@ -9,25 +16,31 @@ export const INTRO_FADE_MS = 500;
  * The landing page's opening: the vertical demo, full screen, with a Skip button.
  *
  * It ends on the video's own `ended`, on Skip, on a tap anywhere, or on Escape, and then
- * calls `onDone` once. The videos are tried in order: on data saver or a 3g-or-slower
- * connection the short cut first (when the build found one), then the full MP4. A video that
- * cannot load moves to the next one; when none is left, or the browser refuses to autoplay
- * (iOS Low Power Mode refuses even a muted video), the GIF takes its place, and since a GIF
- * loops and reports no end, a timer of the demo's length ends it instead.
+ * calls `onDone` once. What it plays comes from `demoMedia`: on data saver or a 3g-or-slower
+ * connection the short cut alone, with no GIF; otherwise the full MP4, then the GIF. A video
+ * that cannot load moves to the next; when none is left, or the browser refuses to autoplay
+ * (iOS Low Power Mode refuses even a muted video), the GIF takes over where it is allowed and
+ * the intro ends where it is not. A GIF loops and reports no end, so one loop's timer ends it.
+ *
+ * `deadline` is the page-load intro's bound: if nothing is playing 3 s after page load, the
+ * intro ends and the landing page shows. Playing means the video's `playing` event, or the GIF
+ * having loaded; a poster is not playing. The replay from "Watch the demo" has no deadline,
+ * since the visitor asked for it and Skip is right there.
  *
  * The media box is 4:5, the demo's own shape (1080x1350), sized by height: at most 75svh
  * tall, so 60svh wide, and never wider than the screen. object-contain on a cream ground,
  * so nothing is cropped and any letterbox matches the frame.
  */
-export function DemoIntro({ onDone }: { onDone: () => void }) {
+export function DemoIntro({ onDone, deadline }: { onDone: () => void; deadline: boolean }) {
   // Read once, on mount. The intro is only ever mounted in the browser, after the first paint.
-  const [sources] = useState(() => demoVideoSources());
+  const [{ videos: sources, allowGif }] = useState(() => demoMedia());
   const [source, setSource] = useState(0);
+  const [started, setStarted] = useState(false);
   // The GIF's clock starts when it has arrived, not when it was asked for: on a slow connection
   // the file takes longer to download than to play, and a timer started at the request ended
   // the intro on an empty frame.
   const [gifLoaded, setGifLoaded] = useState(false);
-  const media = source < sources.length ? "mp4" : "gif";
+  const media = source < sources.length ? "mp4" : allowGif ? "gif" : "none";
   const videoSrc = sources[source];
   const [leaving, setLeaving] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -46,12 +59,35 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
     skipRef.current?.focus({ preventScroll: true });
   }, []);
 
+  // Nothing left to play: every video failed and the GIF is not allowed here.
+  useEffect(() => {
+    if (media === "none") finish();
+  }, [media, finish]);
+
+  /**
+   * The media is moving. On the page-load intro that is the moment it claims the screen; if the
+   * gate already opened (the deadline passed first), the page is showing and the intro must not
+   * cover it, so it ends instead.
+   */
+  const onStarted = useCallback(() => {
+    if (doneRef.current) return;
+    setStarted(true);
+    if (deadline && !claimLandingGate()) finish();
+  }, [deadline, finish]);
+
+  useEffect(() => {
+    if (!deadline || started) return;
+    const left = Math.max(0, INTRO_START_DEADLINE_MS - pageClock.now());
+    const timer = window.setTimeout(finish, left);
+    return () => window.clearTimeout(timer);
+  }, [deadline, started, finish]);
+
   useEffect(() => {
     if (media !== "mp4") return;
     const video = videoRef.current;
     if (video === null) return;
     // React sets `muted` as a property, which is what autoplay policy reads; set it again
-    // before asking, and treat a refusal as "this browser will not play it" -> the GIF.
+    // before asking, and treat a refusal as "this browser will not play it".
     video.muted = true;
     const attempt = video.play() as Promise<void> | undefined;
     attempt?.catch((error: unknown) => {
@@ -59,6 +95,7 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
       // too. A file that cannot load also rejects play(), with another name, and its `error`
       // event moves on to the next source instead.
       const refused = error instanceof DOMException && error.name === "NotAllowedError";
+      // Past the last video: the GIF where it is allowed, otherwise nothing, which ends it.
       if (refused && !doneRef.current) setSource(sources.length);
     });
   }, [media, videoSrc, sources.length]);
@@ -120,20 +157,24 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
             preload="auto"
             aria-label="A meal photo becoming calories and macros in NutriTrack"
             className="h-full w-full object-contain"
+            onPlaying={onStarted}
             onEnded={finish}
             onError={() => {
               if (!doneRef.current) setSource((index) => index + 1);
             }}
           />
-        ) : (
+        ) : media === "gif" ? (
           <img
             src={DEMO_GIF}
             alt="A meal photo becoming calories and macros in NutriTrack"
             className="h-full w-full object-contain"
-            onLoad={() => setGifLoaded(true)}
+            onLoad={() => {
+              setGifLoaded(true);
+              onStarted();
+            }}
             onError={finish}
           />
-        )}
+        ) : null}
       </div>
 
       <p className="text-xs text-muted-foreground">Tap anywhere to continue</p>

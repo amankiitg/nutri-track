@@ -115,7 +115,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: the landing page's inline gate script sets data-intro on this
+    // element before the app hydrates (src/lib/intro.ts), so the server's <html> and the
+    // client's differ by that one attribute on purpose. It covers this element's attributes
+    // only; a mismatch anywhere inside the page is still reported.
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
