@@ -5,8 +5,7 @@
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
-
-export const LINK_EXPIRED_MESSAGE = "This trial link has expired. Ask Aman for a new one.";
+import { INVITE_REQUEST_ADDRESS } from "@/lib/invite-request";
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
@@ -24,7 +23,16 @@ export function TrialLinkExpired() {
   return (
     <Frame>
       <h1 className="mt-6 text-3xl font-semibold">Trial link expired</h1>
-      <p className="mt-3 max-w-sm text-muted-foreground">{LINK_EXPIRED_MESSAGE}</p>
+      <p className="mt-3 max-w-sm text-muted-foreground">
+        This trial link has expired. Email{" "}
+        <a
+          href={`mailto:${INVITE_REQUEST_ADDRESS}`}
+          className="font-medium text-foreground underline"
+        >
+          {INVITE_REQUEST_ADDRESS}
+        </a>{" "}
+        for a new one.
+      </p>
       <Button asChild size="lg" className="mt-8 h-12 w-full rounded-full text-base">
         <Link to="/auth/request">Request an invite</Link>
       </Button>

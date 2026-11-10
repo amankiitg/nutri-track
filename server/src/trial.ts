@@ -37,7 +37,8 @@ export function trialExhaustedMessage(limit: number): string {
 }
 
 /** What a revoked, expired or forged personal link says. One sentence for all three. */
-export const TRIAL_LINK_EXPIRED_MESSAGE = "This trial link has expired. Ask Aman for a new one.";
+export const TRIAL_LINK_EXPIRED_MESSAGE =
+  "This trial link has expired. Email invites@tracknutri.app for a new one.";
 
 export const TRIAL_ALREADY_ACCESS_MESSAGE = "You already have access. Sign in to keep tracking.";
 

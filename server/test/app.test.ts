@@ -1038,7 +1038,7 @@ describe("POST /trial/link", () => {
 
     expect(response.body).toEqual({
       status: "expired",
-      message: "This trial link has expired. Ask Aman for a new one.",
+      message: "This trial link has expired. Email invites@tracknutri.app for a new one.",
     });
     expect(linkStatusCalls).toEqual([]);
   });
@@ -1106,7 +1106,7 @@ describe("POST /trial/parse with a personal link", () => {
     expect(response.status).toBe(401);
     expect(response.body.error).toMatchObject({
       code: "trial_link_expired",
-      message: "This trial link has expired. Ask Aman for a new one.",
+      message: "This trial link has expired. Email invites@tracknutri.app for a new one.",
     });
     expect(completions).toEqual([]);
   });

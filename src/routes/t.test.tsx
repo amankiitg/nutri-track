@@ -34,9 +34,13 @@ vi.mock("@/lib/turnstile", () => ({
   turnstileApi: () => undefined,
 }));
 
-vi.mock("@/lib/invite-request", () => ({
-  requestInvite: (...args: unknown[]) => mocks.requestInvite(...args),
-}));
+vi.mock("@/lib/invite-request", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/invite-request")>();
+  return {
+    ...actual,
+    requestInvite: (...args: unknown[]) => mocks.requestInvite(...args),
+  };
+});
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { rpc: vi.fn(), from: vi.fn(), auth: { getSession: vi.fn() } },
@@ -193,9 +197,11 @@ describe("a refused link", () => {
     mocks.verifyTrialLink.mockResolvedValue({ status: "expired" });
     render(<TrialLink token="tampered.token" />);
 
-    expect(
-      await screen.findByText("This trial link has expired. Ask Aman for a new one."),
-    ).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "invites@tracknutri.app" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "invites@tracknutri.app" }).getAttribute("href")).toBe(
+      "mailto:invites@tracknutri.app",
+    );
+    expect(screen.getByText(/This trial link has expired/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Request an invite" }).getAttribute("href")).toBe(
       "/auth/request",
     );
@@ -223,9 +229,8 @@ describe("a refused link", () => {
     );
     await scanOnce(userEvent.setup());
 
-    expect(
-      await screen.findByText("This trial link has expired. Ask Aman for a new one."),
-    ).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "invites@tracknutri.app" })).toBeTruthy();
+    expect(screen.getByText(/This trial link has expired/)).toBeTruthy();
     expect(localStorage.getItem("nutritrack-trial-token")).toBeNull();
   });
 

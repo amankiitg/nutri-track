@@ -27,9 +27,13 @@ vi.mock("@/lib/trial", () => ({
   getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
 }));
 
-vi.mock("@/lib/invite-request", () => ({
-  requestInvite: (...args: unknown[]) => mocks.requestInvite(...args),
-}));
+vi.mock("@/lib/invite-request", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/invite-request")>();
+  return {
+    ...actual,
+    requestInvite: (...args: unknown[]) => mocks.requestInvite(...args),
+  };
+});
 
 vi.mock("@/lib/turnstile", () => ({
   turnstileSiteKey: () => "test-site-key",
