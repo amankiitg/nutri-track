@@ -84,7 +84,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
           onChange={(event) => onChange(setText(item, "name", event.target.value))}
           aria-label={`Name of item ${index + 1}`}
           placeholder="What was it?"
-          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-1 text-sm font-medium hover:border-input focus:border-input focus:outline-none"
+          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-1 py-1 text-base md:text-sm font-medium hover:border-input focus:border-input focus:outline-none"
         />
         <ConfidenceDot confidence={item.confidence} />
         <Button
@@ -116,7 +116,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
             value={valueOf(item.quantity)}
             onChange={(event) => onChange(setQuantity(item, event.target.value))}
             aria-label={`Portion of item ${index + 1}`}
-            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base md:text-sm"
           />
         </label>
         <label className="space-y-1 text-xs">
@@ -126,7 +126,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
             onChange={(event) => onChange(setText(item, "unit", event.target.value))}
             aria-label={`Unit of item ${index + 1}`}
             placeholder="cup"
-            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base md:text-sm"
           />
         </label>
         <label className="space-y-1 text-xs">
@@ -136,7 +136,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
             value={valueOf(item.grams)}
             onChange={(event) => onChange(setGrams(item, event.target.value))}
             aria-label={`Grams of item ${index + 1}`}
-            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm font-medium"
+            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base md:text-sm font-medium"
           />
         </label>
       </div>
@@ -157,7 +157,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
                 onChange(setNutrient(item, field as NutrientField, event.target.value))
               }
               aria-label={`${NUTRIENT_LABELS[field]} for item ${index + 1}`}
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base md:text-sm"
             />
           </label>
         ))}
