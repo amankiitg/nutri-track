@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { Landing } from "./index";
+import { INTRO_FADE_MS } from "@/components/landing/DemoIntro";
 import { DEMO_GIF_DURATION_MS, INTRO_SEEN_KEY, pageClock } from "@/lib/intro";
 
 const mocks = vi.hoisted(() => ({
@@ -167,10 +168,17 @@ describe("the landing intro", () => {
   });
 
   it("shows the page at 3 s from page load when the video has not started", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     pageAge = 1_200;
     render(<Landing />);
-    await screen.findByRole("dialog");
+
+    // The session read resolves in a microtask; flush it so the intro mounts, then keep the
+    // clock still. Without shouldAdvanceTime the deadline cannot move on its own, so the only
+    // thing that ends the intro here is the deadline timer advanced below.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
 
     // 1.8 s are left of the 3: not yet.
     act(() => {
@@ -182,7 +190,12 @@ describe("the landing intro", () => {
       vi.advanceTimersByTime(100);
     });
     expect(pageShown()).toBe(true);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // The intro stays mounted over the fade, then unmounts.
+    act(() => {
+      vi.advanceTimersByTime(INTRO_FADE_MS);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Watch the demo" })).toBeTruthy();
   });
 
