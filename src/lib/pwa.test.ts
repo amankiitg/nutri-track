@@ -10,7 +10,15 @@
  * agent with no token in it. Asserting they are in Safari would be inventing a fact.
  */
 import { describe, expect, it } from "vitest";
-import { iosBrowser, iosInstallHint, isIos, type IosBrowser } from "./pwa";
+import {
+  INSTALL_BANNER_DELAY_MS,
+  installBannerDelayMs,
+  introOwnsScreen,
+  iosBrowser,
+  iosInstallHint,
+  isIos,
+  type IosBrowser,
+} from "./pwa";
 
 const IPHONE_SAFARI =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
@@ -76,6 +84,22 @@ describe("iosBrowser", () => {
     // Chrome on an iPhone with the desktop site requested: the token is gone and this is now
     // indistinguishable from a Mac. Nothing here can fix that, so nothing here pretends to.
     expect(iosBrowser(DESKTOP_CHROME_ON_MAC)).toBe("other");
+  });
+});
+
+describe("install banner gating", () => {
+  it("introOwnsScreen is true for pending and playing, false otherwise", () => {
+    expect(introOwnsScreen("pending")).toBe(true);
+    expect(introOwnsScreen("playing")).toBe(true);
+    expect(introOwnsScreen("skip")).toBe(false);
+    expect(introOwnsScreen(undefined)).toBe(false);
+  });
+
+  it("waits the banner delay only for the landing page", () => {
+    expect(installBannerDelayMs("skip")).toBe(INSTALL_BANNER_DELAY_MS);
+    expect(installBannerDelayMs(undefined)).toBe(0);
+    expect(installBannerDelayMs("pending")).toBe(0);
+    expect(installBannerDelayMs("playing")).toBe(0);
   });
 });
 

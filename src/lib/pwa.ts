@@ -90,3 +90,29 @@ export function iosInstallHint(browser: IosBrowser): string {
     "Share and scroll to Add to Home Screen."
   );
 }
+
+/**
+ * How long the install banner waits after the landing page becomes visible before it appears,
+ * so it does not pop up the instant the intro's fade ends. 1.5 s, chosen not measured: long
+ * enough for the page's own entrance to be read, short enough that the banner still arrives
+ * before the reader leaves.
+ */
+export const INSTALL_BANNER_DELAY_MS = 1_500;
+
+/**
+ * Whether the landing intro still owns the screen, as the install banner reads the gate on
+ * <html data-intro>. "pending" is the 3 s window before the demo has claimed the screen, when
+ * the page is still hidden, so the banner waits through it too.
+ */
+export function introOwnsScreen(gate: string | undefined): boolean {
+  return gate === "pending" || gate === "playing";
+}
+
+/**
+ * How long the banner waits before it may show, given the gate. "skip" is the landing page
+ * itself, so the banner gives the page's entrance a beat; undefined is another route, which has
+ * no intro and no wait.
+ */
+export function installBannerDelayMs(gate: string | undefined): number {
+  return gate === "skip" ? INSTALL_BANNER_DELAY_MS : 0;
+}

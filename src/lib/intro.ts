@@ -95,14 +95,35 @@ export function landingGate(): string | undefined {
   return document.documentElement.dataset["intro"];
 }
 
+/** Dispatched on window whenever one of these functions changes the gate, so readers that
+ * were not the ones to change it (the install banner) can follow along. The inline gate script
+ * changes the attribute without this event, but it runs before the app, so readers see its
+ * value on their first read. */
+export const INTRO_GATE_EVENT = "nutritrack:intro-gate";
+
+function setLandingGate(value: "playing" | "skip"): void {
+  document.documentElement.dataset["intro"] = value;
+  window.dispatchEvent(new Event(INTRO_GATE_EVENT));
+}
+
 export function openLandingGate(): void {
-  document.documentElement.dataset["intro"] = "skip";
+  setLandingGate("skip");
+}
+
+/**
+ * Marks the intro as on screen for a replay, which has no deadline and so never claims the
+ * gate from "pending" the way the page-load intro does. The landing page's "Watch the demo"
+ * calls this when it mounts the replay, so readers of the gate (the install banner) hide again
+ * until the replay ends.
+ */
+export function openIntroGate(): void {
+  setLandingGate("playing");
 }
 
 /** Claims the screen for the intro, unless the gate has already opened. Returns whether it did. */
 export function claimLandingGate(): boolean {
   if (landingGate() === "skip") return false;
-  document.documentElement.dataset["intro"] = "playing";
+  setLandingGate("playing");
   return true;
 }
 

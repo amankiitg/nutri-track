@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Download, Share, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { INTRO_GATE_EVENT } from "@/lib/intro";
 import {
+  installBannerDelayMs,
+  introOwnsScreen,
   iosBrowser,
   iosInstallHint,
   isIos,
@@ -10,12 +13,18 @@ import {
   type IosBrowser,
 } from "@/lib/pwa";
 
-const DISMISS_KEY = "nutritrack.install.dismissed";
+export const DISMISS_KEY = "nutritrack.install.dismissed";
 
 export function InstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [ios, setIos] = useState<IosBrowser | null>(null);
   const [dismissed, setDismissed] = useState(true);
+  // The landing page's intro gate on <html data-intro>: "pending" and "playing" hold the
+  // screen, "skip" is the page. undefined means this is not the landing page, so the intro
+  // gate does not apply.
+  const [gate, setGate] = useState<string | undefined>(undefined);
+  // Whether the delay after the landing page became visible has elapsed.
+  const [delayElapsed, setDelayElapsed] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) return;
@@ -29,7 +38,44 @@ export function InstallPrompt() {
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
+  // Hold the banner back until the landing page has been visible for a moment, and hide it
+  // again whenever an intro (including a replay) takes the screen. The gate is written to
+  // <html data-intro> by the landing page rather than React state, so it is observed here
+  // rather than received as a prop.
+  useEffect(() => {
+    const root = document.documentElement;
+    let timer: number | undefined;
+
+    const apply = (value: string | undefined) => {
+      window.clearTimeout(timer);
+      timer = undefined;
+      setGate(value);
+      if (introOwnsScreen(value)) {
+        setDelayElapsed(false);
+        return;
+      }
+      const wait = installBannerDelayMs(value);
+      if (wait === 0) {
+        setDelayElapsed(true);
+        return;
+      }
+      timer = window.setTimeout(() => {
+        setDelayElapsed(true);
+        timer = undefined;
+      }, wait);
+    };
+
+    const read = () => apply(root.dataset["intro"]);
+    read();
+    window.addEventListener(INTRO_GATE_EVENT, read);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(INTRO_GATE_EVENT, read);
+    };
+  }, []);
+
   if (dismissed || (!deferred && ios === null)) return null;
+  if (introOwnsScreen(gate) || !delayElapsed) return null;
 
   const dismiss = () => {
     window.localStorage.setItem(DISMISS_KEY, "1");

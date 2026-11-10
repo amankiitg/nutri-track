@@ -10,6 +10,7 @@ import {
   LANDING_GATE_SCRIPT,
   landingGate,
   markIntroSeen,
+  openIntroGate,
   openLandingGate,
   shouldPlayIntro,
 } from "@/lib/intro";
@@ -63,6 +64,9 @@ export function Landing() {
     setDeadline(onPageLoad);
     setIntroMounted(true);
     setPhase("intro");
+    // A replay has no deadline and never claims the gate, so mark it here instead; the install
+    // banner reads this gate and hides while the replay is up.
+    if (!onPageLoad) openIntroGate();
   }, []);
 
   const showPage = useCallback(() => {
