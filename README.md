@@ -61,6 +61,9 @@ Client-exposed:
   record
 - `VITE_PARSE_MEAL_URL`: where the browser POSTs a meal to be parsed. Locally
   `http://localhost:8787/parse-meal`; in production the Render service URL
+- `VITE_TURNSTILE_SITE_KEY`: the Cloudflare Turnstile site key for the free trial at
+  `/try`. Public by design; the secret lives server-side. Without it `/try` answers
+  "Trial unavailable right now"
 
 Server-only. Copy exactly these into Render's environment panel:
 
@@ -448,19 +451,21 @@ runs_, not when the Worker serves.
 | `VITE_SUPABASE_URL`             | `https://luxomuhczhtczfxwornl.supabase.co`              |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value                            |
 | `VITE_PARSE_MEAL_URL`           | `https://nutritrack-parse-meal.onrender.com/parse-meal` |
+| `VITE_TURNSTILE_SITE_KEY`       | `0x4AAAAAAF6qU7ugp2HStVCT`                             |
 
-`npm run build:cloudflare` supplies the production `VITE_PARSE_MEAL_URL` inline, so the
-repository's `.env` can keep pointing at `http://localhost:8787/parse-meal` for local
-development. That is the whole reason the two are separate commands: one `.env` cannot
-serve both, and Vite's `process.env` wins over `.env`, so the inline value takes effect
-without editing the file. (A host that builds from git would instead need the three values
-in its own build environment.)
+`npm run build:cloudflare` supplies the production `VITE_PARSE_MEAL_URL` and
+`VITE_TURNSTILE_SITE_KEY` inline, so the repository's `.env` can keep pointing at
+`http://localhost:8787/parse-meal` for local development. That is the whole reason the two
+are separate commands: one `.env` cannot serve both, and Vite's `process.env` wins over
+`.env`, so the inline values take effect without editing the file. (A host that builds from
+git would instead need the four values in its own build environment.)
 
 `vite.config.ts` **refuses to build for production** with a missing, `localhost`, or
-non-`https` parse-meal URL. Nothing downstream could catch that afterwards (the request
-fails identically to the service being down), so the build is the last point at which it
-is still visible. `npm run build` with `.env` as shipped therefore fails on purpose, and
-says which command to use instead.
+non-`https` parse-meal URL, and with a missing `VITE_TURNSTILE_SITE_KEY`. Nothing
+downstream could catch either afterwards (the request fails identically to the service
+being down, and `/try` answers "Trial unavailable right now"), so the build is the last
+point at which it is still visible. `npm run build` with `.env` as shipped therefore fails
+on purpose, and says which command to use instead.
 
 Finally, once the frontend has an origin, **add it to `ALLOWED_ORIGINS` on the Render
 service**. Verified behaviour: a request from an origin not on that list is refused with

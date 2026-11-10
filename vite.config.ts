@@ -61,6 +61,29 @@ function productionUrlProblem(value: string | undefined): string | null {
   return null;
 }
 /**
+ * Why a production build may not carry a Turnstile site key.
+ *
+ * The site key is public — it ships in the bundle — while its paired secret lives only on
+ * the server. Without the key the /try page answers "Trial unavailable right now" instead
+ * of rendering the proof-of-humanity widget, so a build without one ships a trial that can
+ * never start, and nothing downstream can tell the difference.
+ *
+ * Returns a message describing the problem, or null when the value is fine.
+ */
+function turnstileSiteKeyProblem(value: string | undefined): string | null {
+  if (value === undefined || value.trim() === "") {
+    return [
+      "Refusing to build for production: VITE_TURNSTILE_SITE_KEY is not set, so the bundle",
+      'would ship with no Turnstile site key and /try would show "Trial unavailable".',
+      "",
+      "Build with the public site key instead:",
+      "  npm run build:cloudflare",
+    ].join("\n");
+  }
+  return null;
+}
+
+/**
  * Standalone Vite config for NutriTrack.
  *
  * This replaces @lovable.dev/vite-tanstack-config, which used to supply the
@@ -132,6 +155,8 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   if (command === "build" && mode === "production") {
     const problem = productionUrlProblem(env["VITE_PARSE_MEAL_URL"]);
     if (problem !== null) throw new Error(`\n\n${problem}\n`);
+    const keyProblem = turnstileSiteKeyProblem(env["VITE_TURNSTILE_SITE_KEY"]);
+    if (keyProblem !== null) throw new Error(`\n\n${keyProblem}\n`);
   }
 
   // `npm run build:dev` builds with NODE_ENV=development.
