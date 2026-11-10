@@ -23,6 +23,10 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
   // Read once, on mount. The intro is only ever mounted in the browser, after the first paint.
   const [sources] = useState(() => demoVideoSources());
   const [source, setSource] = useState(0);
+  // The GIF's clock starts when it has arrived, not when it was asked for: on a slow connection
+  // the file takes longer to download than to play, and a timer started at the request ended
+  // the intro on an empty frame.
+  const [gifLoaded, setGifLoaded] = useState(false);
   const media = source < sources.length ? "mp4" : "gif";
   const videoSrc = sources[source];
   const [leaving, setLeaving] = useState(false);
@@ -60,10 +64,10 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
   }, [media, videoSrc, sources.length]);
 
   useEffect(() => {
-    if (media !== "gif") return;
+    if (media !== "gif" || !gifLoaded) return;
     const timer = window.setTimeout(finish, DEMO_GIF_DURATION_MS);
     return () => window.clearTimeout(timer);
-  }, [media, finish]);
+  }, [media, gifLoaded, finish]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -126,6 +130,7 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
             src={DEMO_GIF}
             alt="A meal photo becoming calories and macros in NutriTrack"
             className="h-full w-full object-contain"
+            onLoad={() => setGifLoaded(true)}
             onError={finish}
           />
         )}

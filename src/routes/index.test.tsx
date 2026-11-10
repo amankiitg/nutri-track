@@ -138,7 +138,7 @@ describe("the landing intro", () => {
     expect(await screen.findByRole("dialog", { name: "NutriTrack demo" })).toBeTruthy();
   });
 
-  it("falls back to the GIF when autoplay is refused, and ends after the demo's length", async () => {
+  it("falls back to the GIF when autoplay is refused, and ends one loop after it has loaded", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(HTMLMediaElement.prototype.play).mockImplementation(() =>
       Promise.reject(new DOMException("refused", "NotAllowedError")),
@@ -150,8 +150,20 @@ describe("the landing intro", () => {
     );
     expect(page().className).toContain("invisible");
 
+    // Still downloading: no amount of waiting ends the intro on an empty frame.
     act(() => {
-      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS);
+      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS * 3);
+    });
+    expect(page().className).toContain("invisible");
+
+    // Arrived: one loop, then the page.
+    fireEvent.load(intro.querySelector("img") as HTMLImageElement);
+    act(() => {
+      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS - 1);
+    });
+    expect(page().className).toContain("invisible");
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
     expect(page().className).not.toContain("invisible");
   });
