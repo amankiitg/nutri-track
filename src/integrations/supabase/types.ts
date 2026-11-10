@@ -436,7 +436,9 @@ export type Database = {
           id: string;
           ip_hash: string | null;
           last_used_at: string | null;
+          link_sent_at: string | null;
           scans_used: number;
+          token_version: number;
         };
         Insert: {
           created_at?: string;
@@ -445,7 +447,9 @@ export type Database = {
           id?: string;
           ip_hash?: string | null;
           last_used_at?: string | null;
+          link_sent_at?: string | null;
           scans_used?: number;
+          token_version?: number;
         };
         Update: {
           created_at?: string;
@@ -454,7 +458,9 @@ export type Database = {
           id?: string;
           ip_hash?: string | null;
           last_used_at?: string | null;
+          link_sent_at?: string | null;
           scans_used?: number;
+          token_version?: number;
         };
         Relationships: [];
       };
@@ -536,6 +542,25 @@ export type Database = {
           tokens_month: number;
           tokens_total: number;
           user_id: string;
+        }[];
+      };
+      admin_trial_link_issue: {
+        Args: { p_email: string; p_first_name?: string };
+        Returns: Json;
+      };
+      admin_trial_link_mark_sent: {
+        Args: { p_email: string };
+        Returns: undefined;
+      };
+      admin_trial_link_revoke: { Args: { p_email: string }; Returns: undefined };
+      admin_trial_links: {
+        Args: { p_emails: string[] };
+        Returns: {
+          email: string;
+          first_name: string;
+          link_sent_at: string;
+          scans_limit: number;
+          scans_used: number;
         }[];
       };
       admin_trial_stats: {
@@ -670,6 +695,10 @@ export type Database = {
         Returns: undefined;
       };
       trial_ip_hash: { Args: { p_ip: string }; Returns: string };
+      trial_link_status: {
+        Args: { p_email: string; p_server_secret: string; p_version?: number };
+        Returns: Json;
+      };
       trial_log_call: {
         Args: {
           p_call_id: string;
@@ -683,7 +712,12 @@ export type Database = {
         Returns: undefined;
       };
       trial_scan_start: {
-        Args: { p_email: string; p_ip?: string; p_server_secret: string };
+        Args: {
+          p_email: string;
+          p_ip?: string;
+          p_server_secret: string;
+          p_version?: number;
+        };
         Returns: Json;
       };
       trial_scans_limit: { Args: { p_server_secret: string }; Returns: number };

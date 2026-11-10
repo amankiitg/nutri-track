@@ -62,15 +62,19 @@ done
 echo "ok - applied all ${count} migrations in order"
 
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_links.sql"
 
-# Roll back newest first, then check the previous definitions are back.
+# Roll back newest first, checking each predecessor comes back.
+apply "${ROOT}/supabase/rollback/20261110120000_trial_links.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_links_rollback.sql"
 apply "${ROOT}/supabase/rollback/20261109180000_trial_scans_limit.sql"
 apply "${ROOT}/supabase/rollback/20261109170000_trial_tables.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_rollback.sql"
 
-# And forward again, over the restored predecessor.
+# And forward again, over the restored predecessors.
 apply "${MIGRATIONS}/20261109170000_trial_tables.sql"
 apply "${MIGRATIONS}/20261109180000_trial_scans_limit.sql"
+apply "${MIGRATIONS}/20261110120000_trial_links.sql"
 echo "ok - the trial migrations apply again after their rollback"
 
 echo ""

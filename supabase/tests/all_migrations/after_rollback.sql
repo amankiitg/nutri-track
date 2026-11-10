@@ -33,6 +33,8 @@ BEGIN
   END IF;
 END $$;
 
+-- Counted as the owner: the authenticated role cannot read auth.users.
+select set_config('test.n_users', count(*)::text, false) from auth.users \g /dev/null
 begin;
 set local role authenticated;
 set local "request.jwt.claims" = '{"sub":"00000000-0000-0000-0000-00000000a001","email":"admin@example.com","role":"authenticated"}';
@@ -41,8 +43,9 @@ DECLARE
   v_rows integer;
 BEGIN
   SELECT count(*) INTO v_rows FROM public.admin_spend();
-  IF v_rows <> 2 THEN
-    RAISE EXCEPTION 'not ok - after rollback admin_spend returned % rows, expected 2', v_rows;
+  -- One row per user, and the trial line is gone with the trial.
+  IF v_rows <> current_setting('test.n_users')::integer THEN
+    RAISE EXCEPTION 'not ok - after rollback admin_spend returned % rows, expected one per user', v_rows;
   END IF;
 END $$;
 commit;
