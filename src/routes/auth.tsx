@@ -127,9 +127,9 @@ function GoogleIcon() {
 }
 
 /** Why a link was sent, which decides what the panel above the form promises. */
-type LinkKind = "setup" | "verify" | "password";
+type LinkKind = "setup" | "verify" | "password" | "signin";
 
-function AuthPage() {
+export function AuthPage() {
   const router = useRouter();
   const search = Route.useSearch();
   const destination = safeRedirect(search.redirect);
@@ -266,6 +266,35 @@ function AuthPage() {
   }
 
   /**
+   * Emails a sign-in link to an existing account, which signs the person in without a password.
+   *
+   * `shouldCreateUser` is false because the address already has an account: the link signs into the
+   * one that exists rather than creating a second row. Supabase reports the same result whether or
+   * not the address exists, so nothing here reveals that fact beyond what `auth_entry_state` already
+   * showed. The link lands on the origin, where the landing page's session check sends a signed-in
+   * person to Today.
+   */
+  async function emailSignInLink(address: string): Promise<void> {
+    setError(null);
+    setBusy("link");
+    const { error: linkError } = await supabase.auth.signInWithOtp({
+      email: address,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    setBusy(null);
+    if (linkError) {
+      setError(friendlyAuthError(linkError));
+      return;
+    }
+    setLinkSent({ email: address, kind: "signin" });
+    resendCooldown.start();
+    toast.success("Link sent");
+  }
+
+  /**
    * The one place that decides which screen the address deserves.
    *
    * A failure here is shown as a failure rather than as "not invited": the panel tells somebody to
@@ -370,10 +399,16 @@ function AuthPage() {
     } else {
       const { error: linkError } = await supabase.auth.signInWithOtp({
         email: linkSent.email,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${window.location.origin}/auth/welcome`,
-        },
+        options:
+          linkSent.kind === "signin"
+            ? {
+                shouldCreateUser: false,
+                emailRedirectTo: window.location.origin,
+              }
+            : {
+                shouldCreateUser: true,
+                emailRedirectTo: `${window.location.origin}/auth/welcome`,
+              },
       });
       if (linkError) {
         setError(friendlyAuthError(linkError));
@@ -466,6 +501,8 @@ function AuthPage() {
               We sent a link to <strong>{linkSent.email}</strong>. Open it on this device to set a
               password.
             </>
+          ) : linkSent.kind === "signin" ? (
+            <>The link works once and expires in an hour.</>
           ) : (
             <>
               We sent a link to <strong>{linkSent.email}</strong>. Open it on this device to finish
@@ -702,6 +739,16 @@ function AuthPage() {
                       Sign in
                     </Button>
                   </form>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 w-full rounded-full text-base"
+                    onClick={() => void emailSignInLink(email)}
+                    disabled={busy !== null}
+                  >
+                    {busy === "link" && <Loader2 className="animate-spin" />}
+                    Email me a sign-in link
+                  </Button>
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline"
@@ -728,6 +775,16 @@ function AuthPage() {
                   >
                     {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
                     Continue with Google
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 w-full rounded-full text-base"
+                    onClick={() => void emailSignInLink(email)}
+                    disabled={busy !== null}
+                  >
+                    {busy === "link" && <Loader2 className="animate-spin" />}
+                    Email me a sign-in link
                   </Button>
                   {error && (
                     <p role="alert" className="text-sm text-destructive">
