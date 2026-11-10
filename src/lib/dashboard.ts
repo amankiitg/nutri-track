@@ -390,6 +390,10 @@ export function verdictSentence(verdict: WeekVerdict): string {
   const window = Math.round(verdict.window_days);
   const logged = Math.round(verdict.days_logged);
   const judged = Math.round(verdict.days_judged);
+  // "over 7 of the last 7 days" restates the window. When every day was judged, the count says
+  // nothing and the sentence reads better as "a day"; when some days are missing, the count is the
+  // part that is true.
+  const span = judged === window ? "a day" : `over ${judged} of the last ${window} days`;
 
   switch (verdict.verdict) {
     case "no_data":
@@ -402,15 +406,12 @@ export function verdictSentence(verdict: WeekVerdict): string {
       // right and "1 of the last 7 day has" does not.
       return `Only ${judged} of the last ${window} days ${judged === 1 ? "has" : "have"} both meals and a target. A few more and this becomes a real trend.`;
     }
-    // "not counting today" is not decoration. The window is the complete days before today, so a
-    // meal logged this morning changes nothing here — and without the parenthetical the number reads
-    // as an average that already includes it, which is what made the card look wrong at 8am.
     case "on_track":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. On target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal ${span}, against ${kcal(verdict.avg_target_calories)}. On target.`;
     case "under":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. Under target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal ${span}, against ${kcal(verdict.avg_target_calories)}. Under target.`;
     case "over":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. Over target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal ${span}, against ${kcal(verdict.avg_target_calories)}. Over target.`;
   }
 }
 

@@ -177,14 +177,14 @@ describe("verdictSentence", () => {
       }),
     );
     expect(sentence).toBe(
-      "Averaging 1,450 kcal over 5 of the last 7 days (not counting today), against 1,636. Under target.",
+      "Averaging 1,450 kcal over 5 of the last 7 days, against 1,636. Under target.",
     );
   });
 
-  it("counts only the days that were judged, and says today is not one of them", () => {
+  it("counts only the days that were judged when some days are missing", () => {
     // The case from the request: three days of food and a target in the window. The row's
-    // `window_end` is yesterday, so today's part-day cannot be in these numbers — and the sentence
-    // has to say so, or the figure reads as an average that already includes this morning.
+    // `window_end` is yesterday, so today's part-day cannot be in these numbers; the subtitle
+    // above the sentence already says the window is not counting today.
     const sentence = verdictSentence(
       verdict({
         verdict: "under",
@@ -195,11 +195,11 @@ describe("verdictSentence", () => {
       }),
     );
     expect(sentence).toContain("over 3 of the last 7 days");
-    expect(sentence).toContain("(not counting today)");
+    expect(sentence).not.toContain("a day");
     expect(sentence).not.toContain("over 4 of");
   });
 
-  it("puts the parenthetical in when it is over target too", () => {
+  it("keeps the count when some days were not judged, whatever the verdict", () => {
     expect(
       verdictSentence(
         verdict({
@@ -210,7 +210,21 @@ describe("verdictSentence", () => {
           avg_target_calories: 1771,
         }),
       ),
-    ).toContain("(not counting today)");
+    ).toContain("over 4 of the last 7 days");
+  });
+
+  it('says "a day" instead of the count when every day was judged', () => {
+    const sentence = verdictSentence(
+      verdict({
+        verdict: "on_track",
+        days_logged: 7,
+        days_judged: 7,
+        avg_calories: 1768,
+        avg_target_calories: 1717,
+      }),
+    );
+    expect(sentence).toBe("Averaging 1,768 kcal a day, against 1,717. On target.");
+    expect(sentence).not.toContain("of the last 7 days");
   });
 
   it("names the days it counted, so the window is not an article of faith", () => {
