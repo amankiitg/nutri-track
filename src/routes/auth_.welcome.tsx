@@ -38,7 +38,7 @@ export const Route = createFileRoute("/auth_/welcome")({
     ...(typeof search["redirect"] === "string" ? { redirect: search["redirect"] } : {}),
   }),
   head: () => ({
-    meta: [{ title: "Finish setting up — NutriTrack" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: "Finish setting up · NutriTrack" }, { name: "robots", content: "noindex" }],
   }),
   component: WelcomePage,
 });

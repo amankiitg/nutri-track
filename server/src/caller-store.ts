@@ -15,7 +15,7 @@ import { safeTimeZone } from "./time";
 
 /** One message, because the user's next move is the same for every cause. */
 export const SUPABASE_FAILURE_MESSAGE =
-  "Could not read this meal's photos. They may have been removed — capture the meal again, or type what you ate instead.";
+  "Could not read this meal's photos. They may have been removed. Capture the meal again, or type what you ate instead.";
 
 /** The invite action's own failure, so an admin hears which of the two halves went wrong. */
 export const INVITE_FAILURE_MESSAGE =

@@ -42,7 +42,7 @@ const UPSTREAM_MESSAGES = {
    * window — so the advice is to wait, and `ApiError.headers` carries a Retry-After
    * so the UI can be specific about how long.
    */
-  busy: "The meal reader is busy at the moment. Nothing was logged — try again in a minute.",
+  busy: "The meal reader is busy at the moment. Nothing was logged. Try again in a minute.",
   /** A key problem or a 5xx. Neither is the user's fault and neither is worth retrying. */
   broken:
     "The meal reader is not available right now. Your photo is still here, so try again later.",

@@ -485,7 +485,7 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          Tokens, not money. There is no price in here on purpose — a rate card would be wrong the
+          Tokens, not money. There is no price in here on purpose. A rate card would be wrong the
           first time it changed, and multiplying two numbers is easy enough.
         </p>
 

@@ -347,7 +347,7 @@ export function targetWeightMessage(targetKg: number, heightCm: number, units: U
   return (
     `That target looks very low for your height. ${wrongUnitSentence(mixUp)} ` +
     `Otherwise it is a BMI of ${bmi(targetKg, heightCm).toFixed(1)}, below the ${MIN_SAFE_BMI} ` +
-    "floor — please pick a higher target or talk to a doctor first."
+    "floor. Please pick a higher target or talk to a doctor first."
   );
 }
 

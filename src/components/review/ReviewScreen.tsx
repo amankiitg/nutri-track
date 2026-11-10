@@ -329,7 +329,9 @@ export function ReviewScreen({
           {isEdit && !edit.canReanalyze ? (
             // An explanation rather than a disabled button: a control that cannot be used and
             // does not say why is the same dead end as no control at all.
-            <span className="text-right">Logged from a description — no photos to read again.</span>
+            <span className="text-right">
+              Logged from a description, so there are no photos to read again.
+            </span>
           ) : (
             <button
               type="button"

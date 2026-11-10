@@ -50,7 +50,7 @@ export function isSupportedPhotoType(type: string): boolean {
 /** Names the file and says what to do about it, rather than reporting a decoder. */
 export function undecodablePhotoMessage(fileName: string): string {
   if (/\.(heic|heif)$/i.test(fileName)) {
-    return `${fileName} is a HEIC photo. Browsers cannot open those and the photo bucket does not accept them, so it cannot be analysed. On an iPhone, share the photo as a JPEG instead — or tap Take a photo, which converts automatically. You can also describe the meal in the Type tab.`;
+    return `${fileName} is a HEIC photo. Browsers cannot open those and the photo bucket does not accept them, so it cannot be analysed. On an iPhone, share the photo as a JPEG instead, or tap Take a photo, which converts automatically. You can also describe the meal in the Type tab.`;
   }
   return `${fileName} is not a photo this browser can read. Use a JPEG, PNG or WebP, or describe the meal in the Type tab.`;
 }
@@ -351,7 +351,7 @@ export function messageFromErrorBody(text: string): string | null {
 export function describeParseFailure(failure: ParseFailure): string {
   switch (failure.kind) {
     case "unreachable":
-      return "Could not reach the meal service. Check your connection — the meal has not been logged.";
+      return "Could not reach the meal service. Check your connection. The meal has not been logged.";
     case "timeout":
       return `The meal service did not answer within ${Math.round(PARSE_TIMEOUT_MS / 1000)} seconds, so this was given up on. Nothing was logged. Try again, or type what you ate instead.`;
     case "cancelled":

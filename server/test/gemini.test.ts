@@ -306,7 +306,7 @@ describe("createGeminiClient", () => {
     const message = (error as ApiError).message;
     expect(message).not.toMatch(/gemini/i);
     expect(message).not.toMatch(/\b\d{3}\b/);
-    expect(message).toContain("try again");
+    expect(message).toContain("Try again in a minute.");
     expect((error as ApiError).details).toMatchObject({ status: 429 });
   });
 

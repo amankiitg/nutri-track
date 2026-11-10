@@ -13,7 +13,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
-  head: () => ({ meta: [{ title: "Privacy — NutriTrack" }] }),
+  head: () => ({ meta: [{ title: "Privacy · NutriTrack" }] }),
 });
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

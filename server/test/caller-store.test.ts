@@ -245,7 +245,7 @@ describe("loadPhotos", () => {
 
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).message).not.toContain("Object not found");
-      expect((error as ApiError).message).toContain("capture the meal again");
+      expect((error as ApiError).message).toContain("Capture the meal again");
 
       const lines = logged.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
       const failure = lines.find((line) => line["message"] === "supabase call failed");

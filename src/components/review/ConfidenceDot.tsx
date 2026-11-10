@@ -23,7 +23,7 @@ export function ConfidenceDot({ confidence }: { confidence: number }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-      title={`${Math.round(confidence * 100)}% — ${BAND_LABELS[band]}`}
+      title={`${Math.round(confidence * 100)}%, ${BAND_LABELS[band]}`}
     >
       <span className={`size-2.5 rounded-full ${BAND_STYLES[band]}`} aria-hidden="true" />
       <span className="sr-only">{`Confidence: ${BAND_LABELS[band]}`}</span>

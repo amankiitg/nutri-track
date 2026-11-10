@@ -177,7 +177,7 @@ describe("verdictSentence", () => {
       }),
     );
     expect(sentence).toBe(
-      "Averaging 1,450 kcal over 5 of the last 7 days (not counting today), against 1,636 — under target.",
+      "Averaging 1,450 kcal over 5 of the last 7 days (not counting today), against 1,636. Under target.",
     );
   });
 
@@ -234,7 +234,7 @@ describe("verdictSentence", () => {
         avg_target_calories: 1636,
       }),
     );
-    expect(sentence).toContain("on target");
+    expect(sentence).toContain("On target.");
   });
 
   it("says over target when it is over", () => {
@@ -247,7 +247,7 @@ describe("verdictSentence", () => {
         avg_target_calories: 1636,
       }),
     );
-    expect(sentence).toContain("over target");
+    expect(sentence).toContain("Over target.");
   });
 
   it("covers every state with a non-empty sentence", () => {

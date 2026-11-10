@@ -49,7 +49,7 @@ function AdminPage() {
         <CardContent className="py-4 text-xs text-muted-foreground">
           <p>
             A second admin cannot be created from this page. The <code>admins</code> table has no
-            insert policy, so nobody — including you — can promote an account through the app or the
+            insert policy, so nobody, including you, can promote an account through the app or the
             API with their own token.
           </p>
         </CardContent>

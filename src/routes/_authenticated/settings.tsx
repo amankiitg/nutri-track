@@ -57,7 +57,7 @@ function SettingsPage() {
           {budget.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
           {budget.isError && (
             <p role="alert" className="text-sm text-destructive">
-              Could not read today's analyses. It only affects this count — logging a meal still
+              Could not read today's analyses. It only affects this count. Logging a meal still
               works.
             </p>
           )}

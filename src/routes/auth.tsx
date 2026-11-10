@@ -74,9 +74,9 @@ function useCooldown(seconds: number): { remaining: number; start: () => void } 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — NutriTrack" },
+      { title: "Sign in · NutriTrack" },
       { name: "description", content: "Sign in to NutriTrack with Google or email." },
-      { property: "og:title", content: "Sign in — NutriTrack" },
+      { property: "og:title", content: "Sign in · NutriTrack" },
       { property: "og:description", content: "Sign in to NutriTrack with Google or email." },
     ],
   }),

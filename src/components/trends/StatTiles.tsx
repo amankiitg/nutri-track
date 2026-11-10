@@ -27,7 +27,7 @@ export function StatTiles({ totals, windowDays }: { totals: PeriodTotals; window
     },
     {
       label: "Adherence",
-      value: totals.adherence_pct === null ? "—" : `${Math.round(totals.adherence_pct)}%`,
+      value: totals.adherence_pct === null ? "None" : `${Math.round(totals.adherence_pct)}%`,
       detail:
         judged === 0
           ? "nothing to compare yet"
@@ -35,7 +35,8 @@ export function StatTiles({ totals, windowDays }: { totals: PeriodTotals; window
     },
     {
       label: "Average calories",
-      value: totals.avg_calories === null ? "—" : Math.round(totals.avg_calories).toLocaleString(),
+      value:
+        totals.avg_calories === null ? "None" : Math.round(totals.avg_calories).toLocaleString(),
       detail:
         totals.avg_target_calories === null
           ? "per logged day"
@@ -43,7 +44,7 @@ export function StatTiles({ totals, windowDays }: { totals: PeriodTotals; window
     },
     {
       label: "Average protein",
-      value: totals.avg_protein_g === null ? "—" : `${Math.round(totals.avg_protein_g)} g`,
+      value: totals.avg_protein_g === null ? "None" : `${Math.round(totals.avg_protein_g)} g`,
       detail:
         totals.avg_target_protein_g === null
           ? "per logged day"

@@ -138,7 +138,7 @@ export function presentBudget(budget: CallBudget, timeZone: string): BudgetPrese
   return {
     remaining: budget.remaining,
     scale: `of ${budget.limit} left today`,
-    reset: `Resets at midnight — ${resetClock(budget.resetsAt, timeZone)} in ${timeZone}.`,
+    reset: `Resets at midnight, ${resetClock(budget.resetsAt, timeZone)} in ${timeZone}.`,
     exhausted:
       budget.remaining === 0
         ? `You've used today's ${budget.limit} analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.`

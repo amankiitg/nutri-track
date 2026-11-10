@@ -67,7 +67,7 @@ describe("presentBudget", () => {
     expect(shown.scale).toBe(`of ${DAILY_ANALYSIS_LIMIT} left today`);
     // Twenty is the number a normal account sees on this line.
     expect(shown.scale).toBe("of 20 left today");
-    expect(shown.reset).toContain("Resets at midnight — 00:00");
+    expect(shown.reset).toContain("Resets at midnight, 00:00");
     expect(shown.reset).toContain(NEW_YORK);
   });
 

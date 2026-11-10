@@ -348,7 +348,7 @@ export function formatTimeInZone(iso: string, timeZone: string): string {
 }
 
 function kcal(value: number | null): string {
-  return value === null ? "—" : Math.round(value).toLocaleString();
+  return value === null ? "None" : Math.round(value).toLocaleString();
 }
 
 /** "31 Oct" for a `YYYY-MM-DD` calendar date, read as that date and nothing else. */
@@ -406,11 +406,11 @@ export function verdictSentence(verdict: WeekVerdict): string {
     // meal logged this morning changes nothing here — and without the parenthetical the number reads
     // as an average that already includes it, which is what made the card look wrong at 8am.
     case "on_track":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — on target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. On target.`;
     case "under":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — under target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. Under target.`;
     case "over":
-      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)} — over target.`;
+      return `Averaging ${kcal(verdict.avg_calories)} kcal over ${judged} of the last ${window} days (not counting today), against ${kcal(verdict.avg_target_calories)}. Over target.`;
   }
 }
 

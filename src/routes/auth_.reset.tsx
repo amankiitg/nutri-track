@@ -42,7 +42,7 @@ const MIN_PASSWORD = 8;
 export const Route = createFileRoute("/auth_/reset")({
   head: () => ({
     meta: [
-      { title: "Set a new password — NutriTrack" },
+      { title: "Set a new password · NutriTrack" },
       { name: "description", content: "Choose a new password for your NutriTrack account." },
     ],
   }),

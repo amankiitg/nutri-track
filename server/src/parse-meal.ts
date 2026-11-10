@@ -63,7 +63,7 @@ export function isModelRefusal(finishReason: string | null | undefined): boolean
 
 /** Said when the model would not answer. Points somewhere that will. */
 export const MODEL_DECLINED_MESSAGE =
-  "The meal reader declined to analyse this one. Try a different photo, or type what you ate — typing works without a picture.";
+  "The meal reader declined to analyse this one. Try a different photo, or type what you ate. Typing works without a picture.";
 
 /** Said when it did answer and the answer was unusable. */
 export const UNUSABLE_RESPONSE_MESSAGE =

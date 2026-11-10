@@ -108,7 +108,7 @@ export function formPage(address: string, notice?: string): string {
   const problem =
     notice === undefined ? "" : `      <p class="problem">${escapeHtml(notice)}</p>\n`;
   return shell(
-    "Invite someone — NutriTrack",
+    "Invite someone · NutriTrack",
     `${problem}      <h1>Invite someone</h1>
       <p class="lead">
         Creates a Gmail <strong>draft</strong> in ${escapeHtml(address)}. It never sends: read it in
@@ -122,7 +122,7 @@ export function formPage(address: string, notice?: string): string {
         <input id="email" name="email" type="email" autocomplete="off" required />
 
         <p class="hint">
-          Add it on the Admin page first — that is the address the invite is tied to, and what the
+          Add it on the Admin page first. That is the address the invite is tied to, and what the
           email tells them to sign in with.
         </p>
 
@@ -134,7 +134,7 @@ export function formPage(address: string, notice?: string): string {
 /** The good outcome. Reviewing happens in Gmail, so this just says where to look. */
 export function createdPage(input: { name: string; email: string; address: string }): string {
   return shell(
-    "Draft created — NutriTrack",
+    "Draft created · NutriTrack",
     `      <h1>Draft created</h1>
       <p class="lead">It is in your Gmail drafts, waiting for you to read it.</p>
       <dl>
@@ -154,12 +154,12 @@ export function createdPage(input: { name: string; email: string; address: strin
  */
 export function problemPage(message: string): string {
   return shell(
-    "Could not create the draft — NutriTrack",
+    "Could not create the draft · NutriTrack",
     `      <h1>Could not create the draft</h1>
       <p class="problem">${escapeHtml(message)}</p>
       <p class="lead">
         Nothing was created and nothing was sent. Check <code>GMAIL_ADDRESS</code> and
-        <code>GMAIL_APP_PASSWORD</code> in <code>.env</code>, then try again — or run
+        <code>GMAIL_APP_PASSWORD</code> in <code>.env</code>, then try again, or run
         <code>npm run invite:check</code>, which reports whether the account accepts the credential
         without creating anything.
       </p>

@@ -285,7 +285,7 @@ describe("when the model declines", () => {
       error: {
         code: "unparseable_response",
         message:
-          "The meal reader declined to analyse this one. Try a different photo, or type what you ate — typing works without a picture.",
+          "The meal reader declined to analyse this one. Try a different photo, or type what you ate. Typing works without a picture.",
         details: { reason: "refusal", finishReason: "SAFETY" },
       },
     };

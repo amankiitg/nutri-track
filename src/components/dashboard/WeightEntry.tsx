@@ -158,7 +158,6 @@ export function WeightEntry({
               id="waist-today"
               inputMode="decimal"
               autoComplete="off"
-              placeholder="—"
               value={waist}
               onChange={(event) => setWaist(event.target.value)}
               onKeyDown={(event) => {
@@ -196,7 +195,7 @@ export function WeightEntry({
             trailing 7-day average is 1.5 kg from the weight the current target was built
             from, tomorrow starts on a new one. */}
         <p className="text-[11px] text-muted-foreground">
-          Recorded against today. Today's calorie target is unchanged — once your recent weight has
+          Recorded against today. Today's calorie target is unchanged. Once your recent weight has
           moved enough, tomorrow starts on a target recomputed from it.
         </p>
       </CardContent>

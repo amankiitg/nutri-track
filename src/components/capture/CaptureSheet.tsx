@@ -704,7 +704,7 @@ export function CaptureSheet({
               </Button>
             ) : (
               <p className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-                This browser cannot listen. Type the meal in the Type tab instead — it works
+                This browser cannot listen. Type the meal in the Type tab instead. It works
                 everywhere.
               </p>
             )}
@@ -870,7 +870,7 @@ export function CaptureSheet({
               // typed, which describes a different screen from the one in front of them.
               <p className="mt-2 text-center text-xs text-muted-foreground">
                 {photos.length > 0
-                  ? "Taking longer than usual. A photo can take up to two minutes — keep this open, or tap Cancel and type what you ate instead."
+                  ? "Taking longer than usual. A photo can take up to two minutes. Keep this open, or tap Cancel and type what you ate instead."
                   : "Still working on it. You can keep this open or cancel."}
               </p>
             )}

@@ -32,13 +32,13 @@ import { requestInvite, type InviteResult } from "@/lib/invite-request";
 export const Route = createFileRoute("/auth_/request")({
   head: () => ({
     meta: [
-      { title: "Request an invite — NutriTrack" },
+      { title: "Request an invite · NutriTrack" },
       {
         name: "description",
         content:
           "NutriTrack is invite-only. Ask for an invite and you'll get an email when you're in.",
       },
-      { property: "og:title", content: "Request an invite — NutriTrack" },
+      { property: "og:title", content: "Request an invite · NutriTrack" },
       {
         property: "og:description",
         content:
