@@ -2,7 +2,8 @@
  * The free trial, at /try.
  *
  * Three steps and no account: email (with Turnstile), a 6-digit code, then a scan. The
- * photo is analysed in memory and the result is shown read-only, with the scans left.
+ * photo is analysed in memory and the result is shown read-only. The scans left are shown
+ * only at 3 and at 1, never up front.
  * At zero scans the visitor hits a wall that asks for an invite.
  *
  * If the Turnstile site key is missing from the build, the page says the trial is
@@ -34,7 +35,7 @@ import {
 } from "@/lib/trial";
 
 export const Route = createFileRoute("/try")({
-  head: () => ({ meta: [{ title: "Free trial — NutriTrack" }] }),
+  head: () => ({ meta: [{ title: "Free trial · NutriTrack" }] }),
   component: TrialPage,
 });
 
@@ -250,8 +251,8 @@ export function TrialPage() {
         <div className="my-auto animate-rise py-10">
           <h1 className="text-3xl font-semibold">Free trial</h1>
           <p className="mt-2 text-muted-foreground">
-            Free trial: {scanLimit} meal scans. We&apos;ll email you a 6-digit code first. Trial
-            results aren&apos;t saved.
+            Try NutriTrack free. We&apos;ll email you a code to start. Trial results aren&apos;t
+            saved.
           </p>
 
           {alreadyAccess && (
@@ -419,11 +420,9 @@ export function TrialPage() {
                     ))}
                   </ul>
 
-                  <p className="text-sm font-medium">
-                    Scans left: {scansLeft ?? scanLimit} of {scanLimit}
-                  </p>
-
-                  {scansLeft !== null && scansLeft <= 3 && scansLeft > 0 && (
+                  {/* The count is not shown up front or after every scan: only as a heads-up
+                      at 3 left and at the last one, then the wall at 0. The limits are unchanged. */}
+                  {(scansLeft === 3 || scansLeft === 1) && (
                     <p
                       role="status"
                       className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"

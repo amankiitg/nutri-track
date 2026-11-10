@@ -84,7 +84,54 @@ beforeEach(() => {
   mocks.requestInvite.mockResolvedValue("requested");
 });
 
+function parsedWith(scansLeft: number) {
+  return {
+    items: [],
+    scans_left: scansLeft,
+    meal_type: "lunch",
+    source: "text",
+    model: "fake",
+    attempts: 1,
+  };
+}
+
 describe("the trial page", () => {
+  it("opens with the intro and no scan count up front", async () => {
+    render(<TrialPage />);
+
+    expect(
+      await screen.findByText(
+        "Try NutriTrack free. We'll email you a code to start. Trial results aren't saved.",
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bscans?\b/i);
+    expect(document.body.textContent).not.toContain("10");
+  });
+
+  it("shows the scans left only at 3 and at 1", async () => {
+    mocks.getStoredTrial.mockReturnValue({ token: "token-1", email: "trial@example.com" });
+    render(<TrialPage />);
+    const user = userEvent.setup();
+
+    const seen: Array<[number, string | null]> = [];
+    for (const left of [9, 3, 2, 1]) {
+      mocks.parseTrialMeal.mockResolvedValueOnce(parsedWith(left));
+      await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+      await user.click(screen.getByRole("button", { name: /analyse/i }));
+      await screen.findByRole("button", { name: /scan another meal/i });
+      seen.push([left, screen.queryByRole("status")?.textContent ?? null]);
+      expect(document.body.textContent).not.toMatch(/scans left:/i);
+      await user.click(screen.getByRole("button", { name: /scan another meal/i }));
+    }
+
+    expect(seen).toEqual([
+      [9, null],
+      [3, "3 scans left. Join to keep tracking."],
+      [2, null],
+      [1, "1 scan left. Join to keep tracking."],
+    ]);
+  });
+
   it("sends an invited address to sign in instead of starting a trial", async () => {
     mocks.sendTrialCode.mockResolvedValue({
       status: "already_access",
