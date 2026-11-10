@@ -13,6 +13,8 @@ import { ApiError } from "../src/errors";
 import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
 import { dailyLimitMessage, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
+import type { EmailClient } from "../src/resend";
+import type { TrialStore } from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
 import { SUBJECT } from "../../shared/invite-email";
 
@@ -29,7 +31,8 @@ const CONFIG: Config = {
   GEMINI_API_KEY: "gemini-example",
   GEMINI_VISION_MODEL: "gemini-3.8-flash",
   ALLOWED_ORIGINS: ["http://localhost:8080"],
-  // The defaults, which is what a deployment without the variables gets.
+  // The defaults, which is what a deployment without the variables gets. The trial
+  // limits live in the database's trial_settings table, not here.
   DAILY_ANALYSIS_LIMIT,
   ADMIN_DAILY_ANALYSIS_LIMIT,
 };
@@ -164,6 +167,23 @@ function buildHarness(options: HarnessOptions = {}) {
         }
       : options.gmail;
 
+  // The trial store is a fake: no test here drives the trial, and the real one would
+  // need the migration applied. It is present because AppDeps requires it, and the
+  // routes gate on the trial secrets before they touch it.
+  const trial: TrialStore = {
+    async sendCode() {
+      return { status: "invalid", code: undefined, email: undefined };
+    },
+    async verifyCode() {
+      return "no_code";
+    },
+    async startScan() {
+      return { status: "ok", scans_left: 9 };
+    },
+    async logCall() {},
+  };
+  const email: EmailClient | null = null;
+
   const app = createApp({
     config: options.config ?? CONFIG,
     llm,
@@ -176,6 +196,8 @@ function buildHarness(options: HarnessOptions = {}) {
     forCaller: () => store,
     gmail,
     inviteSender: options.inviteSender === undefined ? "aman@example.com" : options.inviteSender,
+    trial,
+    email,
     now: () => NOW,
   });
 

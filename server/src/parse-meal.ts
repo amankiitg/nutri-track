@@ -15,7 +15,7 @@ import {
   type MealSource,
   type MealType,
 } from "../../shared/meal-parse";
-import type { CallerStore, Photo } from "./caller-store";
+import type { CallerStore, LlmCallRecord, Photo } from "./caller-store";
 import type { Config } from "./config";
 import type { ChatImagePart, ChatMessage, ChatTextPart, Completion, LlmClient } from "./llm";
 import { ApiError } from "./errors";
@@ -102,14 +102,14 @@ export interface ParseMealDeps {
  */
 export const RESPONSE_SCHEMA = zodToResponseSchema(modelContractSchema);
 
-function buildSystemMessage(): ChatMessage {
+export function buildSystemMessage(): ChatMessage {
   // The shape is not described here: the provider enforces it. Repeating the field
   // list in the prompt would be a second copy free to disagree with the schema.
   return { role: "system", content: SYSTEM_PROMPT };
 }
 
 /** The user turn: what was said or typed, any hint, and the photos if there are any. */
-function buildUserMessage(input: ParseMealRequest, photos: readonly Photo[]): ChatMessage {
+export function buildUserMessage(input: ParseMealRequest, photos: readonly Photo[]): ChatMessage {
   const lines: string[] = [];
   if (input.text) lines.push(input.text);
   if (input.hint) lines.push(`Additional context from the user: ${input.hint}`);
@@ -132,48 +132,46 @@ function buildUserMessage(input: ParseMealRequest, photos: readonly Photo[]): Ch
  * successfully logged is worth more than a telemetry row. A failure here is logged
  * loudly instead, because a broken insert would also silently disarm the rate limit.
  */
-async function record(store: CallerStore, record: Parameters<CallerStore["recordCall"]>[0]) {
+async function recordQuietly(
+  record: (record: LlmCallRecord) => Promise<void>,
+  record_: LlmCallRecord,
+) {
   try {
-    await store.recordCall(record);
+    await record(record_);
   } catch (error) {
     log("warn", "could not record an llm_call", {
-      status: record.status,
+      status: record_.status,
       error: error instanceof Error ? error.message : "unknown",
     });
   }
 }
 
-export async function parseMeal(
-  input: ParseMealRequest,
-  userId: string,
-  deps: ParseMealDeps,
-): Promise<ParseMealOutcome> {
-  const now = deps.now?.() ?? new Date();
-  const timeZone = await deps.store.timeZone();
+export interface AnalyzeDeps {
+  llm: LlmClient;
+  model: string;
+  /** Records one model call, best-effort. The authenticated and trial paths differ. */
+  record: (record: LlmCallRecord) => Promise<void>;
+}
 
-  // The admin gets a larger ceiling: running the app means looking at more parses than using it does.
-  // It is the same check with a different number, not a second code path.
-  const admin = await deps.store.isAdmin();
-  const limit = admin ? deps.config.ADMIN_DAILY_ANALYSIS_LIMIT : deps.config.DAILY_ANALYSIS_LIMIT;
+export interface AnalyzeOutcome {
+  items: MealItemDraft[];
+  model: string;
+  attempts: number;
+}
 
-  const usedToday = await deps.store.countCallsSince(startOfLocalDay(now, timeZone));
-  if (usedToday >= limit) {
-    const retryAfterSeconds = secondsUntilNextLocalMidnight(now, timeZone);
-    throw new ApiError(429, "rate_limited", dailyLimitMessage(limit), {
-      headers: { "Retry-After": String(retryAfterSeconds) },
-      details: {
-        limit,
-        used: usedToday,
-        retry_after_seconds: retryAfterSeconds,
-      },
-    });
-  }
-
-  const photos = input.photoPaths.length > 0 ? await deps.store.loadPhotos(input.photoPaths) : [];
-  // One multimodal model for photos and text alike: Gemini Flash reads both, so
-  // there is no second id to keep in step.
-  const model = deps.config.GEMINI_VISION_MODEL;
-  const messages: ChatMessage[] = [buildSystemMessage(), buildUserMessage(input, photos)];
+/**
+ * The model call, the retry and the refusal handling, shared by the authenticated
+ * parse and the trial parse.
+ *
+ * The two differ only in how a call is recorded and where the photos come from; the
+ * messages, the schema, the retry and the refusal rules are identical, so they live
+ * here rather than in a second copy that would drift.
+ */
+export async function analyzeMeal(
+  messages: ChatMessage[],
+  deps: AnalyzeDeps,
+): Promise<AnalyzeOutcome> {
+  const { model } = deps;
 
   /** One model call, logged whether or not it parses. */
   const runAttempt = async (attemptMessages: ChatMessage[]) => {
@@ -186,7 +184,7 @@ export async function parseMeal(
         responseSchema: RESPONSE_SCHEMA,
       });
     } catch (error) {
-      await record(deps.store, {
+      await recordQuietly(deps.record, {
         model,
         promptTokens: null,
         completionTokens: null,
@@ -197,7 +195,7 @@ export async function parseMeal(
     }
 
     const result = classifyModelResponse(completion.content);
-    await record(deps.store, {
+    await recordQuietly(deps.record, {
       model: completion.model,
       promptTokens: completion.promptTokens,
       completionTokens: completion.completionTokens,
@@ -209,10 +207,7 @@ export async function parseMeal(
     });
 
     if (!result.ok) {
-      // finishReason belongs in the log rather than in `status`, which stays a small
-      // set of values worth filtering on.
       log("warn", "the model's reply did not match the contract", {
-        userId,
         model: completion.model,
         reason: result.reason,
         detail: result.error,
@@ -233,7 +228,6 @@ export async function parseMeal(
   } else if (isModelRefusal(first.completion.finishReason)) {
     // Not retried, and said plainly. See REFUSAL_FINISH_REASONS.
     log("warn", "the model declined to answer", {
-      userId,
       reason: first.result.reason,
       finishReason: first.completion.finishReason,
     });
@@ -244,7 +238,6 @@ export async function parseMeal(
     // Exactly one retry, told precisely what was wrong with the first reply, with
     // the bad reply echoed back so "your previous response" has a referent.
     log("info", "retrying a parse that did not match the contract", {
-      userId,
       reason: first.result.reason,
     });
     const instruction =
@@ -278,6 +271,50 @@ export async function parseMeal(
     }
     items = second.result.items;
   }
+
+  return { items, model: modelThatAnswered, attempts };
+}
+
+export async function parseMeal(
+  input: ParseMealRequest,
+  deps: ParseMealDeps,
+): Promise<ParseMealOutcome> {
+  const now = deps.now?.() ?? new Date();
+  const timeZone = await deps.store.timeZone();
+
+  // The admin gets a larger ceiling: running the app means looking at more parses than using it does.
+  // It is the same check with a different number, not a second code path.
+  const admin = await deps.store.isAdmin();
+  const limit = admin ? deps.config.ADMIN_DAILY_ANALYSIS_LIMIT : deps.config.DAILY_ANALYSIS_LIMIT;
+
+  const usedToday = await deps.store.countCallsSince(startOfLocalDay(now, timeZone));
+  if (usedToday >= limit) {
+    const retryAfterSeconds = secondsUntilNextLocalMidnight(now, timeZone);
+    throw new ApiError(429, "rate_limited", dailyLimitMessage(limit), {
+      headers: { "Retry-After": String(retryAfterSeconds) },
+      details: {
+        limit,
+        used: usedToday,
+        retry_after_seconds: retryAfterSeconds,
+      },
+    });
+  }
+
+  const photos = input.photoPaths.length > 0 ? await deps.store.loadPhotos(input.photoPaths) : [];
+  // One multimodal model for photos and text alike: Gemini Flash reads both, so
+  // there is no second id to keep in step.
+  const model = deps.config.GEMINI_VISION_MODEL;
+  const messages: ChatMessage[] = [buildSystemMessage(), buildUserMessage(input, photos)];
+
+  const {
+    items,
+    model: modelThatAnswered,
+    attempts,
+  } = await analyzeMeal(messages, {
+    llm: deps.llm,
+    model,
+    record: (record) => deps.store.recordCall(record),
+  });
 
   const mealType = input.mealType ?? guessMealType(new Date(input.eatenAt), timeZone);
 

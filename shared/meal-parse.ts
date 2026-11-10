@@ -52,6 +52,60 @@ export type MealType = (typeof MEAL_TYPES)[number];
 export const MEAL_SOURCES = ["photo", "voice", "text"] as const;
 export type MealSource = (typeof MEAL_SOURCES)[number];
 
+export const COOKING_FAT_TYPES = ["oil", "ghee", "butter", "dressing", "none"] as const;
+export type CookingFatType = (typeof COOKING_FAT_TYPES)[number];
+
+/**
+ * Cooking fat the model cannot see, but which Indian cooking almost always adds.
+ *
+ * A photo shows the dal but not the ghee it was tempered in, and the difference is
+ * often 100 to 200 kcal on one meal. The model reports it here so the review screen
+ * can offer one-tap corrections; the item's own calories and fat already include it.
+ *
+ * "none" means the item was not cooked or served with a meaningful amount of fat, and
+ * the review screen treats it the same as a missing value: no correction chips.
+ */
+export interface CookingFat {
+  type: CookingFatType;
+  amount_tsp: number;
+  /**
+   * Per-teaspoon calories, only meaningful for "dressing", whose calories per spoon
+   * cannot be looked up from a constant the way oil, ghee and butter can. The model
+   * returns these; the review screen uses fixed values for the other three types.
+   */
+  kcal_per_tsp: number | null;
+  /** Per-teaspoon fat in grams, same rule as kcal_per_tsp. */
+  fat_per_tsp: number | null;
+}
+
+/**
+ * Turns whatever the model sent for cooking_fat into the strict shape, or null.
+ *
+ * Tolerant on purpose: the model is not an API. A missing field, a null, the type
+ * "none" and a zero amount all mean "no correction chips", and an unrecognised type
+ * falls back to "none" rather than throwing away an otherwise good reply. Shared so
+ * the review screen can recover the same value from a stored llm_raw payload.
+ */
+export function normalizeCookingFat(raw: unknown): CookingFat | null {
+  if (raw === null || raw === undefined || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const rawType = record["type"];
+  const type =
+    typeof rawType === "string" && (COOKING_FAT_TYPES as readonly string[]).includes(rawType.trim())
+      ? (rawType.trim() as CookingFatType)
+      : "none";
+  const amount = looseNumberValue(record["amount_tsp"]) ?? 0;
+  if (type === "none" || amount <= 0) return null;
+  return {
+    type,
+    amount_tsp: amount,
+    kcal_per_tsp: looseNumberValue(record["kcal_per_tsp"]),
+    fat_per_tsp: looseNumberValue(record["fat_per_tsp"]),
+  };
+}
+
 /** Stable reason strings, surfaced in the review UI next to flagged items. */
 export const REVIEW_REASONS = {
   macroMismatch: "Calories do not match the protein, carbs and fat",
@@ -68,18 +122,21 @@ export const REVIEW_REASONS = {
  * checks live.
  */
 
+/** The numeric half of looseNumber, shared so normalizeCookingFat reads numbers the same way. */
+function looseNumberValue(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 const looseNumber = z
   .union([z.number(), z.string(), z.null(), z.undefined()])
-  .transform((value): number | null => {
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (trimmed === "") return null;
-      const parsed = Number(trimmed);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    return null;
-  });
+  .transform(looseNumberValue);
 
 const looseString = z
   .union([z.string(), z.number(), z.null(), z.undefined()])
@@ -91,6 +148,20 @@ const looseString = z
     if (typeof value === "number") return String(value);
     return null;
   });
+
+/** Tolerant on the wire, like everything else: a missing or null cooking_fat is fine. */
+const cookingFatWireSchema = z
+  .union([
+    z.object({
+      type: z.string().nullish(),
+      amount_tsp: looseNumber,
+      kcal_per_tsp: looseNumber,
+      fat_per_tsp: looseNumber,
+    }),
+    z.null(),
+    z.undefined(),
+  ])
+  .transform(normalizeCookingFat);
 
 export const modelItemSchema = z.object({
   name: z.string().trim().min(1, "each item needs a name"),
@@ -105,6 +176,7 @@ export const modelItemSchema = z.object({
   sugar_g: looseNumber,
   sodium_mg: looseNumber,
   confidence: looseNumber,
+  cooking_fat: cookingFatWireSchema,
 });
 
 export type ModelItem = z.infer<typeof modelItemSchema>;
@@ -162,6 +234,34 @@ export const modelItemContractSchema = z.object({
     .describe(
       "How sure you are: 0.95 for a read nutrition label, 0.7 for a clear look, 0.4 for a guess",
     ),
+  cooking_fat: z
+    .object({
+      type: z
+        .enum([...COOKING_FAT_TYPES])
+        .describe(
+          "The hidden cooking fat for this item: oil, ghee, butter, dressing, or none when the item was not cooked or served with a meaningful amount of fat",
+        ),
+      amount_tsp: z
+        .number()
+        .describe(
+          "Teaspoons of that fat the item was cooked or served with. 1 tablespoon is 3 teaspoons",
+        ),
+      kcal_per_tsp: z
+        .number()
+        .nullable()
+        .describe(
+          "Calories per teaspoon, only when type is dressing; null for oil, ghee and butter",
+        ),
+      fat_per_tsp: z
+        .number()
+        .nullable()
+        .describe(
+          "Grams of fat per teaspoon, only when type is dressing; null for oil, ghee and butter",
+        ),
+    })
+    .describe(
+      "The fat this item was cooked or served with. The item's calories and fat must already include it",
+    ),
 });
 
 export const modelContractSchema = z.object({
@@ -186,6 +286,8 @@ export interface MealItemDraft {
   sodium_mg: number | null;
   /** 0–1; defaults to 0.5 when the model omits it. */
   confidence: number;
+  /** The hidden cooking fat, or null when there is none. */
+  cooking_fat: CookingFat | null;
   needs_review: boolean;
   review_reasons: string[];
 }
@@ -231,6 +333,7 @@ export function normalizeItem(item: ModelItem): MealItemDraft {
     sugar_g: item.sugar_g === null ? null : roundTo(item.sugar_g, 1),
     sodium_mg: item.sodium_mg === null ? null : roundTo(item.sodium_mg, 1),
     confidence: roundTo(confidence, 2),
+    cooking_fat: item.cooking_fat,
     needs_review: reasons.length > 0,
     review_reasons: reasons,
   };
@@ -462,4 +565,8 @@ export const SYSTEM_PROMPT = [
   "confidence accordingly.",
   "List every distinct item separately, including drinks and condiments that carry",
   "meaningful calories. Do not invent items you cannot see or read.",
+  "A photo cannot show cooking fat, and in Indian food it is often 100 to 200 kcal per meal.",
+  "For any item typically cooked or served with fat (curries, dal, sabzi, fried food, parathas,",
+  "rotis with ghee, salads with dressing, stir-fries), report that fat in cooking_fat with a",
+  "type and a teaspoon amount, and make the item's calories and fat already include it.",
 ].join(" ");

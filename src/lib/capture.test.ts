@@ -92,6 +92,7 @@ describe("parseResponseSchema", () => {
         sugar_g: 12,
         sodium_mg: 150,
         confidence: 0.8,
+        cooking_fat: null,
         needs_review: false,
         review_reasons: [],
       },

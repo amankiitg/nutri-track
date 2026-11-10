@@ -406,6 +406,7 @@ const PARSED_MEAL = {
       sugar_g: 2,
       sodium_mg: 300,
       confidence: 0.8,
+      cooking_fat: null,
       needs_review: false,
       review_reasons: [],
     },

@@ -216,6 +216,7 @@ describe("the prompt and the contract", () => {
         sugar_g: 1,
         sodium_mg: 210,
         confidence: 0.75,
+        cooking_fat: { type: "none", amount_tsp: 0, kcal_per_tsp: null, fat_per_tsp: null },
       },
     ],
   };
@@ -250,6 +251,7 @@ describe("the prompt and the contract", () => {
           sugar_g: null,
           sodium_mg: null,
           confidence: 0.9,
+          cooking_fat: { type: "none", amount_tsp: 0, kcal_per_tsp: null, fat_per_tsp: null },
         },
       ],
     };

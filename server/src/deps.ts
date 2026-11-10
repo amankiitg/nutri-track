@@ -8,7 +8,9 @@ import { createCallerStore } from "./caller-store";
 import type { Config } from "./config";
 import { createGmailDraftClient } from "./gmail";
 import { createGeminiClient } from "./gemini";
+import { createResendClient } from "./resend";
 import { createAuthClient, createCallerClient } from "./supabase";
+import { createTrialStore } from "./trial";
 
 export function createProductionDeps(config: Config): AppDeps {
   const authClient = createAuthClient(config);
@@ -31,11 +33,22 @@ export function createProductionDeps(config: Config): AppDeps {
         })
       : null;
 
+  // The trial store talks to PostgREST as anon; it is always built, because the trial
+  // routes gate on trialAvailable(config) before using it. It carries the trial server
+  // secret, which the database functions compare against the Vault copy. The email
+  // client is null without RESEND_API_KEY, which is one of the things trialAvailable
+  // requires.
+  const trial = createTrialStore(authClient, config.TRIAL_SERVER_SECRET);
+  const email =
+    config.RESEND_API_KEY !== undefined ? createResendClient(config.RESEND_API_KEY) : null;
+
   return {
     config,
     llm,
     gmail,
     inviteSender: config.INVITE_SENDER_ADDRESS ?? null,
+    trial,
+    email,
     verifyToken: createTokenVerifier(authClient),
     forCaller: (user, accessToken) =>
       createCallerStore(createCallerClient(config, accessToken), user.id),

@@ -83,6 +83,7 @@ describe("zodToResponseSchema", () => {
       "sugar_g",
       "sodium_mg",
       "confidence",
+      "cooking_fat",
     ]);
   });
 

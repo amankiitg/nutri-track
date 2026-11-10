@@ -24,6 +24,57 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+/**
+ * The demo media, top of the landing page.
+ *
+ * Tries the MP4 first, then the GIF, then the placeholder SVG, so a deployment can
+ * drop in a real video without a code change. The fixed aspect-ratio box is what
+ * keeps the layout from jumping when the file is swapped later.
+ */
+function DemoMedia() {
+  const [stage, setStage] = useState<"mp4" | "gif" | "placeholder">("mp4");
+
+  if (stage === "mp4") {
+    return (
+      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="h-full w-full object-cover"
+          onError={() => setStage("gif")}
+        >
+          <source src="/demo/meal-demo.mp4" type="video/mp4" />
+        </video>
+      </div>
+    );
+  }
+
+  if (stage === "gif") {
+    return (
+      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
+        <img
+          src="/demo/meal-demo.gif"
+          alt="NutriTrack demo"
+          className="h-full w-full object-cover"
+          onError={() => setStage("placeholder")}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
+      <img
+        src="/demo/meal-demo-placeholder.svg"
+        alt="Snap, Analyse, Macros"
+        className="h-full w-full object-cover"
+      />
+    </div>
+  );
+}
+
 function Landing() {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
@@ -44,6 +95,7 @@ function Landing() {
     <main className="paper-grain flex min-h-dvh flex-col">
       <div className="app-shell flex flex-1 flex-col justify-center py-16">
         <div className="animate-rise">
+          <DemoMedia />
           <BrandMark size={56} />
           <h1 className="mt-8 text-5xl leading-[1.02] font-semibold">
             Know if today
@@ -74,6 +126,9 @@ function Landing() {
         <div className="mt-10 flex flex-col gap-3 animate-rise [animation-delay:200ms]">
           <Button asChild size="lg" className="h-12 rounded-full text-base" disabled={checking}>
             <Link to="/auth">{checking ? "Checking…" : "Sign in"}</Link>
+          </Button>
+          <Button asChild variant="outline" size="lg" className="h-12 rounded-full text-base">
+            <Link to="/try">Try it free: 10 scans</Link>
           </Button>
           <p className="text-center text-sm">
             {/* The request page, not a step inside sign-in: somebody with no invite has one thing

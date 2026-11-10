@@ -7,7 +7,9 @@
  */
 import {
   MAX_PHOTOS,
+  normalizeCookingFat,
   reviewReasonsFor,
+  type CookingFat,
   type MealItemDraft,
   type MealSource,
   type MealType,
@@ -46,6 +48,8 @@ export interface ReviewItem {
   sugar_g: number | null;
   sodium_mg: number | null;
   confidence: number;
+  /** The hidden cooking fat, or null when there is none. */
+  cooking_fat: CookingFat | null;
   /** True once a human has changed any field on this item. */
   userEdited: boolean;
   /**
@@ -130,6 +134,7 @@ export function reviewItemFromDraft(draft: MealItemDraft): ReviewItem {
     sugar_g: draft.sugar_g,
     sodium_mg: draft.sodium_mg,
     confidence: draft.confidence,
+    cooking_fat: draft.cooking_fat ?? null,
     userEdited: false,
     perGram,
     // The draft is a plain object that came out of JSON.parse and was then normalised,
@@ -177,10 +182,77 @@ export function blankReviewItem(): ReviewItem {
     sugar_g: null,
     sodium_mg: null,
     confidence: 1,
+    cooking_fat: null,
     userEdited: true,
     llmRaw: null,
     existingItemId: null,
   };
+}
+
+/**
+ * The kcal and fat per teaspoon for the three fats with fixed values.
+ *
+ * Chosen from USDA-style reference values rather than measured. Dressing has no
+ * constant because its calories depend on what it is; the model returns per-teaspoon
+ * values for dressing instead.
+ */
+export const COOKING_FAT_PER_TSP = {
+  oil: { kcal: 40, fat_g: 4.5 },
+  ghee: { kcal: 45, fat_g: 5 },
+  butter: { kcal: 34, fat_g: 3.8 },
+} as const;
+
+type FixedFatType = keyof typeof COOKING_FAT_PER_TSP;
+
+/** The kcal and fat a teaspoon of this cooking fat is worth, or null when unknown. */
+function fatPerTsp(cookingFat: CookingFat | null): { kcal: number; fat_g: number } | null {
+  if (cookingFat === null) return null;
+  if (cookingFat.type === "dressing") {
+    if (cookingFat.kcal_per_tsp === null || cookingFat.fat_per_tsp === null) return null;
+    return { kcal: cookingFat.kcal_per_tsp, fat_g: cookingFat.fat_per_tsp };
+  }
+  const fixed = COOKING_FAT_PER_TSP[cookingFat.type as FixedFatType];
+  return fixed === undefined ? null : { kcal: fixed.kcal, fat_g: fixed.fat_g };
+}
+
+/**
+ * Replaces an item's cooking fat and recomputes its calories and fat locally.
+ *
+ * The item's calories and fat already include the current cooking fat, so the old
+ * contribution is removed first and the new one added. No model call, and "None"
+ * (a null next) removes the fat and leaves the correction chips hidden.
+ */
+export function setCookingFat(item: ReviewItem, next: CookingFat | null): ReviewItem {
+  let calories = item.calories;
+  let fatG = item.fat_g;
+
+  const removing = fatPerTsp(item.cooking_fat);
+  if (removing !== null && item.cooking_fat !== null) {
+    calories -= removing.kcal * item.cooking_fat.amount_tsp;
+    fatG -= removing.fat_g * item.cooking_fat.amount_tsp;
+  }
+
+  const adding = fatPerTsp(next);
+  if (adding !== null && next !== null) {
+    calories += adding.kcal * next.amount_tsp;
+    fatG += adding.fat_g * next.amount_tsp;
+  }
+
+  return {
+    ...item,
+    cooking_fat: next,
+    calories: roundTo(Math.max(0, calories)),
+    fat_g: roundTo(Math.max(0, fatG)),
+    userEdited: true,
+  };
+}
+
+/** "1 tsp", "2 tsp", "1 tbsp" for the "Assumes ..." line. */
+export function formatFatAmount(tsp: number): string {
+  if (tsp === 1) return "1 tsp";
+  if (tsp === 2) return "2 tsp";
+  if (tsp === 3) return "1 tbsp";
+  return roundTo(tsp, 1) + " tsp";
 }
 
 /** What the screen says about where the numbers came from. */
@@ -230,6 +302,7 @@ export function reviewItemFromSaved(saved: {
     sugar_g: saved.sugar_g,
     sodium_mg: saved.sodium_mg,
     confidence: saved.confidence ?? 1,
+    cooking_fat: null,
     userEdited: true,
     llmRaw: null,
     existingItemId: null,
@@ -278,6 +351,11 @@ export function reviewItemFromExisting(row: {
     sugar_g: row.sugar_g,
     sodium_mg: row.sodium_mg,
     confidence: row.confidence ?? 1,
+    // The edited fat is not stored as its own column; the model's original is, in
+    // llm_raw, so that is what the correction chips start from when a meal is reopened.
+    cooking_fat: normalizeCookingFat(
+      (row.llm_raw as { cooking_fat?: unknown } | null)?.cooking_fat,
+    ),
     userEdited: row.user_edited,
     llmRaw: row.llm_raw,
   };

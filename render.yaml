@@ -72,6 +72,21 @@ services:
       - key: ADMIN_DAILY_ANALYSIS_LIMIT
         sync: false
 
+      # --- Free trial ----------------------------------------------------------
+      # All three secrets are optional; with any missing /try answers that the
+      # trial is unavailable rather than running unprotected. TRIAL_SCANS and
+      # TRIAL_DAILY_BUDGET default to 10 and 200 in the code.
+      - key: TURNSTILE_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: TRIAL_TOKEN_SECRET
+        sync: false
+      - key: TRIAL_SCANS
+        sync: false
+      - key: TRIAL_DAILY_BUDGET
+        sync: false
+
       # --- CORS ---------------------------------------------------------------
       # Comma-separated. Must list the origin the frontend is actually served from.
       # Locally that is http://localhost:8080; in production it is the deployed

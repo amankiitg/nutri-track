@@ -8,6 +8,8 @@ export type ApiErrorCode =
   | "unauthorized"
   | "forbidden"
   | "rate_limited"
+  | "trial_exhausted"
+  | "trial_busy"
   | "upstream_error"
   | "unparseable_response"
   | "internal_error";

@@ -14,6 +14,11 @@ screen rather than a dashboard; <https://tracknutri.app/privacy> is readable wit
 Supabase (auth, Postgres, storage), Recharts, and a small Express service on Render that
 parses meals with Google Gemini's structured output.
 
+**Free trial:** a signed-out visitor can try 10 meal scans at https://tracknutri.app/try
+without an account. The landing page's demo media tries public/demo/meal-demo.mp4, then
+public/demo/meal-demo.gif, then the placeholder SVG. Replace public/demo/meal-demo.gif
+(or add public/demo/meal-demo.mp4) and deploy.
+
 ---
 
 ## Prerequisites

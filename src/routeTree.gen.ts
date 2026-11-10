@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TryRouteImport } from './routes/try'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTodayRouteImport } from './routes/_authenticated/today'
@@ -45,6 +46,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TryRoute = TryRouteImport.update({
+  id: '/try',
+  path: '/try',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/try': typeof TryRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/today': typeof AuthenticatedTodayRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/try': typeof TryRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/today': typeof AuthenticatedTodayRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/try': typeof TryRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/today': typeof AuthenticatedTodayRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/privacy'
+    | '/try'
     | '/admin'
     | '/settings'
     | '/today'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/privacy'
+    | '/try'
     | '/admin'
     | '/settings'
     | '/today'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/privacy'
+    | '/try'
     | '/_authenticated/admin'
     | '/_authenticated/settings'
     | '/_authenticated/today'
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
+  TryRoute: typeof TryRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   AuthRequestRoute: typeof AuthRequestRoute
   AuthResetRoute: typeof AuthResetRoute
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/try': {
+      id: '/try'
+      path: '/try'
+      fullPath: '/try'
+      preLoaderRoute: typeof TryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin': {
@@ -309,6 +329,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
+  TryRoute: TryRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   AuthRequestRoute: AuthRequestRoute,
   AuthResetRoute: AuthResetRoute,

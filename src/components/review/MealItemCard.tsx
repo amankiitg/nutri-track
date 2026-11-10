@@ -10,8 +10,10 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   flagsFor,
+  formatFatAmount,
   NUTRIENT_FIELDS,
   NUTRIENT_LABELS,
+  setCookingFat,
   setGrams,
   setNutrient,
   setQuantity,
@@ -19,7 +21,41 @@ import {
   type NutrientField,
   type ReviewItem,
 } from "@/lib/review";
+import type { CookingFat } from "@shared/meal-parse";
 import { ConfidenceDot } from "./ConfidenceDot";
+
+/** The one-tap amounts. None removes the fat; a tablespoon is three teaspoons. */
+const FAT_AMOUNTS: ReadonlyArray<{ label: string; tsp: number | null }> = [
+  { label: "None", tsp: null },
+  { label: "1 tsp", tsp: 1 },
+  { label: "2 tsp", tsp: 2 },
+  { label: "1 tbsp", tsp: 3 },
+];
+
+/** The type toggle only offers the three fats with fixed values; dressing stays as the model set it. */
+const FAT_TYPES = ["oil", "ghee", "butter"] as const;
+
+/** Keeps the current type, changing only the amount. Dressing keeps its per-tsp values. */
+function withAmount(item: ReviewItem, tsp: number | null): CookingFat | null {
+  if (tsp === null) return null;
+  const current = item.cooking_fat;
+  return {
+    type: (current?.type ?? "oil") as CookingFat["type"],
+    amount_tsp: tsp,
+    kcal_per_tsp: current?.type === "dressing" ? current.kcal_per_tsp : null,
+    fat_per_tsp: current?.type === "dressing" ? current.fat_per_tsp : null,
+  };
+}
+
+/** Changes the type to one of oil/ghee/butter, keeping the current amount. */
+function withType(item: ReviewItem, type: "oil" | "ghee" | "butter"): CookingFat {
+  return {
+    type,
+    amount_tsp: item.cooking_fat?.amount_tsp ?? 0,
+    kcal_per_tsp: null,
+    fat_per_tsp: null,
+  };
+}
 
 export interface MealItemCardProps {
   item: ReviewItem;
@@ -35,6 +71,7 @@ function valueOf(value: number | null): string {
 
 export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardProps) {
   const flags = flagsFor(item);
+  const cookingFat = item.cooking_fat;
 
   return (
     <li className="rounded-2xl border border-border bg-card p-3">
@@ -125,6 +162,55 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
           </label>
         ))}
       </div>
+
+      {cookingFat !== null && (
+        <div className="mt-3 space-y-2 rounded-xl bg-muted/30 p-2">
+          <p className="text-[11px] text-muted-foreground">
+            Assumes {formatFatAmount(cookingFat.amount_tsp)} {cookingFat.type}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {FAT_AMOUNTS.map((option) => {
+              const active =
+                option.tsp === null ? cookingFat === null : cookingFat.amount_tsp === option.tsp;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  aria-pressed={active}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background text-muted-foreground"
+                  }`}
+                  onClick={() => onChange(setCookingFat(item, withAmount(item, option.tsp)))}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {FAT_TYPES.map((type) => {
+              const active = cookingFat.type === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={active}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background text-muted-foreground"
+                  }`}
+                  onClick={() => onChange(setCookingFat(item, withType(item, type)))}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {item.userEdited && <p className="mt-2 text-[11px] text-muted-foreground">Edited by you</p>}
     </li>

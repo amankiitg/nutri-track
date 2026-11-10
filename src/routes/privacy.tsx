@@ -40,7 +40,7 @@ function PrivacyPage() {
     <main className="app-shell space-y-8 py-10 text-sm leading-relaxed">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Privacy</h1>
-        <p className="text-muted-foreground">Last updated 7 November 2026.</p>
+        <p className="text-muted-foreground">Last updated 9 November 2026.</p>
       </header>
 
       <p>
@@ -90,6 +90,10 @@ function PrivacyPage() {
           Emails are sent through Resend. For account emails it handles delivery only. For the
           occasional non-account emails described below it also stores your email address and first
           name, which is what makes an unsubscribe possible.
+        </p>
+        <p>
+          The free trial checks you are a person with Cloudflare Turnstile before it sends a code.
+          Turnstile sees the check, not your meals.
         </p>
       </Section>
 
@@ -145,6 +149,19 @@ function PrivacyPage() {
           for good: there is no second list to end up on and nothing to opt back into. Account
           emails still arrive, because you cannot use the app without being able to verify your
           address and reset your password.
+        </p>
+      </Section>
+
+      <Section title="Free trial">
+        <p>
+          The free trial lets you scan a few meals before you join. It asks for an email address
+          and, optionally, a first name. Those are kept only to count your scans and to contact you
+          about your invite.
+        </p>
+        <p>
+          A hashed form of your network address is kept, never the address itself, to stop one
+          person from running many trials. Trial photos are analysed and not stored, and Cloudflare
+          Turnstile checks you are a person before the trial starts.
         </p>
       </Section>
 

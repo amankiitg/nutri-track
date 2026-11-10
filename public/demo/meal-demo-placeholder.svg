@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-label="Snap, Analyse, Macros">
+  <rect width="800" height="450" fill="#f4f6f0"/>
+  <!-- phone outline -->
+  <rect x="120" y="60" width="220" height="330" rx="28" fill="none" stroke="#16a34a" stroke-width="10"/>
+  <rect x="150" y="90" width="160" height="260" rx="14" fill="#ffffff" stroke="#16a34a" stroke-width="6"/>
+  <!-- plate -->
+  <ellipse cx="230" cy="220" rx="60" ry="38" fill="#dcfce7" stroke="#16a34a" stroke-width="6"/>
+  <ellipse cx="230" cy="220" rx="34" ry="20" fill="#86efac"/>
+  <!-- camera dot -->
+  <circle cx="230" cy="116" r="8" fill="#16a34a"/>
+  <!-- sparkle / analyse -->
+  <path d="M520 150l22 46 46 22-46 22-22 46-22-46-46-22 46-22z" fill="#16a34a"/>
+  <circle cx="600" cy="280" r="12" fill="#16a34a"/>
+  <circle cx="540" cy="320" r="8" fill="#86efac"/>
+  <text x="520" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="600" fill="#14532d">Snap, Analyse, Macros</text>
+</svg>

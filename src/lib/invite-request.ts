@@ -103,6 +103,8 @@ export interface RequestInviteOptions {
   auto?: boolean;
   /** The hidden field nobody can see. A value here means a bot filled the form. */
   honeypot?: string;
+  /** True when the request comes from the trial's 0-scans wall. */
+  fromTrial?: boolean;
 }
 
 /**
@@ -125,6 +127,7 @@ export async function requestInvite(
       p_email: email,
       ...(firstName === "" ? {} : { p_first_name: firstName }),
       p_auto: options.auto === true,
+      p_from_trial: options.fromTrial === true,
       ...(honeypot === "" ? {} : { p_honeypot: "filled" }),
     });
     if (error) return null;

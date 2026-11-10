@@ -29,7 +29,8 @@ describe("loadConfig", () => {
       GEMINI_VISION_MODEL: "gemini-3.8-flash",
       ALLOWED_ORIGINS: ["http://localhost:8080", "https://nutritrack.example.com"],
       // Absent means the shared defaults, which is what a deployment that has never heard of these
-      // variables gets.
+      // variables gets. The trial limits no longer live here at all: they are read from the
+      // trial_settings table in the database.
       DAILY_ANALYSIS_LIMIT: 20,
       ADMIN_DAILY_ANALYSIS_LIMIT: 60,
     });
@@ -128,6 +129,13 @@ describe("loadConfig", () => {
     ]) {
       expect(message).toContain(name);
     }
+  });
+
+  it("reads the trial server secret when one is set, and is absent by default", () => {
+    expect(loadConfig(VALID).TRIAL_SERVER_SECRET).toBeUndefined();
+    expect(
+      loadConfig({ ...VALID, TRIAL_SERVER_SECRET: "vault-agreed-secret" }).TRIAL_SERVER_SECRET,
+    ).toBe("vault-agreed-secret");
   });
 
   it("never asks for the service role key", () => {

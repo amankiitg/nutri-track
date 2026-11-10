@@ -118,6 +118,7 @@ beforeEach(() => {
               sugar_g: 1,
               sodium_mg: 300,
               confidence: 0.8,
+              cooking_fat: null,
               needs_review: false,
               review_reasons: [],
             },

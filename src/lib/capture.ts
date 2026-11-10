@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import {
+  COOKING_FAT_TYPES,
   MEAL_PHOTO_BUCKET,
   mealPhotoPath,
   sha256HexOfBytes,
@@ -193,6 +194,15 @@ export function buildParseRequest(input: ParseRequestInput): Record<string, unkn
  * The service's reply, validated rather than trusted. It is a different runtime on
  * the other side of a network hop, so it is as external as the model's own output.
  */
+const cookingFatResponseSchema = z
+  .object({
+    type: z.enum([...COOKING_FAT_TYPES]),
+    amount_tsp: z.number(),
+    kcal_per_tsp: z.number().nullable(),
+    fat_per_tsp: z.number().nullable(),
+  })
+  .nullable();
+
 export const parseResponseSchema = z.object({
   items: z.array(
     z.object({
@@ -208,6 +218,7 @@ export const parseResponseSchema = z.object({
       sugar_g: z.number().nullable(),
       sodium_mg: z.number().nullable(),
       confidence: z.number(),
+      cooking_fat: cookingFatResponseSchema,
       needs_review: z.boolean(),
       review_reasons: z.array(z.string()),
     }),

@@ -74,6 +74,7 @@ describe("presentSpend", () => {
     callsTotal: 1_203,
     tokensTotal: 4_511_002,
     lastCallAt: "2026-09-07T18:02:00.000Z",
+    isTrial: false,
   };
 
   it("counts down from the limit it is given, and defaults to twenty", () => {
@@ -153,6 +154,7 @@ describe("requestStatus", () => {
     status: "pending",
     handledAt: null,
     firstName: null,
+    fromTrial: false,
   };
 
   it.each([
@@ -178,6 +180,7 @@ describe("pendingRequests", () => {
     status,
     handledAt: null,
     firstName: null,
+    fromTrial: false,
   });
 
   it("is only what is waiting, newest first", () => {
@@ -222,6 +225,7 @@ describe("pendingCount", () => {
         status: "pending",
         handledAt: null,
         firstName: null,
+        fromTrial: false,
       },
       {
         id: "2",
@@ -230,6 +234,7 @@ describe("pendingCount", () => {
         status: "approved",
         handledAt: null,
         firstName: null,
+        fromTrial: false,
       },
       {
         id: "3",
@@ -238,6 +243,7 @@ describe("pendingCount", () => {
         status: "pending",
         handledAt: null,
         firstName: null,
+        fromTrial: false,
       },
     ];
     expect(pendingCount(requests)).toBe(2);

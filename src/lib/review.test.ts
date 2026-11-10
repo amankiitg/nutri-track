@@ -33,6 +33,7 @@ const DRAFT: MealItemDraft = {
   sugar_g: 0.1,
   sodium_mg: 2,
   confidence: 0.4,
+  cooking_fat: null,
   needs_review: false,
   review_reasons: [],
 };

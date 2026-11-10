@@ -26,6 +26,7 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchSpend,
+  fetchTrialStats,
   formatCount,
   formatDay,
   inviteStatus,
@@ -423,6 +424,9 @@ export function InviteRequestsPanel() {
                   <p className="text-xs text-muted-foreground">
                     Asked {formatDay(request.requestedAt, "UTC")}
                   </p>
+                  {request.fromTrial && (
+                    <p className="text-xs font-medium text-muted-foreground">Trial: 10/10 used</p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
@@ -497,10 +501,22 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
         {spend.isSuccess && (
           <ul className="space-y-4">
             {spend.data.map((row) => {
-              const shown = presentSpend(row, limitFor(row.userId));
+              if (row.isTrial) {
+                return (
+                  <li key="trial" className="space-y-2 border-t border-border pt-3 first:border-0">
+                    <p className="truncate text-sm font-medium">Trial</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatCount(row.callsToday)} today · {formatCount(row.callsMonth)} this month
+                      · {formatCount(row.callsTotal)} all time · {formatCount(row.tokensTotal)}{" "}
+                      tokens
+                    </p>
+                  </li>
+                );
+              }
+              const shown = presentSpend(row, limitFor(row.userId ?? ""));
               return (
                 <li
-                  key={row.userId}
+                  key={row.userId ?? row.email}
                   className="space-y-2 border-t border-border pt-3 first:border-0"
                 >
                   <p className="truncate text-sm font-medium">{row.email}</p>
@@ -538,6 +554,46 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
               );
             })}
           </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The trial, in one card: today's scans against the daily budget, and how many
+ * mailboxes have started a trial. The budget comes from the database's trial_settings,
+ * returned by admin_trial_stats, so the card cannot drift from the number the
+ * enforcing function reads.
+ */
+export function TrialCard() {
+  const stats = useQuery({
+    queryKey: ["admin-trial-stats"],
+    queryFn: () => fetchTrialStats(),
+    retry: false,
+  });
+
+  return (
+    <Card className="card-soft">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Trial</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {stats.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {stats.isError && <PanelError message="Could not load the trial figures." />}
+        {stats.isSuccess && (
+          <>
+            <p className="text-sm">
+              {stats.data.scansToday} of {stats.data.budget} scans used today
+            </p>
+            <Progress
+              value={Math.min(1, stats.data.scansToday / Math.max(1, stats.data.budget)) * 100}
+              aria-hidden="true"
+            />
+            <p className="text-xs text-muted-foreground">
+              {stats.data.userCount} trial user{stats.data.userCount === 1 ? "" : "s"}
+            </p>
+          </>
         )}
       </CardContent>
     </Card>

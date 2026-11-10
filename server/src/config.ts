@@ -111,6 +111,20 @@ export const envSchema = z.object({
   ADMIN_DAILY_ANALYSIS_LIMIT: wholeNumberOrDefault(ADMIN_DAILY_ANALYSIS_LIMIT),
 
   /**
+   * The free trial. All four secrets are optional on purpose: with any of them
+   * missing the trial endpoints answer "Trial unavailable right now" rather than
+   * running unprotected. The per-mailbox and global-daily limits no longer live
+   * here: they are read from the trial_settings table in the database, which only
+   * service_role writes. TRIAL_SERVER_SECRET is the value the service passes as
+   * p_server_secret to the trial_* database functions; the matching copy lives in
+   * Supabase Vault under the name 'trial_server_secret', and the two must agree.
+   */
+  TURNSTILE_SECRET: z.string().min(1).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  TRIAL_TOKEN_SECRET: z.string().min(1).optional(),
+  TRIAL_SERVER_SECRET: z.string().min(1).optional(),
+
+  /**
    * The admin invite feature's Google credentials, and the only secrets this service holds.
    *
    * Optional on purpose. The parse-meal route is what people use every day, and it must start
@@ -138,6 +152,8 @@ const EXPECTED = [
   "PORT (optional, defaults to 8787)",
   "DAILY_ANALYSIS_LIMIT (optional, defaults to 20)",
   "ADMIN_DAILY_ANALYSIS_LIMIT (optional, defaults to 60)",
+  "TURNSTILE_SECRET, RESEND_API_KEY, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
+  "  (all optional; without any of them /try says the trial is unavailable)",
   "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
   "  INVITE_SENDER_ADDRESS (all optional; without them /invite says it is not set up)",
 ];
@@ -153,4 +169,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
   return parsed.data;
+}
+
+/**
+ * Whether the trial can run at all.
+ *
+ * The trial needs all three secrets: Turnstile to prove the visitor is a person,
+ * Resend to send the code, and the HMAC secret to sign the trial token. With any of
+ * them missing the trial endpoints answer "Trial unavailable right now" rather than
+ * running with one of the protections silently absent.
+ */
+export function trialAvailable(config: Config): boolean {
+  return (
+    config.TURNSTILE_SECRET !== undefined &&
+    config.RESEND_API_KEY !== undefined &&
+    config.TRIAL_TOKEN_SECRET !== undefined &&
+    config.TRIAL_SERVER_SECRET !== undefined
+  );
 }

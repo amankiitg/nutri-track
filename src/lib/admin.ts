@@ -86,7 +86,7 @@ export async function fetchInvites(): Promise<Invite[]> {
 }
 
 const spendRow = z.object({
-  user_id: z.string(),
+  user_id: z.string().nullable(),
   email: z.string(),
   timezone: z.string(),
   calls_today: z.number(),
@@ -96,10 +96,11 @@ const spendRow = z.object({
   calls_total: z.number(),
   tokens_total: z.number(),
   last_call_at: z.string().nullable(),
+  is_trial: z.boolean().default(false),
 });
 
 export interface UserSpend {
-  userId: string;
+  userId: string | null;
   email: string;
   timeZone: string;
   callsToday: number;
@@ -109,6 +110,7 @@ export interface UserSpend {
   callsTotal: number;
   tokensTotal: number;
   lastCallAt: string | null;
+  isTrial: boolean;
 }
 
 export async function fetchSpend(): Promise<UserSpend[]> {
@@ -127,7 +129,41 @@ export async function fetchSpend(): Promise<UserSpend[]> {
     callsTotal: row.calls_total,
     tokensTotal: row.tokens_total,
     lastCallAt: row.last_call_at,
+    isTrial: row.is_trial,
   }));
+}
+
+const trialStatsRow = z.object({
+  scans_today: z.number(),
+  budget: z.number(),
+  user_count: z.number(),
+});
+
+export interface TrialStats {
+  scansToday: number;
+  budget: number;
+  userCount: number;
+}
+
+/** The admin Trial card: today's scans, the budget, and how many mailboxes tried. */
+export async function fetchTrialStats(): Promise<TrialStats> {
+  // The function is new in this migration, so the generated client types do not know
+  // it yet. Cast rather than hand-edit the generated types; the next regeneration
+  // picks it up. The budget comes from the database's trial_settings, not an argument,
+  // so the card cannot drift from the number the enforcing function reads.
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  const { data, error } = await rpc("admin_trial_stats", {});
+  if (error) throw new Error(readableAdminError(error.message));
+  const parsed = trialStatsRow.safeParse(data);
+  if (!parsed.success) throw new Error("The trial figures came back in an unexpected shape.");
+  return {
+    scansToday: parsed.data.scans_today,
+    budget: parsed.data.budget,
+    userCount: parsed.data.user_count,
+  };
 }
 
 /** Adds an address to the list. Returns the normalised form that was stored. */
@@ -232,6 +268,7 @@ const requestRow = z.object({
   handled_at: z.string().nullable(),
   // Added with the email form's request, so an older row simply has no name.
   first_name: z.string().nullable(),
+  from_trial: z.boolean().default(false),
 });
 
 export interface InviteRequest {
@@ -242,12 +279,14 @@ export interface InviteRequest {
   handledAt: string | null;
   /** What to greet them by in the approval draft. Null when nobody gave one. */
   firstName: string | null;
+  /** True when the request came from the trial's 0-scans wall. */
+  fromTrial: boolean;
 }
 
 export async function fetchInviteRequests(): Promise<InviteRequest[]> {
   const { data, error } = await supabase
     .from("invite_requests")
-    .select("id, email, requested_at, status, handled_at, first_name")
+    .select("id, email, requested_at, status, handled_at, first_name, from_trial")
     .order("requested_at", { ascending: false });
   if (error) throw new Error(readableAdminError(error.message));
 
@@ -260,6 +299,7 @@ export async function fetchInviteRequests(): Promise<InviteRequest[]> {
     status: row.status,
     handledAt: row.handled_at,
     firstName: row.first_name,
+    fromTrial: row.from_trial,
   }));
 }
 

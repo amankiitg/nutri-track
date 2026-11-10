@@ -14,7 +14,7 @@
 import { createFileRoute, getRouteApi, redirect } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { InviteList, InviteRequestsPanel, SpendPanel } from "@/components/admin/panels";
+import { InviteList, InviteRequestsPanel, SpendPanel, TrialCard } from "@/components/admin/panels";
 
 const parentApi = getRouteApi("/_authenticated");
 
@@ -42,6 +42,7 @@ function AdminPage() {
 
       <InviteRequestsPanel />
       <InviteList adminId={user.id} />
+      <TrialCard />
       <SpendPanel viewerId={user.id} />
 
       <Card>
