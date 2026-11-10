@@ -368,7 +368,7 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                   className="h-11 text-center text-xl tracking-[0.3em]"
-                  placeholder="123456"
+                  placeholder="------"
                 />
               </div>
               {error !== null && (
