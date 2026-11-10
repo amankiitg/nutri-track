@@ -50,6 +50,12 @@ export interface ReviewItem {
   confidence: number;
   /** The hidden cooking fat, or null when there is none. */
   cooking_fat: CookingFat | null;
+  /**
+   * True once the user has picked None for the cooking fat, so the line stays
+   * visible as "No added fat" and can be undone. A null `cooking_fat` on a fresh
+   * item means the model saw no fat, so the line is hidden instead.
+   */
+  cookingFatNone: boolean;
   /** True once a human has changed any field on this item. */
   userEdited: boolean;
   /**
@@ -135,6 +141,7 @@ export function reviewItemFromDraft(draft: MealItemDraft): ReviewItem {
     sodium_mg: draft.sodium_mg,
     confidence: draft.confidence,
     cooking_fat: draft.cooking_fat ?? null,
+    cookingFatNone: false,
     userEdited: false,
     perGram,
     // The draft is a plain object that came out of JSON.parse and was then normalised,
@@ -183,6 +190,7 @@ export function blankReviewItem(): ReviewItem {
     sodium_mg: null,
     confidence: 1,
     cooking_fat: null,
+    cookingFatNone: false,
     userEdited: true,
     llmRaw: null,
     existingItemId: null,
@@ -220,7 +228,8 @@ function fatPerTsp(cookingFat: CookingFat | null): { kcal: number; fat_g: number
  *
  * The item's calories and fat already include the current cooking fat, so the old
  * contribution is removed first and the new one added. No model call, and "None"
- * (a null next) removes the fat and leaves the correction chips hidden.
+ * (a null next) removes the fat but marks `cookingFatNone` so the line stays
+ * visible as "No added fat" and can be undone.
  */
 export function setCookingFat(item: ReviewItem, next: CookingFat | null): ReviewItem {
   let calories = item.calories;
@@ -241,6 +250,7 @@ export function setCookingFat(item: ReviewItem, next: CookingFat | null): Review
   return {
     ...item,
     cooking_fat: next,
+    cookingFatNone: next === null,
     calories: roundTo(Math.max(0, calories)),
     fat_g: roundTo(Math.max(0, fatG)),
     userEdited: true,
@@ -330,6 +340,7 @@ export function reviewItemFromSaved(saved: {
     sodium_mg: saved.sodium_mg,
     confidence: saved.confidence ?? 1,
     cooking_fat: null,
+    cookingFatNone: false,
     userEdited: true,
     llmRaw: null,
     existingItemId: null,
@@ -383,6 +394,7 @@ export function reviewItemFromExisting(row: {
     cooking_fat: normalizeCookingFat(
       (row.llm_raw as { cooking_fat?: unknown } | null)?.cooking_fat,
     ),
+    cookingFatNone: false,
     userEdited: row.user_edited,
     llmRaw: row.llm_raw,
   };

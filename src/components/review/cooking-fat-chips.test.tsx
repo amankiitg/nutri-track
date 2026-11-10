@@ -212,4 +212,51 @@ describe("hidden fat line", () => {
     expect(next?.userEdited).toBe(true);
     expect(screen.queryByRole("button", { name: "None" })).toBeNull();
   });
+
+  it("keeps the line after None, reads No added fat, and restores oil on 1 tbsp", async () => {
+    const user = userEvent.setup();
+    const seen: ReviewItem[] = [];
+    render(
+      <Harness
+        start={reviewItemFromDraft(
+          draft("Dal tadka", {
+            type: "oil",
+            amount_tsp: 2,
+            kcal_per_tsp: null,
+            fat_per_tsp: null,
+          }) as never,
+        )}
+        seen={seen}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Adjust" }));
+    await user.click(screen.getByRole("button", { name: "None" }));
+
+    // The line stays, now as "No added fat", with Adjust still there to undo.
+    expect(screen.getByText("No added fat")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Adjust" })).toBeTruthy();
+    expect(screen.queryByText(/Includes/)).toBeNull();
+
+    // Adjust reopens with None highlighted, ready to undo.
+    await user.click(screen.getByRole("button", { name: "Adjust" }));
+    expect(screen.getByRole("button", { name: "None" })).toHaveAttribute("aria-pressed", "true");
+
+    // 1 tbsp defaults to oil, restores the fat line and recomputes.
+    await user.click(screen.getByRole("button", { name: "1 tbsp" }));
+    const next = seen.at(-1);
+    expect(next?.cooking_fat).toEqual({
+      type: "oil",
+      amount_tsp: 3,
+      kcal_per_tsp: null,
+      fat_per_tsp: null,
+    });
+    // 200 - 2*40 (oil removed by None) + 3*40 = 240 kcal; 10 - 2*4.5 + 3*4.5 = 14.5 g fat.
+    expect(next?.calories).toBe(240);
+    expect(next?.fat_g).toBe(14.5);
+    expect(next?.cookingFatNone).toBe(false);
+    expect(next?.userEdited).toBe(true);
+    expect(screen.getByText(/Includes ~1 tbsp oil \(estimated\)/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "None" })).toBeNull();
+  });
 });

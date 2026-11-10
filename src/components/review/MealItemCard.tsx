@@ -201,11 +201,13 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
         ))}
       </div>
 
-      {cookingFat !== null && (
+      {(cookingFat !== null || item.cookingFatNone) && (
         <div className="mt-3 rounded-xl bg-muted/30 p-2">
           <div className="flex min-h-6 items-center justify-between gap-2">
             <p className="min-w-0 text-base text-muted-foreground">
-              Includes {formatFatEstimate(cookingFat)} (estimated)
+              {cookingFat === null
+                ? "No added fat"
+                : `Includes ${formatFatEstimate(cookingFat)} (estimated)`}
             </p>
             <button
               type="button"
@@ -223,7 +225,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
                   const active =
                     option.tsp === null
                       ? cookingFat === null
-                      : cookingFat.amount_tsp === option.tsp;
+                      : cookingFat?.amount_tsp === option.tsp;
                   return (
                     <button
                       key={option.label}
@@ -246,7 +248,7 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
               </div>
               <div className="flex flex-wrap gap-1">
                 {FAT_TYPES.map((type) => {
-                  const active = cookingFat.type === type;
+                  const active = cookingFat?.type === type;
                   return (
                     <button
                       key={type}
