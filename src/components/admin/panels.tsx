@@ -41,6 +41,8 @@ import {
 } from "@/lib/admin";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 import { fetchAnalysisLimits } from "@/lib/calls";
+import { TrialLinkControls } from "./TrialLinkControls";
+import { useTrialLinks } from "./use-trial-links";
 
 /** One error line, so every panel fails the same way. */
 function PanelError({ message }: { message: string }) {
@@ -58,6 +60,7 @@ export function InviteList({ adminId }: { adminId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const invites = useQuery({ queryKey: ["admin-invites"], queryFn: fetchInvites });
+  const trialLinks = useTrialLinks(invites.data?.map((invite) => invite.email) ?? []);
 
   /**
    * One action, not two. The service drafts the email and adds the address in a single request,
@@ -76,7 +79,11 @@ export function InviteList({ adminId }: { adminId: string }) {
           ? `Draft ready. ${outcome.email} was already on the list, so nothing changed there.`
           : `Draft ready for ${outcome.email}. Read it in Gmail, then send it.`,
       );
+      if (!outcome.trialLinkSent) {
+        toast.warning("The draft has no trial link. Copy one from the row to send it by hand.");
+      }
       void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-trial-links"] });
     },
     onError: (caught: unknown) => {
       setError(caught instanceof Error ? caught.message : "Could not create the invite.");
@@ -201,6 +208,14 @@ export function InviteList({ adminId }: { adminId: string }) {
                       {status.label} · added {formatDay(invite.createdAt, "UTC")}
                       {invite.addedBy !== null && ` by ${invite.addedBy}`}
                     </p>
+                    {/* Somebody with an account would only be told to sign in, so no link. */}
+                    {status.tone !== "joined" && (
+                      <TrialLinkControls
+                        email={invite.email}
+                        firstName={null}
+                        sent={trialLinks.get(invite.email)}
+                      />
+                    )}
                   </div>
                   <Badge variant={status.tone === "joined" ? "default" : "secondary"}>
                     {status.tone === "joined" ? "Signed up" : "Waiting"}
@@ -319,6 +334,7 @@ export function InviteRequestsPanel() {
       if (draftError === null) toast.success(`${email} can now sign in`);
       void queryClient.invalidateQueries({ queryKey: ["admin-invite-requests"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-trial-links"] });
     },
     onError: (caught: unknown) => {
       setError(caught instanceof Error ? caught.message : "Could not approve that request.");
@@ -353,6 +369,7 @@ export function InviteRequestsPanel() {
   });
 
   const pending = requests.isSuccess ? pendingRequests(requests.data) : [];
+  const pendingLinks = useTrialLinks(pending.map((request) => request.email));
 
   return (
     <Card className="card-soft">
@@ -427,6 +444,11 @@ export function InviteRequestsPanel() {
                   {request.fromTrial && (
                     <p className="text-xs font-medium text-muted-foreground">Trial: 10/10 used</p>
                   )}
+                  <TrialLinkControls
+                    email={request.email}
+                    firstName={request.firstName}
+                    sent={pendingLinks.get(request.email)}
+                  />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button

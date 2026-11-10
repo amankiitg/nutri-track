@@ -193,6 +193,8 @@ const draftedInviteSchema = z.object({
   firstName: z.string(),
   draftId: z.string(),
   alreadyInvited: z.boolean(),
+  // Absent from a service that predates trial links, which means no link went out.
+  trialLinkSent: z.boolean().default(false),
 });
 
 export type DraftedInvite = z.infer<typeof draftedInviteSchema>;
@@ -225,13 +227,21 @@ async function postInvite(body: {
   firstName: string;
   kind: "invite" | "approved";
 }): Promise<DraftedInvite> {
+  const payload = await postAsAdmin("invite", body);
+  const parsed = draftedInviteSchema.safeParse(payload);
+  if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
+  return parsed.data;
+}
+
+/** A POST to the parse-meal service with the admin's own token; the service checks it is an admin. */
+async function postAsAdmin(path: string, body: unknown): Promise<unknown> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (token === undefined || token === "") {
     throw new Error("Your session has expired. Sign in again.");
   }
 
-  const url = new URL("invite", parseMealUrl()).toString();
+  const url = new URL(path, parseMealUrl()).toString();
 
   let response: Response;
   try {
@@ -246,10 +256,78 @@ async function postInvite(body: {
 
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(inviteFailure(payload, response.status));
+  return payload;
+}
 
-  const parsed = draftedInviteSchema.safeParse(payload);
+/* -------------------------------------------------------------------------- */
+/* Personal trial links                                                        */
+/* -------------------------------------------------------------------------- */
+
+const issuedTrialLinkSchema = z.object({
+  url: z.string().startsWith("https://tracknutri.app/t/"),
+  email: z.string(),
+  firstName: z.string().nullable(),
+});
+
+export type IssuedTrialLink = z.infer<typeof issuedTrialLinkSchema>;
+
+/**
+ * Asks the service for this person's trial link. The token is signed there, never here: the
+ * browser has no key, and the service also records the link as sent.
+ */
+export async function issueTrialLink(
+  email: string,
+  firstName: string | null,
+): Promise<IssuedTrialLink> {
+  const payload = await postAsAdmin("trial/link/issue", { email, firstName });
+  const parsed = issuedTrialLinkSchema.safeParse(payload);
   if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
   return parsed.data;
+}
+
+const trialLinkRow = z.object({
+  email: z.string(),
+  first_name: z.string().nullable(),
+  link_sent_at: z.string(),
+  scans_used: z.number(),
+  scans_limit: z.number(),
+});
+
+export interface TrialLinkSent {
+  firstName: string | null;
+  sentAt: string;
+  scansUsed: number;
+  scansLimit: number;
+}
+
+/**
+ * The links already sent to the addresses on screen, keyed by the address exactly as the page
+ * passed it. The database matches them with its own canonical form (Gmail dots and +tags), so
+ * the page needs no copy of that rule.
+ */
+export async function fetchTrialLinks(emails: string[]): Promise<Map<string, TrialLinkSent>> {
+  if (emails.length === 0) return new Map();
+  const { data, error } = await supabase.rpc("admin_trial_links", { p_emails: emails });
+  if (error) throw new Error(readableAdminError(error.message));
+  const rows = z.array(trialLinkRow).safeParse(data);
+  if (!rows.success) throw new Error("The trial links came back in an unexpected shape.");
+  return new Map(
+    rows.data.map((row) => [
+      row.email,
+      {
+        firstName: row.first_name,
+        sentAt: row.link_sent_at,
+        scansUsed: row.scans_used,
+        scansLimit: row.scans_limit,
+      },
+    ]),
+  );
+}
+
+/** Every link sent to this address stops working; the next one copied works. */
+export async function revokeTrialLink(email: string): Promise<void> {
+  const { error } = await supabase.rpc("admin_trial_link_revoke", { p_email: email });
+  if (error) throw new Error(readableAdminError(error.message));
 }
 
 export async function removeInvite(email: string): Promise<void> {

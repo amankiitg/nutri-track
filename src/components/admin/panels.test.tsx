@@ -461,8 +461,10 @@ describe("requests from people who are not on the list", () => {
     await user.click(screen.getByRole("button", { name: /retry draft/i }));
 
     await waitFor(() => expect(requests).toHaveLength(2));
-    // The retry drafts again and writes nothing: the approval already happened.
-    expect(client.rpc).toHaveBeenCalledTimes(1);
+    // The retry drafts again and writes nothing: the approval already happened. Reads (the trial
+    // links on the rows) are not writes, so only the approval itself is counted.
+    const approvals = client.rpc.mock.calls.filter(([name]) => name === "admin_approve_request");
+    expect(approvals).toHaveLength(1);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
