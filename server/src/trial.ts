@@ -59,6 +59,8 @@ export interface TrialStore {
   verifyCode(email: string, code: string): Promise<string>;
   startScan(email: string, ip: string | null): Promise<TrialScanResult>;
   logCall(callId: string, record: LlmCallRecord): Promise<void>;
+  /** The per-mailbox scan limit, read from trial_settings so the page never hardcodes it. */
+  getScansLimit(): Promise<number>;
 }
 
 /**
@@ -96,6 +98,17 @@ export function createTrialStore(
       });
       if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
       return typeof data === "string" ? data : "invalid";
+    },
+
+    async getScansLimit() {
+      const { data, error } = await client.rpc("trial_scans_limit", {
+        p_server_secret: serverSecret,
+      });
+      if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      if (typeof data !== "number" || !Number.isInteger(data)) {
+        throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      }
+      return data;
     },
 
     async startScan(email, ip) {

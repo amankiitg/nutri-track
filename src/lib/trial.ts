@@ -9,10 +9,6 @@
 import { z } from "zod";
 import { parseApiError, parseMealUrl } from "@/lib/capture";
 
-export const TRIAL_SCANS = 10;
-/** The global per-day trial budget, defaulting where the server defaults. */
-export const TRIAL_DAILY_BUDGET = 200;
-
 const TRIAL_TOKEN_KEY = "nutritrack-trial-token";
 const TRIAL_EMAIL_KEY = "nutritrack-trial-email";
 
@@ -97,6 +93,18 @@ export async function verifyTrialCode(
   const parsed = verifyCodeResponseSchema.safeParse(response);
   if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
   return parsed.data;
+}
+
+const trialSettingsSchema = z.object({
+  scans_limit: z.number(),
+});
+
+/** The per-mailbox scan limit, read from the server so the page never hardcodes it. */
+export async function getTrialScansLimit(): Promise<number> {
+  const response = await getTrial(trialUrl("/trial/settings"));
+  const parsed = trialSettingsSchema.safeParse(response);
+  if (!parsed.success) throw new Error("The server sent something unexpected. Try again.");
+  return parsed.data.scans_limit;
 }
 
 /** One in-memory photo for the trial parse. */
@@ -186,6 +194,21 @@ async function postTrial(url: string, body: unknown): Promise<unknown> {
     throw new Error("Could not reach the meal service. Check your connection and try again.");
   }
 
+  return readTrialResponse(response);
+}
+
+async function getTrial(url: string): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(90_000) });
+  } catch {
+    throw new Error("Could not reach the meal service. Check your connection and try again.");
+  }
+  return readTrialResponse(response);
+}
+
+/** One response handler for the trial's POST and GET calls, so the error sentence is one. */
+async function readTrialResponse(response: Response): Promise<unknown> {
   const text = await response.text();
   let json: unknown = null;
   try {

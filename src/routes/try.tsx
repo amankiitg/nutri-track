@@ -24,10 +24,10 @@ import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
 import {
   clearTrial,
   getStoredTrial,
+  getTrialScansLimit,
   parseTrialMeal,
   sendTrialCode,
   storeTrial,
-  TRIAL_SCANS,
   verifyTrialCode,
   type TrialParseResult,
   type TrialPhoto,
@@ -55,6 +55,8 @@ export function TrialPage() {
 
   const [result, setResult] = useState<TrialParseResult | null>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
+  const [scanLimit, setScanLimit] = useState<number | null>(null);
+  const [limitFailed, setLimitFailed] = useState(false);
   const [text, setText] = useState("");
   const [inviteResult, setInviteResult] = useState<InviteResult | null>(null);
 
@@ -69,6 +71,23 @@ export function TrialPage() {
       setStep("scan");
     }
   }, []);
+
+  // The per-mailbox scan limit, read from the server so the page never hardcodes a
+  // number. Without it the funnel cannot be shown, so a failed read means unavailable.
+  useEffect(() => {
+    if (siteKey === null) return;
+    let cancelled = false;
+    void getTrialScansLimit()
+      .then((limit) => {
+        if (!cancelled) setScanLimit(limit);
+      })
+      .catch(() => {
+        if (!cancelled) setLimitFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteKey]);
 
   // Render the Turnstile widget once, when the email step is showing and there is a key.
   useEffect(() => {
@@ -97,7 +116,7 @@ export function TrialPage() {
     return () => {
       cancelled = true;
     };
-  }, [siteKey, step]);
+  }, [siteKey, step, scanLimit]);
 
   async function submitEmail(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -196,13 +215,24 @@ export function TrialPage() {
     }
   }, [email, firstName]);
 
-  if (siteKey === null) {
+  if (siteKey === null || limitFailed) {
     return (
       <main className="paper-grain flex min-h-dvh flex-col">
         <div className="app-shell my-auto py-10">
           <BrandMark size={40} />
           <h1 className="mt-6 text-3xl font-semibold">Free trial</h1>
           <p className="mt-3 max-w-sm text-muted-foreground">Trial unavailable right now</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (scanLimit === null) {
+    return (
+      <main className="paper-grain flex min-h-dvh flex-col">
+        <div className="app-shell my-auto flex flex-col items-center py-10">
+          <BrandMark size={40} />
+          <Loader2 className="mt-8 size-6 animate-spin text-muted-foreground" aria-hidden="true" />
         </div>
       </main>
     );
@@ -220,8 +250,8 @@ export function TrialPage() {
         <div className="my-auto animate-rise py-10">
           <h1 className="text-3xl font-semibold">Free trial</h1>
           <p className="mt-2 text-muted-foreground">
-            Free trial: 10 meal scans. We&apos;ll email you a 6-digit code first. Trial results
-            aren&apos;t saved.
+            Free trial: {scanLimit} meal scans. We&apos;ll email you a 6-digit code first. Trial
+            results aren&apos;t saved.
           </p>
 
           {alreadyAccess && (
@@ -390,7 +420,7 @@ export function TrialPage() {
                   </ul>
 
                   <p className="text-sm font-medium">
-                    Scans left: {scansLeft ?? TRIAL_SCANS} of {TRIAL_SCANS}
+                    Scans left: {scansLeft ?? scanLimit} of {scanLimit}
                   </p>
 
                   {scansLeft !== null && scansLeft <= 3 && scansLeft > 0 && (
@@ -422,7 +452,7 @@ export function TrialPage() {
           {!alreadyAccess && step === "scan" && exhausted && (
             <div className="mt-8 space-y-4 rounded-2xl border border-border bg-muted/30 p-5">
               <h2 className="text-xl font-semibold">
-                You&apos;ve used your {TRIAL_SCANS} free scans. Join to keep tracking.
+                You&apos;ve used your {scanLimit} free scans. Join to keep tracking.
               </h2>
               <p className="text-sm text-muted-foreground">
                 Ask for an invite and you&apos;ll be able to save your meals and see your day.

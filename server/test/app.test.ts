@@ -181,6 +181,9 @@ function buildHarness(options: HarnessOptions = {}) {
       return { status: "ok", scans_left: 9 };
     },
     async logCall() {},
+    async getScansLimit() {
+      return 10;
+    },
   };
   const email: EmailClient | null = null;
 
@@ -770,6 +773,30 @@ describe("GET /analysis-limit", () => {
     const { app } = buildHarness();
     const response = await get(app, null);
     expect(response.status).toBe(401);
+  });
+});
+
+describe("GET /trial/settings", () => {
+  it("answers 503 when the trial secrets are not configured", async () => {
+    const { app } = buildHarness();
+    const response = await request(app).get("/trial/settings");
+    expect(response.status).toBe(503);
+    expect(response.body.error.message).toBe("Trial unavailable right now");
+  });
+
+  it("relays the scan limit from the store when the trial is configured", async () => {
+    const { app } = buildHarness({
+      config: {
+        ...CONFIG,
+        TURNSTILE_SECRET: "turnstile-secret",
+        RESEND_API_KEY: "resend-key",
+        TRIAL_TOKEN_SECRET: "token-secret",
+        TRIAL_SERVER_SECRET: "server-secret",
+      },
+    });
+    const response = await request(app).get("/trial/settings");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ scans_limit: 10 });
   });
 });
 

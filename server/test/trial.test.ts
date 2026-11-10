@@ -112,6 +112,9 @@ describe("parseTrialMeal", () => {
       async logCall(callId, record) {
         logged.push({ callId, model: record.model });
       },
+      async getScansLimit() {
+        return 10;
+      },
     };
 
     const outcome = await parseTrialMeal(base, { config: CONFIG, llm: fakeLlm(), trial });
@@ -134,6 +137,9 @@ describe("parseTrialMeal", () => {
         return { status: "no_scans_left", scans_left: 0, scans_total: 10 };
       },
       async logCall() {},
+      async getScansLimit() {
+        return 10;
+      },
     };
 
     await expect(
@@ -208,5 +214,12 @@ describe("createTrialStore", () => {
     await expect(store.verifyCode("trial@example.com", "123456")).rejects.toMatchObject({
       code: "upstream_error",
     });
+  });
+
+  it("reads the scan limit with the secret, which is how the page learns it", async () => {
+    const { client, rpc } = fakeClient(10);
+    const store = createTrialStore(client, SECRET);
+    expect(await store.getScansLimit()).toBe(10);
+    expect(rpc).toHaveBeenCalledWith("trial_scans_limit", { p_server_secret: SECRET });
   });
 });

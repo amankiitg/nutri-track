@@ -73,18 +73,19 @@ services:
         sync: false
 
       # --- Free trial ----------------------------------------------------------
-      # All three secrets are optional; with any missing /try answers that the
-      # trial is unavailable rather than running unprotected. TRIAL_SCANS and
-      # TRIAL_DAILY_BUDGET default to 10 and 200 in the code.
+      # All four secrets are optional; with any missing /try answers that the
+      # trial is unavailable rather than running unprotected. The per-mailbox and
+      # global-per-day limits live in the database's trial_settings table, not here.
       - key: TURNSTILE_SECRET
         sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: TRIAL_TOKEN_SECRET
         sync: false
-      - key: TRIAL_SCANS
-        sync: false
-      - key: TRIAL_DAILY_BUDGET
+      # The trial server secret: this service passes it as p_server_secret to the
+      # trial_* database functions, and the matching value lives in Supabase Vault
+      # under the name 'trial_server_secret'. The two must agree or every call fails.
+      - key: TRIAL_SERVER_SECRET
         sync: false
 
       # --- CORS ---------------------------------------------------------------

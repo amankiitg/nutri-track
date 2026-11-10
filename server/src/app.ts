@@ -227,6 +227,17 @@ export function createApp(deps: AppDeps): Express {
   });
 
   /**
+   * The trial's per-mailbox scan limit, read from trial_settings so the /try page
+   * never hardcodes "10". Gated like the other trial routes: without the four
+   * secrets the trial is unavailable, so this answers 503 and the page shows that.
+   */
+  app.get("/trial/settings", async (_req: Request, res: Response) => {
+    requireTrialSecrets(deps.config);
+    const scansLimit = await deps.trial.getScansLimit();
+    res.json({ scans_limit: scansLimit });
+  });
+
+  /**
    * Step 1 of the trial: verify a person, send a code, and never create an account.
    *
    * Turnstile is verified server-side *before* trial_send_code is called, and that

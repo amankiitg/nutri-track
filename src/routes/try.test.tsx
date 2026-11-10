@@ -13,18 +13,18 @@ const mocks = vi.hoisted(() => ({
   verifyTrialCode: vi.fn(),
   parseTrialMeal: vi.fn(),
   getStoredTrial: vi.fn(),
+  getTrialScansLimit: vi.fn(),
   requestInvite: vi.fn(),
 }));
 
 vi.mock("@/lib/trial", () => ({
-  TRIAL_SCANS: 10,
-  TRIAL_DAILY_BUDGET: 200,
   getStoredTrial: (...args: unknown[]) => mocks.getStoredTrial(...args),
   storeTrial: vi.fn(),
   clearTrial: vi.fn(),
   sendTrialCode: (...args: unknown[]) => mocks.sendTrialCode(...args),
   verifyTrialCode: (...args: unknown[]) => mocks.verifyTrialCode(...args),
   parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
+  getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
 }));
 
 vi.mock("@/lib/invite-request", () => ({
@@ -78,6 +78,8 @@ beforeEach(() => {
   mocks.parseTrialMeal.mockReset();
   mocks.getStoredTrial.mockReset();
   mocks.getStoredTrial.mockReturnValue(null);
+  mocks.getTrialScansLimit.mockReset();
+  mocks.getTrialScansLimit.mockResolvedValue(10);
   mocks.requestInvite.mockReset();
   mocks.requestInvite.mockResolvedValue("requested");
 });
@@ -91,7 +93,7 @@ describe("the trial page", () => {
 
     render(<TrialPage />);
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Email"), "invited@example.com");
+    await user.type(await screen.findByLabelText("Email"), "invited@example.com");
     await user.click(screen.getByRole("button", { name: /email me a code/i }));
 
     expect(await screen.findByText("You already have access.")).toBeTruthy();
@@ -112,7 +114,7 @@ describe("the trial page", () => {
     render(<TrialPage />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByPlaceholderText(/type what you ate/i), "dal and roti");
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
     await user.click(screen.getByRole("button", { name: /analyse/i }));
 
     expect(await screen.findByText(/used your 10 free scans/i)).toBeTruthy();
