@@ -18,7 +18,7 @@
  * product page rather than a note from a friend.
  */
 
-export const SENDER_NAME = "invites@tracknutri.app";
+export const SENDER_NAME = "Aman";
 
 /**
  * Matches the email's opening, because a subject that describes the app would undo the first
