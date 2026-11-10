@@ -31,6 +31,7 @@ const FAT_AMOUNTS: ReadonlyArray<{ label: string; tsp: number | null }> = [
   { label: "1 tsp", tsp: 1 },
   { label: "2 tsp", tsp: 2 },
   { label: "1 tbsp", tsp: 3 },
+  { label: "2 tbsp", tsp: 6 },
 ];
 
 /** The type toggle only offers the three fats with fixed values; dressing stays as the model set it. */
@@ -257,8 +258,8 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
                           : "border-input bg-background text-muted-foreground"
                       }`}
                       onClick={() => {
+                        // Type changes re-highlight in place; only an amount (or None) closes the panel.
                         onChange(setCookingFat(item, withType(item, type)));
-                        setExpanded(false);
                       }}
                     >
                       {type.charAt(0).toUpperCase() + type.slice(1)}

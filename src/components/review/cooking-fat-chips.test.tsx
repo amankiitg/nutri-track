@@ -3,11 +3,12 @@
  * cooked or dressed with fat, an "Adjust" toggle that reveals the correction chips,
  * and the local recompute behind each chip.
  */
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { CookingFat } from "@shared/meal-parse";
-import { reviewItemFromDraft } from "@/lib/review";
+import { reviewItemFromDraft, type ReviewItem } from "@/lib/review";
 import { MealItemCard } from "./MealItemCard";
 
 function draft(name: string, fat: CookingFat | null) {
@@ -28,6 +29,21 @@ function draft(name: string, fat: CookingFat | null) {
     needs_review: false,
     review_reasons: [],
   } as const;
+}
+
+function Harness({ start, seen }: { start: ReviewItem; seen: ReviewItem[] }) {
+  const [item, setItem] = useState(start);
+  return (
+    <MealItemCard
+      item={item}
+      index={0}
+      onChange={(next) => {
+        seen.push(next);
+        setItem(next);
+      }}
+      onDelete={() => undefined}
+    />
+  );
 }
 
 describe("hidden fat line", () => {
@@ -87,6 +103,7 @@ describe("hidden fat line", () => {
     expect(screen.getByRole("button", { name: "1 tsp" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "2 tsp" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "1 tbsp" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "2 tbsp" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Oil" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ghee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Butter" })).toBeTruthy();
@@ -152,5 +169,47 @@ describe("hidden fat line", () => {
     expect(next.calories).toBe(120);
     expect(next.fat_g).toBe(1);
     expect(next.userEdited).toBe(true);
+  });
+
+  it("keeps the panel open on a type change and collapses on the amount", async () => {
+    const user = userEvent.setup();
+    const seen: ReviewItem[] = [];
+    render(
+      <Harness
+        start={reviewItemFromDraft(
+          draft("Dal tadka", {
+            type: "oil",
+            amount_tsp: 3,
+            kcal_per_tsp: null,
+            fat_per_tsp: null,
+          }) as never,
+        )}
+        seen={seen}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Adjust" }));
+
+    // Picking Ghee keeps the panel open and re-highlights in place.
+    await user.click(screen.getByRole("button", { name: "Ghee" }));
+    expect(screen.getByRole("button", { name: "None" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "2 tbsp" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ghee" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Oil" })).toHaveAttribute("aria-pressed", "false");
+
+    // Picking 2 tbsp recomputes and collapses.
+    await user.click(screen.getByRole("button", { name: "2 tbsp" }));
+    const next = seen.at(-1);
+    expect(next?.cooking_fat).toEqual({
+      type: "ghee",
+      amount_tsp: 6,
+      kcal_per_tsp: null,
+      fat_per_tsp: null,
+    });
+    // 200 - 3*40 (oil) + 6*45 (ghee) = 350 kcal; 10 - 3*4.5 + 6*5 = 26.5 g fat.
+    expect(next?.calories).toBe(350);
+    expect(next?.fat_g).toBe(26.5);
+    expect(next?.userEdited).toBe(true);
+    expect(screen.queryByRole("button", { name: "None" })).toBeNull();
   });
 });
