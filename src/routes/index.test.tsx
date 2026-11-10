@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { Landing } from "./index";
-import { DEMO_DURATION_MS, INTRO_SEEN_KEY } from "@/lib/intro";
+import { DEMO_GIF_DURATION_MS, INTRO_SEEN_KEY } from "@/lib/intro";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -151,7 +151,7 @@ describe("the landing intro", () => {
     expect(page().className).toContain("invisible");
 
     act(() => {
-      vi.advanceTimersByTime(DEMO_DURATION_MS);
+      vi.advanceTimersByTime(DEMO_GIF_DURATION_MS);
     });
     expect(page().className).not.toContain("invisible");
   });

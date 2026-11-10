@@ -10,12 +10,13 @@
 export const INTRO_SEEN_KEY = "nt:intro-seen";
 
 /**
- * The length of the demo, in milliseconds: 13.6 s, read from meal-demo.mp4's mvhd box and
- * from the sum of meal-demo.gif's frame delays (both agree) on 2026-11-09. The video ends
- * on its own `ended` event; this is only for the GIF fallback, which loops and has none.
- * Replacing the demo files means re-reading this.
+ * How long the GIF fallback plays before the intro ends, in milliseconds: one loop of
+ * meal-demo.gif, 5.58 s, the sum of its 67 frame delays, read on 2026-11-10. A video ends on
+ * its own `ended` event (meal-demo.mp4 is 9.6 s, meal-demo-short.mp4 5.67 s, from their mvhd
+ * boxes); a GIF loops and reports no end, so this is the GIF's alone. Replacing
+ * meal-demo.gif means re-reading this.
  */
-export const DEMO_DURATION_MS = 13_600;
+export const DEMO_GIF_DURATION_MS = 5_580;
 
 export const DEMO_MP4 = "/demo/meal-demo.mp4";
 export const DEMO_SHORT_MP4 = "/demo/meal-demo-short.mp4";

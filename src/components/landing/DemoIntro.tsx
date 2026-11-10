@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Wordmark } from "@/components/app/BrandMark";
-import { DEMO_DURATION_MS, DEMO_GIF, demoVideoSources } from "@/lib/intro";
+import { DEMO_GIF_DURATION_MS, DEMO_GIF, demoVideoSources } from "@/lib/intro";
 
 /** How long the intro takes to fade out; the landing page fades in over the same time. */
 export const INTRO_FADE_MS = 500;
@@ -61,7 +61,7 @@ export function DemoIntro({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     if (media !== "gif") return;
-    const timer = window.setTimeout(finish, DEMO_DURATION_MS);
+    const timer = window.setTimeout(finish, DEMO_GIF_DURATION_MS);
     return () => window.clearTimeout(timer);
   }, [media, finish]);
 

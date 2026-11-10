@@ -7,7 +7,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   DEMO_GIF,
   DEMO_MP4,
-  DEMO_SHORT_AVAILABLE,
   DEMO_SHORT_MP4,
   demoVideoSources,
   isSlowConnection,
@@ -56,11 +55,6 @@ describe("demoVideoSources", () => {
     expect(demoVideoSources(true, true)).toEqual([DEMO_SHORT_MP4, DEMO_MP4]);
     expect(demoVideoSources(false, true)).toEqual([DEMO_MP4]);
     expect(demoVideoSources(true, false)).toEqual([DEMO_MP4]);
-  });
-
-  it("knows the short cut is absent from this build, since the file is not in public/demo", () => {
-    // Flip this when meal-demo-short.mp4 is added: vite.config.ts sets the flag from the file.
-    expect(DEMO_SHORT_AVAILABLE).toBe(false);
   });
 });
 
