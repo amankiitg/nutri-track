@@ -1,14 +1,15 @@
 /**
  * iOS Safari zooms the page when a field whose font is under 16px takes focus, and the
  * zoom shifts the screen sideways. The fix is 16px (`text-base`) on every focusable text
- * field at phone widths, never `maximum-scale` in the viewport meta, which also takes
- * pinch zoom away from people who need it.
+ * field at every width (iPad Safari is 768px and up and zooms too), never `maximum-scale`
+ * in the viewport meta, which also takes pinch zoom away from people who need it.
  *
  * jsdom has no layout and no iOS, so this reads the source instead: every input, textarea
- * and select in src/ must not carry an unprefixed `text-xs`, `text-sm` or `text-[<16px]`,
- * and a raw element (not the `Input`/`Textarea` primitives, which default to `text-base`)
- * must name a font size, because Safari's own default for a field is about 13px.
- * A `md:` or other prefixed size is fine: that is the desktop design.
+ * and select in src/ must not carry `text-xs`, `text-sm` or `text-[<16px]` at any
+ * breakpoint (`md:text-sm` included), and a raw element (not the `Input`/`Textarea`
+ * primitives, which are `text-base`) must name a font size, because Safari's own default
+ * for a field is about 13px. Only the `file:` and `placeholder:` variants may be smaller:
+ * they style the file button and the placeholder, not the text being typed.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -17,7 +18,15 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(__dirname, "..");
 const FIELD = /<(input|textarea|select|Input|Textarea)\b/g;
 const NOT_TEXT = /\btype=["'](checkbox|radio|hidden|file|range|color)["']/;
-const SMALL = /(?<![\w:-])text-(xs|sm|\[(?:[0-9]|1[0-5])(?:\.\d+)?px\])(?![\w-])/;
+const SMALL = /(?<![\w-])((?:[\w-]+:)*)text-(xs|sm|\[(?:[0-9]|1[0-5])(?:\.\d+)?px\])(?![\w-])/g;
+const HARMLESS_VARIANT = /(^|:)(file|placeholder):/;
+
+/** Small sizes on the field itself, at any breakpoint. */
+function smallSizes(classes: string): string[] {
+  return [...classes.matchAll(SMALL)]
+    .filter((m) => !HARMLESS_VARIANT.test(m[1] ?? ""))
+    .map((m) => m[0]);
+}
 const SIZED = /(?<![\w:-])text-(base|lg|xl|[2-9]xl|\[(?:1[6-9]|[2-9]\d)(?:\.\d+)?px\])(?![\w-])/;
 
 function sourceFiles(dir: string): string[] {
@@ -52,7 +61,8 @@ function offenders(): string[] {
       const line = source.slice(0, match.index).split("\n").length;
       const element = match[1] ?? "";
       const where = `${relative(ROOT, file)}:${line} <${element}>`;
-      if (SMALL.test(tag)) found.push(`${where} has a font under 16px on phones`);
+      const small = smallSizes(tag);
+      if (small.length > 0) found.push(`${where} has a font under 16px: ${small.join(" ")}`);
       else if (/^[a-z]/.test(element) && !SIZED.test(tag))
         found.push(`${where} names no font size`);
     }
@@ -61,16 +71,22 @@ function offenders(): string[] {
 }
 
 describe("form fields on iOS", () => {
-  it("are at least 16px at phone widths, so focusing one does not zoom the page", () => {
+  it("are at least 16px at every width, so focusing one does not zoom the page", () => {
     expect(offenders()).toEqual([]);
   });
 
-  it("keep the primitives at text-base below md", () => {
-    for (const name of ["input.tsx", "textarea.tsx", "select.tsx"]) {
+  it("keep the field primitives at text-base, with no smaller size at any breakpoint", () => {
+    for (const name of ["input.tsx", "textarea.tsx"]) {
       const source = readFileSync(join(ROOT, "components", "ui", name), "utf8");
       expect(source, name).toMatch(/(?<![\w:-])text-base\b/);
-      expect(source, name).toMatch(/\bmd:text-sm\b/);
+      expect(smallSizes(source), name).toEqual([]);
     }
+    // The Select trigger: its first class list is the trigger's; the item lists below it
+    // are menu rows, not fields.
+    const select = readFileSync(join(ROOT, "components", "ui", "select.tsx"), "utf8");
+    const trigger = /SelectPrimitive\.Trigger[\s\S]*?"([^"]+)"/.exec(select)?.[1] ?? "";
+    expect(trigger).toMatch(/(?<![\w:-])text-base\b/);
+    expect(smallSizes(trigger)).toEqual([]);
   });
 
   it("does not disable zoom in the viewport meta", () => {

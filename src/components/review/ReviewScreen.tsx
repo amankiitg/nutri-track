@@ -293,7 +293,7 @@ export function ReviewScreen({
             <select
               value={type}
               onChange={(event) => setType(event.target.value as MealType)}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base"
             >
               {(Object.keys(MEAL_TYPE_LABELS) as MealType[]).map((value) => (
                 <option key={value} value={value}>
@@ -311,7 +311,7 @@ export function ReviewScreen({
                 const parsed = new Date(event.target.value);
                 if (!Number.isNaN(parsed.getTime())) setWhen(parsed);
               }}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base"
             />
           </label>
         </div>
@@ -352,7 +352,7 @@ export function ReviewScreen({
                 onChange={(event) => setHint(event.target.value)}
                 aria-label="Hint for re-analysis"
                 placeholder="e.g. the rice was a small portion, not a cup"
-                className="h-10 flex-1 rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+                className="h-10 flex-1 rounded-xl border border-input bg-background px-3 text-base"
               />
               <Button
                 type="button"

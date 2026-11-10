@@ -741,7 +741,7 @@ export function CaptureSheet({
             <select
               value={effectiveMealType}
               onChange={(event) => setMealType(event.target.value as MealType)}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base"
             >
               {(Object.keys(MEAL_TYPE_LABELS) as MealType[]).map((value) => (
                 <option key={value} value={value}>
@@ -756,7 +756,7 @@ export function CaptureSheet({
               type="datetime-local"
               value={eatenAt}
               onChange={(event) => setEatenAt(event.target.value)}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base"
             />
           </label>
         </div>
@@ -767,7 +767,7 @@ export function CaptureSheet({
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             placeholder="e.g. the rice was a small portion"
-            className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+            className="h-10 w-full rounded-xl border border-input bg-background px-3 text-base"
           />
         </label>
 
