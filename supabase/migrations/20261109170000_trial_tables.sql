@@ -518,8 +518,20 @@ grant execute on function public.admin_trial_stats() to authenticated;
 --
 -- admin_spend is re-created so it appends a synthetic "Trial" row aggregating every
 -- trial call. is_trial marks it; the browser renders it apart from the per-user rows.
+--
+-- Dropped first, because the result type gains a column: `create or replace` cannot
+-- change a function's return type, and that is exactly the error the first push of this
+-- file stopped on. A drop also drops the function's grants, so the revoke and grant
+-- after it are the ones 20260911210000 and 20260911211000 state, re-applied verbatim.
+--
+-- `u.email::text` is the fix 20260911211000 made (auth.users.email is varchar(255), and
+-- RETURN QUERY demands an exact type match); the first draft of this file had lost it.
+-- The ORDER BY is positional because it sorts a UNION, whose output columns are named
+-- after the first branch's expressions, so `calls_total` is not a name it can see.
 -- ---------------------------------------------------------------------------
-create or replace function public.admin_spend()
+drop function if exists public.admin_spend();
+
+create function public.admin_spend()
 returns table (
   user_id uuid,
   email text,
@@ -545,7 +557,7 @@ begin
 
   return query
     with users as (
-      select u.id, u.email,
+      select u.id, u.email::text as email,
              coalesce(p.timezone, 'UTC') as tz
         from auth.users u
         left join public.profiles p on p.user_id = u.id
@@ -607,7 +619,8 @@ begin
     from public.llm_calls c
     where c.trial = true
 
-    order by calls_total desc, email;
+    -- 8 is calls_total and 2 is email, the order the previous definition used.
+    order by 8 desc, 2;
 end $$;
 
 revoke execute on function public.admin_spend() from public, anon;

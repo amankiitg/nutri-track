@@ -23,8 +23,11 @@ drop table if exists public.trial_codes;
 drop table if exists public.trial_users;
 
 -- The admin_spend function is re-created to its pre-trial shape, so a rollback leaves
--- the admin page reading the same function it had before this migration.
-create or replace function public.admin_spend()
+-- the admin page reading the same function it had before this migration. The body is
+-- 20260911211000_admin_spend_email_cast.sql's, including its `u.email::text` cast, and
+-- the revoke and grant after it are that migration's too: the drop above took the old
+-- grants with it.
+create function public.admin_spend()
 returns table (
   user_id uuid,
   email text,
@@ -49,7 +52,7 @@ begin
 
   return query
     with users as (
-      select u.id, u.email,
+      select u.id, u.email::text as email,
              coalesce(p.timezone, 'UTC') as tz
         from auth.users u
         left join public.profiles p on p.user_id = u.id
