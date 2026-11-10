@@ -6,6 +6,7 @@
  * the flags are recomputed from the numbers on screen rather than carried over from
  * the model's reply.
  */
+import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +68,37 @@ export interface MealItemCardProps {
 /** `null` renders as an empty box, so "unknown" looks different from "zero". */
 function valueOf(value: number | null): string {
   return value === null ? "" : String(value);
+}
+
+/**
+ * The calories box: whole kcal on screen, the stored value untouched.
+ *
+ * A grams rescale or a fat chip leaves calories at a tenth (245.3), which is what is saved.
+ * The box shows it rounded, but only while nobody is typing in it: rounding a controlled
+ * input on every keystroke would rewrite what was just typed ("12." would become "12"), so
+ * while focused it shows the draft as typed, and focusing alone writes nothing.
+ */
+function CaloriesInput({
+  item,
+  index,
+  onChange,
+}: Pick<MealItemCardProps, "item" | "index" | "onChange">) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(Math.round(item.calories));
+  return (
+    <input
+      inputMode="decimal"
+      value={shown}
+      onFocus={() => setDraft(shown)}
+      onBlur={() => setDraft(null)}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onChange(setNutrient(item, "calories", event.target.value));
+      }}
+      aria-label={`${NUTRIENT_LABELS.calories} for item ${index + 1}`}
+      className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base"
+    />
+  );
 }
 
 export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardProps) {
@@ -150,15 +182,19 @@ export function MealItemCard({ item, index, onChange, onDelete }: MealItemCardPr
         {NUTRIENT_FIELDS.map((field) => (
           <label key={field} className="space-y-1 text-xs">
             <span className="text-muted-foreground">{NUTRIENT_LABELS[field]}</span>
-            <input
-              inputMode="decimal"
-              value={valueOf(item[field])}
-              onChange={(event) =>
-                onChange(setNutrient(item, field as NutrientField, event.target.value))
-              }
-              aria-label={`${NUTRIENT_LABELS[field]} for item ${index + 1}`}
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base"
-            />
+            {field === "calories" ? (
+              <CaloriesInput item={item} index={index} onChange={onChange} />
+            ) : (
+              <input
+                inputMode="decimal"
+                value={valueOf(item[field])}
+                onChange={(event) =>
+                  onChange(setNutrient(item, field as NutrientField, event.target.value))
+                }
+                aria-label={`${NUTRIENT_LABELS[field]} for item ${index + 1}`}
+                className="h-9 w-full rounded-lg border border-input bg-background px-2 text-base"
+              />
+            )}
           </label>
         ))}
       </div>

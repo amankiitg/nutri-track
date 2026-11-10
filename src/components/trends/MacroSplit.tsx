@@ -110,7 +110,7 @@ export function MacroSplit({
                 </Pie>
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
-                  formatter={(value) => `${Number(value).toLocaleString()} kcal`}
+                  formatter={(value) => `${Math.round(Number(value)).toLocaleString()} kcal`}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -129,7 +129,7 @@ export function MacroSplit({
                   {Math.round(slice.share * 100)}%
                 </span>
                 <span className="w-16 text-right tabular-nums text-muted-foreground">
-                  {slice.kcal.toLocaleString()}
+                  {Math.round(slice.kcal).toLocaleString()}
                 </span>
               </li>
             ))}
@@ -166,7 +166,7 @@ export function MacroSplit({
                 cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
                 contentStyle={TOOLTIP_STYLE}
                 labelFormatter={(label) => String(label)}
-                formatter={(value) => `${Number(value).toLocaleString()} kcal`}
+                formatter={(value) => `${Math.round(Number(value)).toLocaleString()} kcal`}
               />
               <Legend
                 verticalAlign="top"

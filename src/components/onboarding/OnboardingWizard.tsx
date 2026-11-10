@@ -251,7 +251,7 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
               <section className="card-soft space-y-4 p-5">
                 <h2 className="text-lg font-semibold">Your daily targets</h2>
                 <p className="text-4xl font-semibold tabular-nums">
-                  {targets.calories.toLocaleString("en-US")}
+                  {Math.round(targets.calories).toLocaleString("en-US")}
                   <span className="ml-2 text-base font-normal text-muted-foreground">kcal</span>
                 </p>
                 {form.goal !== null && (

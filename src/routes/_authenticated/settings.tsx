@@ -101,7 +101,7 @@ function SettingsPage() {
           {target.isSuccess && target.data && (
             <>
               <p className="text-3xl font-semibold tabular-nums">
-                {target.data.calories.toLocaleString("en-US")}
+                {Math.round(target.data.calories).toLocaleString("en-US")}
                 <span className="ml-2 text-base font-normal text-muted-foreground">kcal</span>
               </p>
               <p className="mt-1 text-xs text-muted-foreground">

@@ -90,7 +90,9 @@ export function CalorieBars({
               }}
               labelFormatter={(label) => String(label)}
               formatter={(value, name) => [
-                value === null ? "not logged" : `${Number(value).toLocaleString()} kcal`,
+                value === null
+                  ? "not logged"
+                  : `${Math.round(Number(value)).toLocaleString()} kcal`,
                 name === "calories" ? "Eaten" : "Target",
               ]}
             />

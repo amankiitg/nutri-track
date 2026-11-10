@@ -40,8 +40,8 @@ export function CalorieRing({ consumed, target }: { consumed: number; target: nu
     target === null
       ? `${Math.round(consumed)} kcal eaten. No target set.`
       : isOver
-        ? `${Math.round(consumed)} of ${target} kcal, ${Math.round(over)} over target.`
-        : `${Math.round(consumed)} of ${target} kcal, ${Math.round(remaining ?? 0)} remaining.`;
+        ? `${Math.round(consumed)} of ${Math.round(target)} kcal, ${Math.round(over)} over target.`
+        : `${Math.round(consumed)} of ${Math.round(target)} kcal, ${Math.round(remaining ?? 0)} remaining.`;
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -81,7 +81,7 @@ export function CalorieRing({ consumed, target }: { consumed: number; target: nu
             {Math.round(consumed).toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground tabular-nums">
-            {target === null ? "eaten" : `of ${target.toLocaleString()} kcal`}
+            {target === null ? "eaten" : `of ${Math.round(target).toLocaleString()} kcal`}
           </p>
         </div>
       </div>
