@@ -91,6 +91,7 @@ export type Database = {
         Row: {
           email: string;
           first_name: string | null;
+          from_trial: boolean;
           handled_at: string | null;
           handled_by: string | null;
           id: string;
@@ -104,6 +105,7 @@ export type Database = {
         Insert: {
           email?: string;
           first_name?: string | null;
+          from_trial?: boolean;
           handled_at?: string | null;
           handled_by?: string | null;
           id?: string;
@@ -117,6 +119,7 @@ export type Database = {
         Update: {
           email?: string;
           first_name?: string | null;
+          from_trial?: boolean;
           handled_at?: string | null;
           handled_by?: string | null;
           id?: string;
@@ -134,31 +137,37 @@ export type Database = {
           completion_tokens: number | null;
           created_at: string;
           id: string;
+          ip_hash: string | null;
           latency_ms: number | null;
           model: string;
           prompt_tokens: number | null;
           status: string;
-          user_id: string;
+          trial: boolean;
+          user_id: string | null;
         };
         Insert: {
           completion_tokens?: number | null;
           created_at?: string;
           id?: string;
+          ip_hash?: string | null;
           latency_ms?: number | null;
           model: string;
           prompt_tokens?: number | null;
           status: string;
-          user_id: string;
+          trial?: boolean;
+          user_id?: string | null;
         };
         Update: {
           completion_tokens?: number | null;
           created_at?: string;
           id?: string;
+          ip_hash?: string | null;
           latency_ms?: number | null;
           model?: string;
           prompt_tokens?: number | null;
           status?: string;
-          user_id?: string;
+          trial?: boolean;
+          user_id?: string | null;
         };
         Relationships: [];
       };
@@ -380,6 +389,75 @@ export type Database = {
         };
         Relationships: [];
       };
+      trial_codes: {
+        Row: {
+          attempts: number;
+          code_hash: string;
+          email: string;
+          expires_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          code_hash: string;
+          email: string;
+          expires_at: string;
+        };
+        Update: {
+          attempts?: number;
+          code_hash?: string;
+          email?: string;
+          expires_at?: string;
+        };
+        Relationships: [];
+      };
+      trial_settings: {
+        Row: {
+          daily_budget: number;
+          id: boolean;
+          scans_limit: number;
+        };
+        Insert: {
+          daily_budget: number;
+          id?: boolean;
+          scans_limit: number;
+        };
+        Update: {
+          daily_budget?: number;
+          id?: boolean;
+          scans_limit?: number;
+        };
+        Relationships: [];
+      };
+      trial_users: {
+        Row: {
+          created_at: string;
+          email: string;
+          first_name: string | null;
+          id: string;
+          ip_hash: string | null;
+          last_used_at: string | null;
+          scans_used: number;
+        };
+        Insert: {
+          created_at?: string;
+          email: string;
+          first_name?: string | null;
+          id?: string;
+          ip_hash?: string | null;
+          last_used_at?: string | null;
+          scans_used?: number;
+        };
+        Update: {
+          created_at?: string;
+          email?: string;
+          first_name?: string | null;
+          id?: string;
+          ip_hash?: string | null;
+          last_used_at?: string | null;
+          scans_used?: number;
+        };
+        Relationships: [];
+      };
       weight_log: {
         Row: {
           created_at: string;
@@ -451,12 +529,21 @@ export type Database = {
           calls_today: number;
           calls_total: number;
           email: string;
+          is_trial: boolean;
           last_call_at: string;
           resets_today: string;
           timezone: string;
           tokens_month: number;
           tokens_total: number;
           user_id: string;
+        }[];
+      };
+      admin_trial_stats: {
+        Args: never;
+        Returns: {
+          budget: number;
+          scans_today: number;
+          user_count: number;
         }[];
       };
       auth_entry_state: { Args: { p_email: string }; Returns: string };
@@ -523,6 +610,7 @@ export type Database = {
           p_auto?: boolean;
           p_email: string;
           p_first_name?: string;
+          p_from_trial?: boolean;
           p_honeypot?: string;
         };
         Returns: string;
@@ -576,6 +664,42 @@ export type Database = {
           target_calories: number;
           target_protein_g: number;
         }[];
+      };
+      trial_check_secret: {
+        Args: { p_server_secret: string };
+        Returns: undefined;
+      };
+      trial_ip_hash: { Args: { p_ip: string }; Returns: string };
+      trial_log_call: {
+        Args: {
+          p_call_id: string;
+          p_completion_tokens: number;
+          p_latency_ms: number;
+          p_model: string;
+          p_prompt_tokens: number;
+          p_server_secret: string;
+          p_status: string;
+        };
+        Returns: undefined;
+      };
+      trial_scan_start: {
+        Args: { p_email: string; p_ip?: string; p_server_secret: string };
+        Returns: Json;
+      };
+      trial_scans_limit: { Args: { p_server_secret: string }; Returns: number };
+      trial_send_code: {
+        Args: {
+          p_email: string;
+          p_first_name?: string;
+          p_ip?: string;
+          p_server_secret: string;
+        };
+        Returns: Json;
+      };
+      trial_server_secret: { Args: never; Returns: string };
+      trial_verify_code: {
+        Args: { p_code: string; p_email: string; p_server_secret: string };
+        Returns: string;
       };
       update_meal: {
         Args: { _items: Json; _meal: Json; _meal_id: string };
