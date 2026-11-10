@@ -1,20 +1,22 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Camera, Mic, Type } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Camera, Mic, Play, Type } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
+import { DemoIntro, INTRO_FADE_MS } from "@/components/landing/DemoIntro";
+import { markIntroSeen, shouldPlayIntro } from "@/lib/intro";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "NutriTrack — know if today is on track" },
+      { title: "NutriTrack: know if today is on track" },
       {
         name: "description",
         content:
           "Snap a photo, speak, or type your meal. NutriTrack estimates calories and macros and tells you each day whether you're on pace for your weight goal.",
       },
-      { property: "og:title", content: "NutriTrack — know if today is on track" },
+      { property: "og:title", content: "NutriTrack: know if today is on track" },
       {
         property: "og:description",
         content: "Photo-first calorie and nutrient tracking with a daily on-track verdict.",
@@ -24,78 +26,67 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+type Phase = "pending" | "intro" | "landing";
+
 /**
- * The demo media, top of the landing page.
+ * The landing page opens as an intro: the demo plays full screen, then fades to the page.
  *
- * Tries the MP4 first, then the GIF, then the placeholder SVG, so a deployment can
- * drop in a real video without a code change. The fixed aspect-ratio box is what
- * keeps the layout from jumping when the file is swapped later.
+ * Nothing is decided while rendering. The server cannot know about the session (it lives
+ * in localStorage) or about sessionStorage and reduced motion, so the first paint on both
+ * sides is the page, present but invisible, and an effect decides: a signed-in visitor goes
+ * to /today with no intro; otherwise the intro plays unless it already played in this
+ * browser session or reduced motion is set, in which case the page simply appears.
  */
-function DemoMedia() {
-  const [stage, setStage] = useState<"mp4" | "gif" | "placeholder">("mp4");
-
-  if (stage === "mp4") {
-    return (
-      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="h-full w-full object-cover"
-          onError={() => setStage("gif")}
-        >
-          <source src="/demo/meal-demo.mp4" type="video/mp4" />
-        </video>
-      </div>
-    );
-  }
-
-  if (stage === "gif") {
-    return (
-      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
-        <img
-          src="/demo/meal-demo.gif"
-          alt="NutriTrack demo"
-          className="h-full w-full object-cover"
-          onError={() => setStage("placeholder")}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
-      <img
-        src="/demo/meal-demo-placeholder.svg"
-        alt="Snap, Analyse, Macros"
-        className="h-full w-full object-cover"
-      />
-    </div>
-  );
-}
-
-function Landing() {
+export function Landing() {
   const navigate = useNavigate();
-  const [checking, setChecking] = useState(true);
+  const [phase, setPhase] = useState<Phase>("pending");
+  const [introMounted, setIntroMounted] = useState(false);
+
+  const playIntro = useCallback(() => {
+    markIntroSeen();
+    setIntroMounted(true);
+    setPhase("intro");
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const decide = () => {
+      if (!active) return;
+      if (shouldPlayIntro()) playIntro();
+      else setPhase("landing");
+    };
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
       if (data.session) navigate({ to: "/today", replace: true });
-      else setChecking(false);
-    });
+      else decide();
+    }, decide);
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, playIntro]);
+
+  // The intro stays mounted while it fades out over the page, then goes.
+  useEffect(() => {
+    if (phase !== "landing" || !introMounted) return;
+    const timer = window.setTimeout(() => setIntroMounted(false), INTRO_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase, introMounted]);
+
+  const finishIntro = useCallback(() => setPhase("landing"), []);
+  const shown = phase === "landing";
 
   return (
     <main className="paper-grain flex min-h-dvh flex-col">
-      <div className="app-shell flex flex-1 flex-col justify-center py-16">
+      {introMounted && <DemoIntro onDone={finishIntro} />}
+      {/* Keyed so the page's rise animation plays when it is revealed, not while hidden. */}
+      <div
+        key={shown ? "shown" : "hidden"}
+        data-testid="landing-page"
+        className={
+          "app-shell flex flex-1 flex-col justify-center py-16" + (shown ? "" : " invisible")
+        }
+      >
         <div className="animate-rise">
-          <DemoMedia />
           <BrandMark size={56} />
           <h1 className="mt-8 text-5xl leading-[1.02] font-semibold">
             Know if today
@@ -104,8 +95,16 @@ function Landing() {
           </h1>
           <p className="mt-5 max-w-sm text-lg text-muted-foreground">
             Snap your plate. NutriTrack reads it, you confirm it, and you get a straight answer on
-            your weight goal — every single day.
+            your weight goal, every single day.
           </p>
+          <button
+            type="button"
+            onClick={playIntro}
+            className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4"
+          >
+            <Play className="size-3.5" aria-hidden="true" />
+            Watch the demo
+          </button>
         </div>
 
         <ul className="mt-10 grid grid-cols-3 gap-3 animate-rise [animation-delay:120ms]">
@@ -124,11 +123,11 @@ function Landing() {
         </ul>
 
         <div className="mt-10 flex flex-col gap-3 animate-rise [animation-delay:200ms]">
-          <Button asChild size="lg" className="h-12 rounded-full text-base" disabled={checking}>
-            <Link to="/auth">{checking ? "Checking…" : "Sign in"}</Link>
+          <Button asChild size="lg" className="h-12 rounded-full text-base">
+            <Link to="/auth">Sign in</Link>
           </Button>
           <Button asChild variant="outline" size="lg" className="h-12 rounded-full text-base">
-            <Link to="/try">Try it free: 10 scans</Link>
+            <Link to="/try">Try it now</Link>
           </Button>
           <p className="text-center text-sm">
             {/* The request page, not a step inside sign-in: somebody with no invite has one thing
@@ -138,7 +137,7 @@ function Landing() {
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground">
-            Private, invite-only. Estimates are estimates — you always review before saving.
+            Private, invite-only. Estimates are estimates. You always review before saving.
           </p>
         </div>
 
