@@ -1,8 +1,15 @@
 /**
- * The signed trial token: an HMAC over an email and an expiry, valid for 30 days.
+ * The signed trial token: an HMAC over an email, an expiry, a version and (for a personal
+ * link) a first name, valid for 30 days.
  *
- * Issued by the server once a visitor proves their email code, kept in localStorage so
- * a returning visitor skips the email step. The browser never has the signing key; it
+ * Issued by the server once a visitor proves their email code, or by an admin as a
+ * personal link (/t/<token>, by hand or in an invite email), and kept in localStorage so
+ * a returning visitor skips the email step.
+ *
+ * The version is the revocation. It must equal trial_users.token_version, which the
+ * database checks on every scan; revoking bumps that column, so every token already
+ * issued for the mailbox stops working. A token signed before versions existed has no
+ * `v` and reads as 0, the column's default, so it keeps working until a revoke. The browser never has the signing key; it
  * only carries the token back, and the server re-checks the signature and the expiry
  * on every use.
  *
@@ -17,20 +24,38 @@ export interface TrialTokenPayload {
   email: string;
   /** Seconds since the epoch, when the token stops being accepted. */
   exp: number;
+  /** trial_users.token_version when the token was signed. */
+  v: number;
+  /** The name a personal link greets with, when the admin gave one. */
+  n?: string;
 }
 
-export function signTrialToken(email: string, secret: string, nowMs: number = Date.now()): string {
+export interface TrialTokenOptions {
+  version?: number;
+  firstName?: string | null;
+}
+
+export function signTrialToken(
+  email: string,
+  secret: string,
+  nowMs: number = Date.now(),
+  options: TrialTokenOptions = {},
+): string {
   const payload: TrialTokenPayload = {
     email,
     exp: Math.floor(nowMs / 1000) + TRIAL_TOKEN_TTL_SECONDS,
+    v: options.version ?? 0,
   };
+  const name = options.firstName?.trim() ?? "";
+  if (name !== "") payload.n = name;
   const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = createHmac("sha256", secret).update(payloadB64).digest("base64url");
   return payloadB64 + "." + signature;
 }
 
 export type TrialTokenResult =
-  { ok: true; email: string } | { ok: false; reason: "invalid" | "expired" };
+  | { ok: true; email: string; version: number; firstName: string | null }
+  | { ok: false; reason: "invalid" | "expired" };
 
 /**
  * Verifies the token and returns the email it names.
@@ -63,7 +88,7 @@ export function verifyTrialToken(
     return { ok: false, reason: "invalid" };
   }
 
-  const record = payload as { email?: unknown; exp?: unknown };
+  const record = payload as { email?: unknown; exp?: unknown; v?: unknown; n?: unknown };
   if (typeof record.email !== "string" || record.email === "") {
     return { ok: false, reason: "invalid" };
   }
@@ -71,5 +96,13 @@ export function verifyTrialToken(
     return { ok: false, reason: "expired" };
   }
 
-  return { ok: true, email: record.email };
+  // Absent on tokens signed before versions existed: those are version 0. Anything else that
+  // is not a whole number is not a token this service signed.
+  const version = record.v === undefined ? 0 : record.v;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 0) {
+    return { ok: false, reason: "invalid" };
+  }
+  const firstName = typeof record.n === "string" && record.n.trim() !== "" ? record.n : null;
+
+  return { ok: true, email: record.email, version, firstName };
 }

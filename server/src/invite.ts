@@ -9,9 +9,10 @@
  * Retrying is safe. The insert is idempotent, so a second attempt adds no second row; the worst
  * case is a second draft, which is visible in Gmail and harmless.
  */
-import type { CallerStore } from "./caller-store";
+import type { CallerStore, IssuedTrialLink } from "./caller-store";
 import type { GmailDraftClient } from "./gmail";
 import { buildApprovedMime, buildInviteMime } from "./invite-message";
+import { log } from "./log";
 
 export interface InviteRequest {
   email: string;
@@ -27,11 +28,54 @@ export interface InviteOutcome {
   draftId: string;
   /** True when the address was already on the list, so the caller can say so. */
   alreadyInvited: boolean;
+  /** True when the draft carries a personal trial link and the admin page records it as sent. */
+  trialLinkSent: boolean;
 }
 
 export interface InviteDeps {
-  store: Pick<CallerStore, "hasAllowedEmail" | "addAllowedEmail">;
+  store: Pick<
+    CallerStore,
+    "hasAllowedEmail" | "addAllowedEmail" | "issueTrialLink" | "markTrialLinkSent"
+  >;
   gmail: GmailDraftClient;
+  /**
+   * Turns an issued link into its URL by signing the token. Null when the trial is not
+   * configured on the server, and the email then goes without the trial line.
+   */
+  signTrialLink: ((issued: IssuedTrialLink) => string) | null;
+}
+
+/**
+ * The person's trial link for the email, or null.
+ *
+ * Never a reason to fail the invite: an invite without the trial line is still an invite, and
+ * the outcome says the line is missing so the admin page can say so too.
+ */
+async function trialLinkFor(
+  email: string,
+  firstName: string,
+  deps: InviteDeps,
+): Promise<{ url: string; email: string } | null> {
+  if (deps.signTrialLink === null) return null;
+  try {
+    const issued = await deps.store.issueTrialLink(email, firstName === "" ? null : firstName);
+    return { url: deps.signTrialLink(issued), email: issued.email };
+  } catch {
+    log("error", "trial link not issued for an invite", {});
+    return null;
+  }
+}
+
+/** Recorded only once the draft exists, so "Trial link sent" never names an email nobody has. */
+async function markSent(trial: { email: string } | null, deps: InviteDeps): Promise<boolean> {
+  if (trial === null) return false;
+  try {
+    await deps.store.markTrialLinkSent(trial.email);
+    return true;
+  } catch {
+    log("error", "trial link not marked as sent", {});
+    return false;
+  }
 }
 
 /**
@@ -59,16 +103,28 @@ export async function invite(request: InviteRequest, deps: InviteDeps): Promise<
    * away and the admin can retry it.
    */
   if (request.kind === "approved") {
-    const mime = await buildApprovedMime({ firstName, invitedEmail: email });
+    const trial = await trialLinkFor(email, firstName, deps);
+    const mime = await buildApprovedMime({
+      firstName,
+      invitedEmail: email,
+      trialUrl: trial?.url ?? null,
+    });
     const draftId = await deps.gmail.createDraft(mime);
-    return { email, firstName, draftId, alreadyInvited: true };
+    const trialLinkSent = await markSent(trial, deps);
+    return { email, firstName, draftId, alreadyInvited: true, trialLinkSent };
   }
 
   const alreadyInvited = await deps.store.hasAllowedEmail(email);
   // The From is the app's verified alias (see `INVITE_FROM`), not the mailbox the draft sits in.
-  const mime = await buildInviteMime({ firstName, invitedEmail: email });
+  const trial = await trialLinkFor(email, firstName, deps);
+  const mime = await buildInviteMime({
+    firstName,
+    invitedEmail: email,
+    trialUrl: trial?.url ?? null,
+  });
   const draftId = await deps.gmail.createDraft(mime);
   await deps.store.addAllowedEmail(email);
+  const trialLinkSent = await markSent(trial, deps);
 
-  return { email, firstName, draftId, alreadyInvited };
+  return { email, firstName, draftId, alreadyInvited, trialLinkSent };
 }

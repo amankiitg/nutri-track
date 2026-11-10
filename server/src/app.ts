@@ -20,7 +20,15 @@ import { log } from "./log";
 import { parseMeal } from "./parse-meal";
 import type { EmailClient } from "./resend";
 import { assertPathsOwnedBy, inviteRequestSchema, parseMealRequestSchema } from "./schemas";
-import { clientIp, parseTrialMeal, TRIAL_UNAVAILABLE_MESSAGE, type TrialStore } from "./trial";
+import type { IssuedTrialLink } from "./caller-store";
+import {
+  clientIp,
+  parseTrialMeal,
+  TRIAL_LINK_BASE,
+  TRIAL_LINK_EXPIRED_MESSAGE,
+  TRIAL_UNAVAILABLE_MESSAGE,
+  type TrialStore,
+} from "./trial";
 import { signTrialToken, verifyTrialToken } from "./trial-token";
 import { verifyTurnstile } from "./turnstile";
 
@@ -55,6 +63,13 @@ const trialSendCodeSchema = z.object({
   email: z.string().min(3).max(254),
   firstName: z.string().max(60).optional().default(""),
   turnstileToken: z.string().min(1),
+});
+
+const trialLinkSchema = z.object({ token: z.string().min(1).max(4000) });
+
+const trialLinkIssueSchema = z.object({
+  email: z.string().min(3).max(254),
+  firstName: z.string().max(60).nullable().optional(),
 });
 
 const trialVerifyCodeSchema = z.object({
@@ -97,8 +112,25 @@ function requireTrialSecrets(config: Config): { turnstile: string; token: string
   return { turnstile: TURNSTILE_SECRET, token: TRIAL_TOKEN_SECRET };
 }
 
+/**
+ * Signs an issued link into its URL, or null when the trial has no token secret. The token is
+ * the same one the code flow issues, plus the mailbox's current version and the name to greet.
+ */
+function linkSigner(deps: AppDeps): ((issued: IssuedTrialLink) => string) | null {
+  const secret = deps.config.TRIAL_TOKEN_SECRET;
+  if (secret === undefined) return null;
+  return (issued) =>
+    TRIAL_LINK_BASE +
+    signTrialToken(issued.email, secret, (deps.now?.() ?? new Date()).getTime(), {
+      version: issued.version,
+      firstName: issued.firstName,
+    });
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
+  /** One clock for signing and verifying trial tokens, so a test can freeze both. */
+  const nowMs = (): number => (deps.now?.() ?? new Date()).getTime();
 
   // Render terminates TLS upstream, so trust its header for req.ip and the logs.
   app.set("trust proxy", true);
@@ -214,6 +246,7 @@ export function createApp(deps: AppDeps): Express {
     const outcome = await invite(parsed.data, {
       store,
       gmail: deps.gmail,
+      signTrialLink: linkSigner(deps),
     });
 
     // The address itself is not logged. Who was invited is recorded in `allowed_emails`, which is
@@ -293,11 +326,86 @@ export function createApp(deps: AppDeps): Express {
 
     const status = await deps.trial.verifyCode(parsed.data.email, parsed.data.code);
     if (status === "ok") {
-      const token = signTrialToken(parsed.data.email, secrets.token);
+      // The token carries the mailbox's current version so a later revoke reaches it. The code
+      // is already spent, so a failure to read the version must not fail the sign-in: version 0
+      // is the column's default and right for every mailbox that was never revoked.
+      let version = 0;
+      try {
+        const link = await deps.trial.linkStatus(parsed.data.email, null);
+        if (link.status === "ok" && link.token_version !== undefined) version = link.token_version;
+      } catch {
+        log("error", "trial version not read at verify", {});
+      }
+      const token = signTrialToken(parsed.data.email, secrets.token, nowMs(), { version });
       res.json({ status: "ok", token });
       return;
     }
     res.json({ status });
+  });
+
+  /**
+   * A personal trial link, opened: is it still good, and who is it for?
+   *
+   * No email, code or Turnstile: the signed token is the proof, and the database decides the
+   * rest (the version must be current, and an address with an account is sent to sign in).
+   * Expired, forged and revoked all answer the same way, because the person's next step is the
+   * same: ask for a new one.
+   */
+  app.post("/trial/link", async (req: Request, res: Response) => {
+    const secrets = requireTrialSecrets(deps.config);
+    const parsed = trialLinkSchema.safeParse(req.body);
+    if (!parsed.success) throw validationError(parsed.error);
+
+    const verified = verifyTrialToken(parsed.data.token, secrets.token, nowMs());
+    if (!verified.ok) {
+      res.json({ status: "expired", message: TRIAL_LINK_EXPIRED_MESSAGE });
+      return;
+    }
+
+    const link = await deps.trial.linkStatus(verified.email, verified.version);
+    if (link.status === "ok") {
+      res.json({
+        status: "ok",
+        email: verified.email,
+        firstName: link.first_name ?? verified.firstName,
+        scansLeft: link.scans_left ?? 0,
+        scansTotal: link.scans_total ?? null,
+      });
+      return;
+    }
+    if (link.status === "already_access") {
+      res.json({ status: "already_access", email: verified.email });
+      return;
+    }
+    res.json({ status: "expired", message: TRIAL_LINK_EXPIRED_MESSAGE });
+  });
+
+  /**
+   * An admin copies someone's trial link. Admin-only, checked with the caller's own token, and
+   * the database function checks again. The link is recorded as sent at once: copying it is
+   * the admin sending it by hand.
+   */
+  app.post("/trial/link/issue", async (req: Request, res: Response) => {
+    const token = bearerToken(req.get("authorization"));
+    const user = await deps.verifyToken(token);
+
+    const parsed = trialLinkIssueSchema.safeParse(req.body);
+    if (!parsed.success) throw validationError(parsed.error);
+
+    const store = deps.forCaller(user, token);
+    if (!(await store.isAdmin())) {
+      throw new ApiError(403, "forbidden", "Only an admin can create trial links.");
+    }
+
+    const sign = linkSigner(deps);
+    if (sign === null) throw new ApiError(503, "internal_error", TRIAL_UNAVAILABLE_MESSAGE);
+
+    const issued = await store.issueTrialLink(parsed.data.email, parsed.data.firstName ?? null);
+    const url = sign(issued);
+    await store.markTrialLinkSent(issued.email);
+
+    log("info", "trial link issued", { adminId: user.id });
+    res.json({ url, email: issued.email, firstName: issued.firstName });
   });
 
   /** Step 3: a scan. The photo is analysed in memory and never stored. */
@@ -306,15 +414,9 @@ export function createApp(deps: AppDeps): Express {
     const parsed = trialParseSchema.safeParse(req.body);
     if (!parsed.success) throw validationError(parsed.error);
 
-    const verified = verifyTrialToken(parsed.data.token, secrets.token);
+    const verified = verifyTrialToken(parsed.data.token, secrets.token, nowMs());
     if (!verified.ok) {
-      throw new ApiError(
-        401,
-        "unauthorized",
-        verified.reason === "expired"
-          ? "Your trial has expired. Start again."
-          : "That trial link is not valid.",
-      );
+      throw new ApiError(401, "trial_link_expired", TRIAL_LINK_EXPIRED_MESSAGE);
     }
 
     const ip = clientIp(req.headers, req.ip);
@@ -323,6 +425,7 @@ export function createApp(deps: AppDeps): Express {
     const outcome = await parseTrialMeal(
       {
         email: verified.email,
+        version: verified.version,
         ip,
         text: parsed.data.text ?? null,
         photos: parsed.data.photos.map((photo) => ({

@@ -36,6 +36,25 @@ export function trialExhaustedMessage(limit: number): string {
   return "You've used your " + limit + " free scans. Join to keep tracking.";
 }
 
+/** What a revoked, expired or forged personal link says. One sentence for all three. */
+export const TRIAL_LINK_EXPIRED_MESSAGE = "This trial link has expired. Ask Aman for a new one.";
+
+export const TRIAL_ALREADY_ACCESS_MESSAGE = "You already have access. Sign in to keep tracking.";
+
+/** Where a personal trial link points. The token is appended as the last path segment. */
+export const TRIAL_LINK_BASE = "https://tracknutri.app/t/";
+
+const trialLinkStatusSchema = z.object({
+  status: z.string(),
+  email: z.string().optional(),
+  first_name: z.string().nullable().optional(),
+  token_version: z.number().int().optional(),
+  scans_left: z.number().optional(),
+  scans_total: z.number().nullable().optional(),
+});
+
+export type TrialLinkStatus = z.infer<typeof trialLinkStatusSchema>;
+
 const trialSendResultSchema = z.object({
   status: z.string(),
   code: z.string().optional(),
@@ -57,7 +76,10 @@ export type TrialScanResult = z.infer<typeof trialScanResultSchema>;
 export interface TrialStore {
   sendCode(email: string, firstName: string, ip: string | null): Promise<TrialSendResult>;
   verifyCode(email: string, code: string): Promise<string>;
-  startScan(email: string, ip: string | null): Promise<TrialScanResult>;
+  /** `version` is the token's; the database refuses it unless it is the mailbox's current one. */
+  startScan(email: string, ip: string | null, version: number): Promise<TrialScanResult>;
+  /** What a token for this mailbox is worth now; a null version skips only the version check. */
+  linkStatus(email: string, version: number | null): Promise<TrialLinkStatus>;
   logCall(callId: string, record: LlmCallRecord): Promise<void>;
   /** The per-mailbox scan limit, read from trial_settings so the page never hardcodes it. */
   getScansLimit(): Promise<number>;
@@ -111,11 +133,24 @@ export function createTrialStore(
       return data;
     },
 
-    async startScan(email, ip) {
+    async linkStatus(email, version) {
+      const { data, error } = await client.rpc("trial_link_status", {
+        p_server_secret: serverSecret,
+        p_email: email,
+        ...(version === null ? {} : { p_version: version }),
+      });
+      if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      const parsed = trialLinkStatusSchema.safeParse(data);
+      if (!parsed.success) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      return parsed.data;
+    },
+
+    async startScan(email, ip, version) {
       const { data, error } = await client.rpc("trial_scan_start", {
         p_server_secret: serverSecret,
         p_email: email,
         p_ip: ip,
+        p_version: version,
       });
       if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
       const parsed = trialScanResultSchema.safeParse(data);
@@ -188,6 +223,12 @@ export function trialScanError(scan: TrialScanResult): ApiError {
       details: { scans_left: scan.scans_left },
     });
   }
+  if (scan.status === "revoked") {
+    return new ApiError(401, "trial_link_expired", TRIAL_LINK_EXPIRED_MESSAGE);
+  }
+  if (scan.status === "already_access") {
+    return new ApiError(403, "trial_already_access", TRIAL_ALREADY_ACCESS_MESSAGE);
+  }
   if (scan.status === "rate_limited") {
     return new ApiError(429, "trial_busy", "Trial is busy right now. Request an invite instead.", {
       details: { scans_left: scan.scans_left },
@@ -198,6 +239,8 @@ export function trialScanError(scan: TrialScanResult): ApiError {
 
 export interface TrialParseInput {
   email: string;
+  /** The token's version, checked against the mailbox's current one. */
+  version: number;
   ip: string | null;
   text: string | null;
   photos: Photo[];
@@ -231,7 +274,7 @@ export async function parseTrialMeal(
   input: TrialParseInput,
   deps: TrialParseDeps,
 ): Promise<TrialParseOutcome> {
-  const scan = await deps.trial.startScan(input.email, input.ip);
+  const scan = await deps.trial.startScan(input.email, input.ip, input.version);
   if (scan.status !== "ok") {
     throw trialScanError(scan);
   }

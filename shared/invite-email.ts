@@ -31,6 +31,46 @@ export interface InviteRecipient {
   firstName: string;
   /** The address on `allowed_emails`. This is the one the invite is tied to. */
   invitedEmail: string;
+  /**
+   * Their personal trial link (https://tracknutri.app/t/<token>), when the service signed one.
+   * The line offering it is left out without it: the local tool has no signing key, so its
+   * drafts never carry one.
+   */
+  trialUrl?: string | null;
+}
+
+/** The trial offer, under the button. One sentence, linked, smaller than the button. */
+export const TRIAL_LINE = "Not ready to sign up? Try a few meals first";
+
+function trialLineHtml(trialUrl: string | null | undefined): string {
+  if (trialUrl === null || trialUrl === undefined || trialUrl === "") return "";
+  return `
+                <p
+                  style="
+                    margin: 14px 0 0 0;
+                    font-family:
+                      &quot;Manrope&quot;,
+                      -apple-system,
+                      BlinkMacSystemFont,
+                      &quot;Segoe UI&quot;,
+                      Roboto,
+                      Helvetica,
+                      Arial,
+                      sans-serif;
+                    font-size: 14px;
+                    line-height: 1.5;
+                    color: #2f3a2b;
+                  "
+                >
+                  <a href="${escapeHtml(trialUrl)}" style="color: #195c2e; text-decoration: underline"
+                    >${TRIAL_LINE}</a
+                  >
+                </p>`;
+}
+
+function trialLineText(trialUrl: string | null | undefined): string {
+  if (trialUrl === null || trialUrl === undefined || trialUrl === "") return "";
+  return `\n${TRIAL_LINE}:\n${trialUrl}\n`;
 }
 
 /**
@@ -42,6 +82,7 @@ export interface InviteRecipient {
 export const PREVIEW: InviteRecipient = {
   firstName: "{{First name}}",
   invitedEmail: "{{invited email}}",
+  trialUrl: "https://tracknutri.app/t/{{trial token}}",
 };
 
 /**
@@ -112,7 +153,7 @@ export function inviteMessageFields(recipient: InviteRecipient): {
 }
 
 /** The HTML part. `multipart/alternative` carries this alongside the plain text below. */
-export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): string {
+export function renderInviteHtml({ firstName, invitedEmail, trialUrl }: InviteRecipient): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -344,7 +385,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
                   "
                 >
                   or paste this in: <span style="color: #195c2e">tracknutri.app</span>
-                </p>
+                </p>${trialLineHtml(trialUrl)}
               </td>
             </tr>
 
@@ -458,7 +499,7 @@ export function renderInviteHtml({ firstName, invitedEmail }: InviteRecipient): 
  * instruction about which address to sign in with has to survive the fallback, because that is
  * the part people get wrong. Kept beside the HTML so both are edited together.
  */
-export function renderInviteText({ firstName, invitedEmail }: InviteRecipient): string {
+export function renderInviteText({ firstName, invitedEmail, trialUrl }: InviteRecipient): string {
   return `Hi ${firstName},
 
 I've been tracking what I eat for over a month now, and it has quietly changed how I eat.
@@ -474,7 +515,7 @@ Your invite is tied to ${invitedEmail}. Sign in with Google using that address, 
 account with it.
 
 https://tracknutri.app
-
+${trialLineText(trialUrl)}
 One honest thing: the numbers come from a photo, so they're estimates, and portions of
 calorie-dense foods are the roughest part. A bowl of hummus can be out by more than you'd
 guess. Nothing saves until you've checked it, which is what that screen is for.
@@ -534,7 +575,7 @@ export function approvedMessageFields(recipient: InviteRecipient): {
  * function with a flag in it is how the wrong variant gets sent. **The frame is duplicated on
  * purpose; if the look changes, it changes here too.**
  */
-export function renderApprovedHtml({ firstName, invitedEmail }: InviteRecipient): string {
+export function renderApprovedHtml({ firstName, invitedEmail, trialUrl }: InviteRecipient): string {
   /**
    * Where the button goes: the sign-in page, carrying the address.
    *
@@ -724,7 +765,7 @@ export function renderApprovedHtml({ firstName, invitedEmail }: InviteRecipient)
                   "
                 >
                   or paste this in: <span style="color: #195c2e">tracknutri.app</span>
-                </p>
+                </p>${trialLineHtml(trialUrl)}
               </td>
             </tr>
 
@@ -832,7 +873,7 @@ export function renderApprovedHtml({ firstName, invitedEmail }: InviteRecipient)
 }
 
 /** The plain-text part of the approval, written out rather than stripped from the HTML. */
-export function renderApprovedText({ firstName, invitedEmail }: InviteRecipient): string {
+export function renderApprovedText({ firstName, invitedEmail, trialUrl }: InviteRecipient): string {
   // The same link as the button above, built the same way. A plain-text reader gets one too: a
   // message whose only link exists in the part the reader cannot render is a message with no link.
   const signInUrl = `https://tracknutri.app/auth?email=${encodeURIComponent(invitedEmail)}`;
@@ -844,7 +885,7 @@ Sign in with ${invitedEmail}: use Continue with Google if it's a Google account,
 password when you sign in.
 
 ${signInUrl}
-
+${trialLineText(trialUrl)}
 One honest thing: the numbers come from a photo, so they're estimates, and portions of
 calorie-dense foods are the roughest part. A bowl of hummus can be out by more than you'd
 guess. Nothing saves until you've checked it, which is what that screen is for.

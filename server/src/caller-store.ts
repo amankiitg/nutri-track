@@ -21,6 +21,8 @@ export const SUPABASE_FAILURE_MESSAGE =
 export const INVITE_FAILURE_MESSAGE =
   "Could not add that address to the invite list. Nothing was changed, so try again.";
 
+export const TRIAL_LINK_FAILURE_MESSAGE = "Could not create the trial link. Try again.";
+
 export interface LlmCallRecord {
   model: string;
   promptTokens: number | null;
@@ -55,7 +57,26 @@ export interface CallerStore {
   hasAllowedEmail(email: string): Promise<boolean>;
   /** Adds the address. Idempotent, so a retry after a failure adds no second row. */
   addAllowedEmail(email: string): Promise<void>;
+  /**
+   * Ensures the mailbox has a trial row and returns what to sign: its canonical address, the
+   * current token version and the name to greet. Admin-only, by the function's own guard.
+   */
+  issueTrialLink(email: string, firstName: string | null): Promise<IssuedTrialLink>;
+  /** Records that a link went out, which is what the admin page shows as "Trial link sent". */
+  markTrialLinkSent(email: string): Promise<void>;
 }
+
+export interface IssuedTrialLink {
+  email: string;
+  firstName: string | null;
+  version: number;
+}
+
+const issuedTrialLinkRow = z.object({
+  email: z.string(),
+  first_name: z.string().nullable(),
+  token_version: z.number().int(),
+});
 
 const timeZoneRow = z.object({ timezone: z.string().nullable() });
 
@@ -86,6 +107,12 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
   function failQuietly(operation: string, code: string | undefined): never {
     log("error", "supabase call failed", { operation, userId, code: code ?? "unknown" });
     throw new ApiError(502, "upstream_error", INVITE_FAILURE_MESSAGE);
+  }
+
+  /** The trial-link calls: the same quiet logging, with a sentence about the link. */
+  function failTrialLink(operation: string, code: string | undefined): never {
+    log("error", "supabase call failed", { operation, userId, code: code ?? "unknown" });
+    throw new ApiError(502, "upstream_error", TRIAL_LINK_FAILURE_MESSAGE);
   }
 
   return {
@@ -169,6 +196,26 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
         .from("allowed_emails")
         .upsert({ email, added_by: userId }, { onConflict: "email", ignoreDuplicates: true });
       if (error) failQuietly("allowed_emails insert", error.code);
+    },
+
+    async issueTrialLink(email, firstName) {
+      const { data, error } = await client.rpc("admin_trial_link_issue", {
+        p_email: email,
+        ...(firstName === null || firstName.trim() === "" ? {} : { p_first_name: firstName }),
+      });
+      if (error) failTrialLink("admin_trial_link_issue", error.code);
+      const parsed = issuedTrialLinkRow.safeParse(data);
+      if (!parsed.success) failTrialLink("admin_trial_link_issue shape", undefined);
+      return {
+        email: parsed.data.email,
+        firstName: parsed.data.first_name,
+        version: parsed.data.token_version,
+      };
+    },
+
+    async markTrialLinkSent(email) {
+      const { error } = await client.rpc("admin_trial_link_mark_sent", { p_email: email });
+      if (error) failTrialLink("admin_trial_link_mark_sent", error.code);
     },
   };
 }

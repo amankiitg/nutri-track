@@ -88,6 +88,7 @@ describe("clientIp", () => {
 describe("parseTrialMeal", () => {
   const base = {
     email: "trial@example.com",
+    version: 0,
     ip: "203.0.113.7",
     text: "dal and rice",
     photos: [],
@@ -96,7 +97,7 @@ describe("parseTrialMeal", () => {
   };
 
   it("consumes a scan and records the call against the reserved row", async () => {
-    const started: Array<{ email: string; ip: string | null }> = [];
+    const started: Array<{ email: string; ip: string | null; version: number }> = [];
     const logged: Array<{ callId: string; model: string }> = [];
     const trial: TrialStore = {
       async sendCode() {
@@ -105,8 +106,8 @@ describe("parseTrialMeal", () => {
       async verifyCode() {
         return "ok";
       },
-      async startScan(email, ip) {
-        started.push({ email, ip });
+      async startScan(email, ip, version) {
+        started.push({ email, ip, version });
         return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
       },
       async logCall(callId, record) {
@@ -115,12 +116,15 @@ describe("parseTrialMeal", () => {
       async getScansLimit() {
         return 10;
       },
+      async linkStatus() {
+        return { status: "invalid" };
+      },
     };
 
     const outcome = await parseTrialMeal(base, { config: CONFIG, llm: fakeLlm(), trial });
     expect(outcome.items).toHaveLength(1);
     expect(outcome.scans_left).toBe(9);
-    expect(started).toEqual([{ email: "trial@example.com", ip: "203.0.113.7" }]);
+    expect(started).toEqual([{ email: "trial@example.com", ip: "203.0.113.7", version: 0 }]);
     // The reserved row's id is what the post-model record() fills in.
     expect(logged).toEqual([{ callId: "call-123", model: "gemini-3.8-flash" }]);
   });
@@ -139,6 +143,9 @@ describe("parseTrialMeal", () => {
       async logCall() {},
       async getScansLimit() {
         return 10;
+      },
+      async linkStatus() {
+        return { status: "invalid" };
       },
     };
 
@@ -176,12 +183,13 @@ describe("createTrialStore", () => {
   it("passes the secret and the caller's fields to the database function", async () => {
     const { client, rpc } = fakeClient({ status: "ok", scans_left: 4 });
     const store = createTrialStore(client, SECRET);
-    const result = await store.startScan("trial@example.com", "203.0.113.7");
+    const result = await store.startScan("trial@example.com", "203.0.113.7", 2);
     expect(result).toEqual({ status: "ok", scans_left: 4 });
     expect(rpc).toHaveBeenCalledWith("trial_scan_start", {
       p_server_secret: SECRET,
       p_email: "trial@example.com",
       p_ip: "203.0.113.7",
+      p_version: 2,
     });
   });
 

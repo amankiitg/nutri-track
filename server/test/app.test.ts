@@ -14,9 +14,10 @@ import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
 import { dailyLimitMessage, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
 import type { EmailClient } from "../src/resend";
-import type { TrialStore } from "../src/trial";
+import type { TrialLinkStatus, TrialScanResult, TrialStore } from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
-import { SUBJECT } from "../../shared/invite-email";
+import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE } from "../../shared/invite-email";
+import { signTrialToken, TRIAL_TOKEN_TTL_SECONDS, verifyTrialToken } from "../src/trial-token";
 
 const USER: VerifiedUser = { id: "user-1", email: "aman@example.com" };
 const TOKEN = "a-valid-access-token";
@@ -76,6 +77,14 @@ interface HarnessOptions {
   addEmailThrows?: boolean;
   /** Makes the Gmail draft fail, as a revoked refresh token would. */
   draftThrows?: boolean;
+  /** What trial_link_status answers, for the personal-link routes. */
+  linkStatus?: TrialLinkStatus;
+  /** What trial_scan_start answers. */
+  scanResult?: TrialScanResult;
+  /** The token version admin_trial_link_issue returns. */
+  linkVersion?: number;
+  /** Makes issuing a trial link fail, as a refused admin check would. */
+  issueThrows?: boolean;
   /** Overrides for the invite feature's configuration. */
   gmail?: GmailDraftClient | null;
   inviteSender?: string | null;
@@ -97,6 +106,10 @@ function buildHarness(options: HarnessOptions = {}) {
   const countedSince: Date[] = [];
   const loadedPaths: string[][] = [];
   const verifiedTokens: string[] = [];
+  const issuedLinks: Array<{ email: string; firstName: string | null }> = [];
+  const markedLinks: string[] = [];
+  const linkStatusCalls: Array<{ email: string; version: number | null }> = [];
+  const scanCalls: Array<{ email: string; version: number }> = [];
   const replies = options.replies ?? [goodReply];
   let replyIndex = 0;
 
@@ -151,6 +164,18 @@ function buildHarness(options: HarnessOptions = {}) {
         throw new ApiError(502, "upstream_error", "Could not add that address to the invite list.");
       }
     },
+    async issueTrialLink(email, firstName) {
+      order.push("issue");
+      issuedLinks.push({ email, firstName });
+      if (options.issueThrows) {
+        throw new ApiError(502, "upstream_error", "Could not create the trial link. Try again.");
+      }
+      return { email, firstName, version: options.linkVersion ?? 0 };
+    },
+    async markTrialLinkSent(email) {
+      order.push("mark");
+      markedLinks.push(email);
+    },
   };
 
   const gmail: GmailDraftClient | null =
@@ -177,8 +202,13 @@ function buildHarness(options: HarnessOptions = {}) {
     async verifyCode() {
       return "no_code";
     },
-    async startScan() {
-      return { status: "ok", scans_left: 9 };
+    async startScan(email, _ip, version) {
+      scanCalls.push({ email, version });
+      return options.scanResult ?? { status: "ok", scans_left: 9, call_id: "call-1" };
+    },
+    async linkStatus(email, version) {
+      linkStatusCalls.push({ email, version });
+      return options.linkStatus ?? { status: "invalid" };
     },
     async logCall() {},
     async getScansLimit() {
@@ -213,6 +243,10 @@ function buildHarness(options: HarnessOptions = {}) {
     verifiedTokens,
     addedEmails,
     checkedEmails,
+    issuedLinks,
+    markedLinks,
+    linkStatusCalls,
+    scanCalls,
     draftedMime,
     order,
   };
@@ -253,6 +287,7 @@ describe("POST /invite", () => {
       firstName: "Priya",
       draftId: "draft-1",
       alreadyInvited: false,
+      trialLinkSent: false,
     });
   });
 
@@ -344,6 +379,7 @@ describe("POST /invite", () => {
         firstName: "Hope",
         draftId: "draft-1",
         alreadyInvited: true,
+        trialLinkSent: false,
       });
       const mime = draftedMime[0] ?? "";
       expect(mime).toContain("You're in: welcome to NutriTrack");
@@ -940,5 +976,324 @@ describe("the network", () => {
     await post(app, TYPED_MEAL);
     await post(app, PHOTO_MEAL);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Personal trial links                                                        */
+/* -------------------------------------------------------------------------- */
+
+const TOKEN_SECRET = "token-secret";
+const TRIAL_CONFIG: Config = {
+  ...CONFIG,
+  TURNSTILE_SECRET: "turnstile-secret",
+  RESEND_API_KEY: "resend-key",
+  TRIAL_TOKEN_SECRET: TOKEN_SECRET,
+  TRIAL_SERVER_SECRET: "server-secret",
+};
+
+function linkToken(
+  email: string,
+  options: { version?: number; firstName?: string; at?: Date } = {},
+) {
+  return signTrialToken(email, TOKEN_SECRET, (options.at ?? NOW).getTime(), {
+    version: options.version ?? 0,
+    firstName: options.firstName ?? null,
+  });
+}
+
+const OK_LINK: TrialLinkStatus = {
+  status: "ok",
+  email: "priya@example.com",
+  first_name: "Priya",
+  token_version: 2,
+  scans_left: 10,
+  scans_total: 10,
+};
+
+describe("POST /trial/link", () => {
+  it("answers ok with the name and scans for a valid link, checking its version", async () => {
+    const { app, linkStatusCalls } = buildHarness({ config: TRIAL_CONFIG, linkStatus: OK_LINK });
+    const response = await request(app)
+      .post("/trial/link")
+      .send({ token: linkToken("priya@example.com", { version: 2, firstName: "Priya" }) });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ok",
+      email: "priya@example.com",
+      firstName: "Priya",
+      scansLeft: 10,
+      scansTotal: 10,
+    });
+    expect(linkStatusCalls).toEqual([{ email: "priya@example.com", version: 2 }]);
+  });
+
+  it("answers expired for a link past its 30 days, without asking the database", async () => {
+    const { app, linkStatusCalls } = buildHarness({ config: TRIAL_CONFIG, linkStatus: OK_LINK });
+    const signedLongAgo = new Date(NOW.getTime() - TRIAL_TOKEN_TTL_SECONDS * 1000 - 1000);
+    const response = await request(app)
+      .post("/trial/link")
+      .send({ token: linkToken("priya@example.com", { at: signedLongAgo }) });
+
+    expect(response.body).toEqual({
+      status: "expired",
+      message: "This trial link has expired. Ask Aman for a new one.",
+    });
+    expect(linkStatusCalls).toEqual([]);
+  });
+
+  it("answers expired for a tampered link", async () => {
+    const { app, linkStatusCalls } = buildHarness({ config: TRIAL_CONFIG, linkStatus: OK_LINK });
+    const [, signature] = linkToken("priya@example.com").split(".");
+    const forged = Buffer.from(
+      JSON.stringify({ email: "someone-else@example.com", exp: NOW.getTime() / 1000 + 60, v: 0 }),
+    ).toString("base64url");
+    const response = await request(app)
+      .post("/trial/link")
+      .send({ token: `${forged}.${signature}` });
+
+    expect(response.body.status).toBe("expired");
+    expect(linkStatusCalls).toEqual([]);
+  });
+
+  it("answers expired for a revoked link", async () => {
+    const { app } = buildHarness({ config: TRIAL_CONFIG, linkStatus: { status: "revoked" } });
+    const response = await request(app)
+      .post("/trial/link")
+      .send({ token: linkToken("priya@example.com", { version: 1 }) });
+    expect(response.body.status).toBe("expired");
+  });
+
+  it("sends somebody who already has an account to sign in", async () => {
+    const { app } = buildHarness({
+      config: TRIAL_CONFIG,
+      linkStatus: { status: "already_access", email: "priya@example.com" },
+    });
+    const response = await request(app)
+      .post("/trial/link")
+      .send({ token: linkToken("priya@example.com") });
+    expect(response.body).toEqual({ status: "already_access", email: "priya@example.com" });
+  });
+
+  it("answers 503 when the trial is not configured", async () => {
+    const { app } = buildHarness();
+    const response = await request(app).post("/trial/link").send({ token: "x.y" });
+    expect(response.status).toBe(503);
+  });
+});
+
+describe("POST /trial/parse with a personal link", () => {
+  const scanBody = (token: string) => ({ token, text: "dal and rice", photos: [] });
+
+  it("passes the token's version to the scan", async () => {
+    const { app, scanCalls } = buildHarness({ config: TRIAL_CONFIG });
+    const response = await request(app)
+      .post("/trial/parse")
+      .send(scanBody(linkToken("priya@example.com", { version: 3 })));
+    expect(response.status).toBe(200);
+    expect(scanCalls).toEqual([{ email: "priya@example.com", version: 3 }]);
+  });
+
+  it("refuses a revoked link with the expired sentence and calls no model", async () => {
+    const { app, completions } = buildHarness({
+      config: TRIAL_CONFIG,
+      scanResult: { status: "revoked", scans_left: 0 },
+    });
+    const response = await request(app)
+      .post("/trial/parse")
+      .send(scanBody(linkToken("priya@example.com")));
+    expect(response.status).toBe(401);
+    expect(response.body.error).toMatchObject({
+      code: "trial_link_expired",
+      message: "This trial link has expired. Ask Aman for a new one.",
+    });
+    expect(completions).toEqual([]);
+  });
+
+  it("refuses a scan once the address has an account", async () => {
+    const { app, completions } = buildHarness({
+      config: TRIAL_CONFIG,
+      scanResult: { status: "already_access", scans_left: 0 },
+    });
+    const response = await request(app)
+      .post("/trial/parse")
+      .send(scanBody(linkToken("priya@example.com")));
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("trial_already_access");
+    expect(completions).toEqual([]);
+  });
+
+  it("refuses a tampered token before the database is asked", async () => {
+    const { app, scanCalls } = buildHarness({ config: TRIAL_CONFIG });
+    const response = await request(app)
+      .post("/trial/parse")
+      .send(scanBody(linkToken("priya@example.com").slice(0, -2) + "zz"));
+    expect(response.status).toBe(401);
+    expect(scanCalls).toEqual([]);
+  });
+});
+
+describe("POST /trial/link/issue", () => {
+  const issue = (app: Parameters<typeof request>[0], body: object) =>
+    request(app).post("/trial/link/issue").set("Authorization", `Bearer ${TOKEN}`).send(body);
+
+  it("refuses somebody who is not an admin, and issues nothing", async () => {
+    const { app, issuedLinks } = buildHarness({ config: TRIAL_CONFIG, isAdmin: false });
+    const response = await issue(app, { email: "priya@example.com", firstName: "Priya" });
+    expect(response.status).toBe(403);
+    expect(issuedLinks).toEqual([]);
+  });
+
+  it("refuses a request with no session", async () => {
+    const { app } = buildHarness({ config: TRIAL_CONFIG, user: null });
+    const response = await issue(app, { email: "priya@example.com" });
+    expect(response.status).toBe(401);
+  });
+
+  it("returns a tracknutri.app/t/ link whose token names the address, version and name, and records it", async () => {
+    const { app, issuedLinks, markedLinks } = buildHarness({
+      config: TRIAL_CONFIG,
+      isAdmin: true,
+      linkVersion: 2,
+    });
+    const response = await issue(app, { email: "priya@example.com", firstName: "Priya" });
+
+    expect(response.status).toBe(200);
+    const url = String(response.body.url);
+    expect(url.startsWith("https://tracknutri.app/t/")).toBe(true);
+    const token = url.slice("https://tracknutri.app/t/".length);
+    expect(verifyTrialToken(token, TOKEN_SECRET, NOW.getTime())).toEqual({
+      ok: true,
+      email: "priya@example.com",
+      version: 2,
+      firstName: "Priya",
+    });
+    // Valid for 30 days from issue, and not a moment longer.
+    const expiresAt = NOW.getTime() + TRIAL_TOKEN_TTL_SECONDS * 1000;
+    expect(verifyTrialToken(token, TOKEN_SECRET, expiresAt - 1000).ok).toBe(true);
+    expect(verifyTrialToken(token, TOKEN_SECRET, expiresAt).ok).toBe(false);
+    expect(issuedLinks).toEqual([{ email: "priya@example.com", firstName: "Priya" }]);
+    expect(markedLinks).toEqual(["priya@example.com"]);
+  });
+
+  it("answers 503 when the trial has no token secret", async () => {
+    const { app } = buildHarness({ isAdmin: true });
+    const response = await issue(app, { email: "priya@example.com" });
+    expect(response.status).toBe(503);
+  });
+});
+
+/**
+ * The decoded parts of a drafted MIME message: what a mail client would show. A quoted-printable
+ * body wraps long lines with `=` and escapes `=` itself, so a token cannot be read off the raw
+ * bytes; this undoes both encodings MailComposer uses.
+ */
+function mimeParts(mime: string): { type: string; body: string }[] {
+  const boundary = /boundary="?([^";\r\n]+)"?/.exec(mime)?.[1];
+  if (boundary === undefined) return [];
+  return mime
+    .split(`--${boundary}`)
+    .slice(1, -1)
+    .map((chunk) => {
+      const split = chunk.search(/\r?\n\r?\n/);
+      const headers = chunk.slice(0, split);
+      const raw = chunk.slice(split).trim();
+      const type = /content-type:\s*([^;\r\n]+)/i.exec(headers)?.[1]?.trim() ?? "";
+      const encoding = /content-transfer-encoding:\s*(\S+)/i.exec(headers)?.[1]?.toLowerCase();
+      let body = raw;
+      if (encoding === "quoted-printable") {
+        const bytes = raw
+          .replace(/=\r?\n/g, "")
+          .replace(/=([0-9A-F]{2})/gi, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+        body = Buffer.from(bytes, "latin1").toString("utf8");
+      } else if (encoding === "base64") {
+        body = Buffer.from(raw.replace(/\s+/g, ""), "base64").toString("utf8");
+      }
+      return { type, body };
+    });
+}
+
+function trialTokensIn(body: string): string[] {
+  return [...body.matchAll(/https:\/\/tracknutri\.app\/t\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g)].map(
+    (m) => m[1] ?? "",
+  );
+}
+
+describe("the invite drafts carry a personal trial link", () => {
+  const body = { email: "Priya@Example.com", firstName: "Priya" };
+
+  for (const kind of ["invite", "approved"] as const) {
+    it(`puts a valid link in the HTML and the text of the ${kind} email, and records it after the draft`, async () => {
+      const { app, draftedMime, order, markedLinks } = buildHarness({
+        config: TRIAL_CONFIG,
+        isAdmin: true,
+        linkVersion: 1,
+      });
+      const response = await request(app)
+        .post("/invite")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ ...body, kind });
+
+      expect(response.status).toBe(200);
+      expect(response.body.trialLinkSent).toBe(true);
+      const mime = draftedMime[0] ?? "";
+      expect(mime).toContain(kind === "invite" ? SUBJECT : "welcome to NutriTrack");
+
+      const parts = mimeParts(mime);
+      const html = parts.find((part) => part.type === "text/html")?.body ?? "";
+      const text = parts.find((part) => part.type === "text/plain")?.body ?? "";
+      expect(html).toContain(TRIAL_LINE);
+      expect(text).toContain(TRIAL_LINE);
+
+      const tokens = [...trialTokensIn(html), ...trialTokensIn(text)];
+      expect(tokens).toHaveLength(2);
+      expect(new Set(tokens).size).toBe(1);
+      expect(verifyTrialToken(tokens[0] ?? "", TOKEN_SECRET, NOW.getTime())).toEqual({
+        ok: true,
+        email: "priya@example.com",
+        version: 1,
+        firstName: "Priya",
+      });
+
+      // Issued before the draft (the email needs the URL), recorded only once the draft exists.
+      expect(order.indexOf("issue")).toBeLessThan(order.indexOf("draft"));
+      expect(order.indexOf("mark")).toBeGreaterThan(order.indexOf("draft"));
+      expect(markedLinks).toEqual(["priya@example.com"]);
+    });
+  }
+
+  it("still drafts the invite, without the line, when the link cannot be issued", async () => {
+    const { app, draftedMime, addedEmails, markedLinks } = buildHarness({
+      config: TRIAL_CONFIG,
+      isAdmin: true,
+      issueThrows: true,
+    });
+    const response = await request(app)
+      .post("/invite")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(response.body.trialLinkSent).toBe(false);
+    const parts = mimeParts(draftedMime[0] ?? "");
+    expect(parts.map((part) => part.body).join("\n")).not.toContain(TRIAL_LINE);
+    expect(addedEmails).toEqual(["priya@example.com"]);
+    expect(markedLinks).toEqual([]);
+  });
+
+  it("drafts without the line when the trial has no token secret", async () => {
+    const { app, draftedMime, issuedLinks } = buildHarness({ isAdmin: true });
+    await request(app).post("/invite").set("Authorization", `Bearer ${TOKEN}`).send(body);
+    expect(issuedLinks).toEqual([]);
+    expect(
+      mimeParts(draftedMime[0] ?? "")
+        .map((part) => part.body)
+        .join("\n"),
+    ).not.toContain(TRIAL_LINE);
+  });
+
+  it("names the approval subject on the approval", () => {
+    expect(APPROVED_SUBJECT).toContain("welcome to NutriTrack");
   });
 });

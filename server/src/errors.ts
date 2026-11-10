@@ -10,6 +10,8 @@ export type ApiErrorCode =
   | "rate_limited"
   | "trial_exhausted"
   | "trial_busy"
+  | "trial_link_expired"
+  | "trial_already_access"
   | "upstream_error"
   | "unparseable_response"
   | "internal_error";
