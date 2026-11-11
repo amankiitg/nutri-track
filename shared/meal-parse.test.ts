@@ -268,6 +268,15 @@ describe("the prompt and the contract", () => {
     }
     expect(SYSTEM_PROMPT).toContain("nutrition estimator");
   });
+
+  it("asks for paneer and chicken to be told apart, and prefers the vegetarian reading", () => {
+    // A paneer curry was once labelled "Chicken curry": the two are the same colour and
+    // shape in a photo, and the wrong answer is not a flavour detail, it is the wrong
+    // food. The rule is in the prompt rather than in the validator because no schema can
+    // see a photograph.
+    expect(SYSTEM_PROMPT).toContain("paneer");
+    expect(SYSTEM_PROMPT).toContain("Paneer or chicken curry");
+  });
 });
 
 describe("classifyModelResponse", () => {
