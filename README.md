@@ -209,7 +209,10 @@ deterministic: asked again in the same words it produces the same refusal, so re
 second call out of the user's sixty to arrive at the same place. It also gets its own message,
 because the ordinary advice ("add a short note about what it was") describes a note that would be
 refused for exactly the same reason. A reply that fails the contract is the opposite case: worth
-one more go, told precisely what was wrong with the first.
+one more go, told precisely what was wrong with the first. If the reply stopped because it ran out
+of output tokens, the retry gets a larger cap, since repeating the same limit would truncate in the
+same place. Every analysis logs its model, attempt count and duration, which is the line a latency
+question is answered from.
 
 **Analyses are capped at twenty per user per local day**, and sixty for an admin account, counted in
 Postgres rather than in the browser. `DAILY_ANALYSIS_LIMIT` and `ADMIN_DAILY_ANALYSIS_LIMIT` on the
