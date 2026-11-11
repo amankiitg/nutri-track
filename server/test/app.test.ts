@@ -12,7 +12,12 @@ import type { Config } from "../src/config";
 import { ApiError } from "../src/errors";
 import type { GmailDraftClient } from "../src/gmail";
 import type { CompletionRequest, LlmClient } from "../src/llm";
-import { dailyLimitMessage, RETRY_INSTRUCTION_NOT_JSON } from "../src/parse-meal";
+import {
+  dailyLimitMessage,
+  MAX_OUTPUT_TOKENS,
+  RETRY_AFTER_TRUNCATION_MAX_OUTPUT_TOKENS,
+  RETRY_INSTRUCTION_NOT_JSON,
+} from "../src/parse-meal";
 import type { EmailClient } from "../src/resend";
 import type { TrialLinkStatus, TrialScanResult, TrialSendResult, TrialStore } from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
@@ -882,6 +887,28 @@ describe("the single retry", () => {
     expect(String(instruction)).toContain("did not match the required schema");
     expect(String(instruction)).toContain("items.0.name");
     expect(recorded.map((row) => row.status)).toEqual(["invalid_schema", "ok"]);
+  });
+
+  it("gives a truncated reply more room on the retry than the first attempt had", async () => {
+    // Repeating the same cap would repeat the same truncation. A cut-off reply is the one
+    // failure where the retry has to differ from the request that failed.
+    const { app, completions } = buildHarness({
+      replies: ["", goodReply],
+      finishReasons: ["MAX_TOKENS", "STOP"],
+    });
+    const response = await post(app, TYPED_MEAL);
+
+    expect(response.status).toBe(200);
+    expect(completions[0]?.maxTokens).toBe(MAX_OUTPUT_TOKENS);
+    expect(completions[1]?.maxTokens).toBe(RETRY_AFTER_TRUNCATION_MAX_OUTPUT_TOKENS);
+  });
+
+  it("keeps the ordinary cap when the reply was malformed rather than cut off", async () => {
+    const { app, completions } = buildHarness({ replies: ["not json", goodReply] });
+    await post(app, TYPED_MEAL);
+
+    expect(completions[0]?.maxTokens).toBe(MAX_OUTPUT_TOKENS);
+    expect(completions[1]?.maxTokens).toBe(MAX_OUTPUT_TOKENS);
   });
 
   it("gives up after exactly one retry", async () => {

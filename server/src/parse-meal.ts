@@ -35,8 +35,25 @@ export function dailyLimitMessage(limit: number): string {
   return `You've used today's ${limit} analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.`;
 }
 
-/** A bounded output budget: the reply is a short JSON object, not an essay. */
-export const MAX_OUTPUT_TOKENS = 2048;
+/**
+ * A bounded output budget: the reply is a short JSON object, not an essay.
+ *
+ * The cap covers any thinking tokens as well as the reply, so 2048 was only enough for a
+ * photo analysis if the model thought briefly. That is a plausible way for a good plate to
+ * come back truncated, and a truncated reply is retried, which doubles the wait the person
+ * is watching. Chosen, not measured: 4096 leaves the JSON room after a normal amount of
+ * thought without letting a rambling reply grow without bound.
+ */
+export const MAX_OUTPUT_TOKENS = 4096;
+
+/**
+ * What a retry after a truncated reply is allowed, which is more than the first attempt.
+ *
+ * Retrying a truncation with the same cap is not a retry, it is the same request again: if
+ * 2048 was not enough, it will not be enough the second time either. 8192 is the ceiling and
+ * still a short reply; the model stops when the JSON is complete.
+ */
+export const RETRY_AFTER_TRUNCATION_MAX_OUTPUT_TOKENS = 8192;
 
 /**
  * The finish reasons that mean the model declined, rather than failed.
@@ -173,14 +190,16 @@ export async function analyzeMeal(
 ): Promise<AnalyzeOutcome> {
   const { model } = deps;
 
+  const analysisStartedAt = Date.now();
+
   /** One model call, logged whether or not it parses. */
-  const runAttempt = async (attemptMessages: ChatMessage[]) => {
+  const runAttempt = async (attemptMessages: ChatMessage[], maxTokens = MAX_OUTPUT_TOKENS) => {
     let completion: Completion;
     try {
       completion = await deps.llm.complete({
         model,
         messages: attemptMessages,
-        maxTokens: MAX_OUTPUT_TOKENS,
+        maxTokens,
         responseSchema: RESPONSE_SCHEMA,
       });
     } catch (error) {
@@ -237,19 +256,32 @@ export async function analyzeMeal(
   } else {
     // Exactly one retry, told precisely what was wrong with the first reply, with
     // the bad reply echoed back so "your previous response" has a referent.
+    // A retry that follows a truncated reply gets a larger cap; a malformed reply that fit
+    // under the first cap was not cut off, so there is nothing to gain by raising it.
+    const retryMaxTokens =
+      first.completion.finishReason === "MAX_TOKENS"
+        ? RETRY_AFTER_TRUNCATION_MAX_OUTPUT_TOKENS
+        : MAX_OUTPUT_TOKENS;
     log("info", "retrying a parse that did not match the contract", {
       reason: first.result.reason,
+      detail: first.result.error,
+      finishReason: first.completion.finishReason,
+      firstLatencyMs: first.completion.latencyMs,
+      retryMaxTokens,
     });
     const instruction =
       first.result.reason === "not_json"
         ? RETRY_INSTRUCTION_NOT_JSON
         : retryInstructionForSchema(first.result.error);
 
-    const second = await runAttempt([
-      ...messages,
-      { role: "assistant", content: first.completion.content },
-      { role: "user", content: instruction },
-    ]);
+    const second = await runAttempt(
+      [
+        ...messages,
+        { role: "assistant", content: first.completion.content },
+        { role: "user", content: instruction },
+      ],
+      retryMaxTokens,
+    );
     attempts = 2;
     modelThatAnswered = second.completion.model;
 
@@ -271,6 +303,16 @@ export async function analyzeMeal(
     }
     items = second.result.items;
   }
+
+  // One line per analysis, with no content in it: the model, how many calls it took and how
+  // long they ran. The two questions this answers are "is a retry costing people half a
+  // minute?" and "what is the p90?", which cannot be answered from a log that only records
+  // failures, and cannot be answered from `llm_calls` without reading other people's rows.
+  log("info", "meal analysis finished", {
+    model: modelThatAnswered,
+    attempts,
+    durationMs: Date.now() - analysisStartedAt,
+  });
 
   return { items, model: modelThatAnswered, attempts };
 }
