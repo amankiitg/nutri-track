@@ -11,12 +11,12 @@ export const INTRO_SEEN_KEY = "nt:intro-seen";
 
 /**
  * How long the GIF fallback plays before the intro ends, in milliseconds: one loop of
- * meal-demo.gif, 5.58 s, the sum of its 67 frame delays, read on 2026-11-10. A video ends on
- * its own `ended` event (meal-demo.mp4 is 9.6 s, meal-demo-short.mp4 5.67 s, from their mvhd
+ * meal-demo.gif, 18.41 s, the sum of its 221 frame delays, read on 2026-11-11. A video ends on
+ * its own `ended` event (meal-demo.mp4 and meal-demo-short.mp4 are both 18.4 s, from their mvhd
  * boxes); a GIF loops and reports no end, so this is the GIF's alone. Replacing
  * meal-demo.gif means re-reading this.
  */
-export const DEMO_GIF_DURATION_MS = 5_580;
+export const DEMO_GIF_DURATION_MS = 18_410;
 
 export const DEMO_MP4 = "/demo/meal-demo.mp4";
 export const DEMO_SHORT_MP4 = "/demo/meal-demo-short.mp4";
