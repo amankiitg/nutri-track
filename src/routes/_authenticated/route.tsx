@@ -75,7 +75,7 @@ function AuthenticatedLayout() {
       </main>
       {/* Available on every authenticated screen, not just Today: a meal gets eaten
           wherever you happen to be in the app. */}
-      <CaptureDock userId={user.id} timeZone={profile?.timezone ?? "UTC"} />
+      <CaptureDock userId={user.id} timeZone={profile?.timezone ?? "UTC"} isAdmin={isAdmin} />
       <TabBar isAdmin={isAdmin} />
     </div>
   );

@@ -15,9 +15,11 @@ import { CaptureSheet } from "./CaptureSheet";
 export interface CaptureDockProps {
   userId: string;
   timeZone: string;
+  /** Passed through to the review screen, where only an admin sees the model's name. */
+  isAdmin?: boolean;
 }
 
-export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
+export function CaptureDock({ userId, timeZone, isAdmin = false }: CaptureDockProps) {
   const [open, setOpen] = useState(false);
 
   const today = localDateString(timeZone);
@@ -54,6 +56,7 @@ export function CaptureDock({ userId, timeZone }: CaptureDockProps) {
         timeZone={timeZone}
         targetCalories={totals.data?.target_calories ?? null}
         remainingToday={totals.data?.remaining_calories ?? null}
+        isAdmin={isAdmin}
       />
     </>
   );

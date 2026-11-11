@@ -84,6 +84,15 @@ export interface ReviewEditContext {
 
 export interface ReviewScreenProps {
   meta: ReviewMeta;
+  /**
+   * Whether to name the model and say it had to retry.
+   *
+   * Diagnostics for the person running the app, not for the person logging a meal: a
+   * model id and the word "retried" explain nothing to somebody who just wants their
+   * lunch counted, and read as a fault they cannot act on. Everyone else sees the item
+   * count alone.
+   */
+  isAdmin?: boolean;
   /** The starting items. The screen owns them from here. */
   initialItems: readonly ReviewItem[];
   photoPaths: readonly string[];
@@ -121,6 +130,7 @@ export interface ReviewScreenProps {
 
 export function ReviewScreen({
   meta,
+  isAdmin = false,
   initialItems,
   photoPaths,
   photoHashes,
@@ -323,8 +333,10 @@ export function ReviewScreen({
               ? " · editing a saved meal"
               : meta.model === null
                 ? " · copied from an earlier meal"
-                : ` · ${meta.model}`}
-            {!isEdit && meta.attempts > 1 ? " · retried" : ""}
+                : isAdmin
+                  ? ` · ${meta.model}`
+                  : ""}
+            {!isEdit && isAdmin && meta.attempts > 1 ? " · retried" : ""}
           </span>
           {isEdit && !edit.canReanalyze ? (
             // An explanation rather than a disabled button: a control that cannot be used and

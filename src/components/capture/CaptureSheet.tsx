@@ -109,6 +109,8 @@ export interface CaptureSheetProps {
    * everything already logged.
    */
   remainingToday: number | null;
+  /** Whether the review screen may name the model and its retry. Admins only. */
+  isAdmin?: boolean;
 }
 
 export function CaptureSheet({
@@ -118,6 +120,7 @@ export function CaptureSheet({
   timeZone,
   targetCalories,
   remainingToday,
+  isAdmin = false,
 }: CaptureSheetProps) {
   const [tab, setTab] = useState("photo");
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
@@ -799,6 +802,7 @@ export function CaptureSheet({
           <ReviewScreen
             key={review.id}
             meta={review.meta}
+            isAdmin={isAdmin}
             initialItems={review.items}
             photoPaths={unsavedUploads.current.paths}
             photoHashes={unsavedUploads.current.hashes}
