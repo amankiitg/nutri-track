@@ -76,6 +76,8 @@ describe("the review screen's provenance line", () => {
     renderReview(false);
 
     expect(screen.getByText(/^1 item$/)).toBeInTheDocument();
+    expect(screen.getByText("Fibre")).toBeInTheDocument();
+    expect(screen.getByText("4 g")).toBeInTheDocument();
     expect(screen.queryByText(/gemini/)).not.toBeInTheDocument();
     expect(screen.queryByText(/retried/)).not.toBeInTheDocument();
   });

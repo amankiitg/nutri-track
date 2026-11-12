@@ -107,7 +107,8 @@ function SettingsPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 Protein {Math.round(Number(target.data.protein_g))} g · Carbs{" "}
                 {Math.round(Number(target.data.carbs_g))} g · Fat{" "}
-                {Math.round(Number(target.data.fat_g))} g
+                {Math.round(Number(target.data.fat_g))} g · Fibre{" "}
+                {Math.round(Number(profile.fiber_target_g ?? 30))} g
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Effective from{" "}

@@ -256,7 +256,7 @@ function TodayPage() {
             />
           )}
 
-          <MacroBars totals={totals.data} />
+          <MacroBars totals={totals.data} fiberTarget={Number(profile?.fiber_target_g ?? 30)} />
         </>
       )}
 

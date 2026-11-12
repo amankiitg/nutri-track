@@ -148,6 +148,8 @@ describe("isEmptyPeriod", () => {
     avg_target_protein_g: null,
     avg_carbs_g: null,
     avg_fat_g: null,
+    avg_fiber_g: null,
+    avg_target_fiber_g: null,
     protein_kcal: null,
     carbs_kcal: null,
     fat_kcal: null,
@@ -171,6 +173,8 @@ describe("isEmptyPeriod", () => {
     avg_protein_g: null,
     avg_carbs_g: null,
     avg_fat_g: null,
+    avg_fiber_g: null,
+    avg_target_fiber_g: null,
     status: null,
   });
 
@@ -239,6 +243,8 @@ describe("macroShares", () => {
     avg_target_protein_g: 117.3,
     avg_carbs_g: 156.7,
     avg_fat_g: 53.3,
+    avg_fiber_g: 22.4,
+    avg_target_fiber_g: 30,
     protein_kcal: 327,
     carbs_kcal: 627,
     fat_kcal: 480,

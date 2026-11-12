@@ -64,6 +64,7 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_links.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial_list.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_fibre.sql"
 
 # Roll back newest first, checking each predecessor comes back.
 apply "${ROOT}/supabase/rollback/20261112120000_admin_trial_list.sql"
@@ -82,5 +83,18 @@ apply "${MIGRATIONS}/20261110130000_trial_meal_first_invited.sql"
 apply "${MIGRATIONS}/20261112120000_admin_trial_list.sql"
 echo "ok - the trial migrations (and the trials list) apply again after their rollback"
 
+# The fibre migration adds a profile column and replaces two functions. Its rollback has to
+# restore the predecessors before the column can be dropped, so this proves the pair round-trips
+# rather than just that the forward file applies.
+apply "${ROOT}/supabase/rollback/20261112130000_fibre_macro.sql"
+fibre_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='fiber_target_g'")
+[ "${fibre_col}" = "0" ] || { echo "FAIL: fiber_target_g survived its rollback" >&2; exit 1; }
+fibre_wv=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='week_verdict' and column_name like 'avg_%fiber%'")
+[ "${fibre_wv}" = "0" ] || { echo "FAIL: the restored week_verdict still has a fibre column" >&2; exit 1; }
+apply "${MIGRATIONS}/20261112130000_fibre_macro.sql"
+fibre_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='fiber_target_g'")
+[ "${fibre_col}" = "1" ] || { echo "FAIL: fiber_target_g missing after the fibre migration reapplied" >&2; exit 1; }
+echo "ok - the fibre migration rolls back and applies again"
+
 echo ""
-echo "PASS: all migrations apply in order over their predecessors, and the trial rollback round-trips"
+echo "PASS: all migrations apply in order over their predecessors, and the trial and fibre rollbacks round-trip"

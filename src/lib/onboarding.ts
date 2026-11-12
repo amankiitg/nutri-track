@@ -8,7 +8,10 @@
 import { z } from "zod";
 import {
   ACTIVITY_MULTIPLIERS,
+  DEFAULT_FIBER_TARGET_G,
   DEFAULT_PROTEIN_G_PER_KG,
+  MAX_FIBER_TARGET_G,
+  MIN_FIBER_TARGET_G,
   MIN_SAFE_BMI,
   PACE_OPTIONS,
   ageFromDob,
@@ -106,6 +109,8 @@ export interface OnboardingForm {
   target_weight_kg: number | null;
   pace_kg_per_week: Pace;
   protein_g_per_kg: number;
+  /** Grams per day. A guideline the person chooses, not a number derived from the body. */
+  fiber_target_g: number;
   dietary_tags: string[];
   timezone: string;
 }
@@ -193,6 +198,7 @@ export const DEFAULT_ONBOARDING_FORM: OnboardingForm = {
   target_weight_kg: null,
   pace_kg_per_week: 0.5,
   protein_g_per_kg: DEFAULT_PROTEIN_G_PER_KG,
+  fiber_target_g: DEFAULT_FIBER_TARGET_G,
   dietary_tags: [],
   timezone: detectTimeZone(),
 };
@@ -275,6 +281,10 @@ const formShape = {
     .number({ invalid_type_error: "Please add a protein target." })
     .min(1.2, "Protein must be at least 1.2 g per kg.")
     .max(2.2, "Protein must be at most 2.2 g per kg."),
+  fiber_target_g: z
+    .number({ invalid_type_error: "Please add a fibre target." })
+    .min(MIN_FIBER_TARGET_G, `Fibre must be at least ${MIN_FIBER_TARGET_G} g.`)
+    .max(MAX_FIBER_TARGET_G, `Fibre must be at most ${MAX_FIBER_TARGET_G} g.`),
   dietary_tags: z.array(z.string()),
   timezone: z.string().min(1, "Please pick your time zone."),
 };
@@ -436,6 +446,7 @@ const goalStepSchema = onboardingBaseSchema
 
 const preferencesStepSchema = onboardingBaseSchema.pick({
   protein_g_per_kg: true,
+  fiber_target_g: true,
   dietary_tags: true,
   timezone: true,
 });
@@ -598,6 +609,10 @@ export function formFromProfile(profile: Profile): OnboardingForm {
       profile.pace_kg_per_week == null ? null : Number(profile.pace_kg_per_week),
     ),
     protein_g_per_kg: Number(profile.protein_g_per_kg),
+    // Rows written before the column existed, and test fixtures that do not carry it, fall back
+    // to the same 30 g default the database uses.
+    fiber_target_g:
+      profile.fiber_target_g == null ? DEFAULT_FIBER_TARGET_G : Number(profile.fiber_target_g),
     dietary_tags: profile.dietary_tags,
     timezone: profile.timezone,
   };
@@ -624,6 +639,7 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
     target_weight_kg: goal === "maintain" ? null : form.target_weight_kg,
     pace_kg_per_week: goal === "maintain" ? null : form.pace_kg_per_week,
     protein_g_per_kg: form.protein_g_per_kg,
+    fiber_target_g: form.fiber_target_g,
     units: form.units,
     timezone: form.timezone,
     dietary_tags: form.dietary_tags,

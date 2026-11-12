@@ -71,6 +71,8 @@ const weekVerdictRow = z.object({
   avg_target_calories: numericOrNull,
   avg_protein_g: numericOrNull,
   avg_target_protein_g: numericOrNull,
+  avg_fiber_g: numericOrNull,
+  avg_target_fiber_g: numericOrNull,
   verdict: z.enum(VERDICTS),
 });
 
@@ -113,6 +115,7 @@ const timelineMeal = z.object({
   protein_g: numeric,
   carbs_g: numeric,
   fat_g: numeric,
+  fiber_g: numeric,
   item_count: numeric,
   items: z.array(timelineItem),
 });
@@ -418,6 +421,31 @@ export function verdictSentence(verdict: WeekVerdict): string {
 /** True when the verdict has numbers behind it, so the sentence is worth trusting. */
 export function verdictHasNumbers(verdict: Verdict): boolean {
   return verdict === "under" || verdict === "over" || verdict === "on_track";
+}
+
+/**
+ * How low the weekly fibre average has to be before the card says something.
+ *
+ * 20 g is the point where the shortfall is worth a sentence rather than a number: it is two
+ * thirds of the 30 g target, and it is a choice, not a measurement. The line is quiet and
+ * appears nowhere else, because a nudge that interrupts is a nudge people turn off.
+ */
+export const LOW_FIBRE_THRESHOLD_G = 20;
+
+export const LOW_FIBRE_NUDGE =
+  "Fibre has been low this week. Dal, fruit, whole grains or isabgol help.";
+
+/**
+ * The low-fibre sentence, or null when there is nothing honest to say.
+ *
+ * Gated on the same states as the rest of the card: a one-day sample, or a window with no
+ * target, already says it cannot be judged, and adding a nudge to that would be a claim the
+ * numbers do not support.
+ */
+export function lowFibreNudge(verdict: WeekVerdict): string | null {
+  if (!verdictHasNumbers(verdict.verdict)) return null;
+  if (verdict.avg_fiber_g === null) return null;
+  return verdict.avg_fiber_g < LOW_FIBRE_THRESHOLD_G ? LOW_FIBRE_NUDGE : null;
 }
 
 export const MEAL_TYPE_LABELS: Record<string, string> = {

@@ -31,6 +31,20 @@ export const KCAL_PER_KG = 7700;
 export const CALORIE_FLOOR: Record<Sex, number> = { male: 1500, female: 1200 };
 export const DEFAULT_PROTEIN_G_PER_KG = 1.6;
 export const FAT_CALORIE_SHARE = 0.25;
+
+/**
+ * The daily fibre target, in grams.
+ *
+ * A guideline rather than arithmetic: 30 g is the UK adult recommendation, and unlike protein,
+ * carbs and fat it is not derived from the body, so it is stored as a preference and edited
+ * directly. `profiles.fiber_target_g` carries the same default in the database; this constant is
+ * what a form starts from before that row exists (onboarding) and what a missing value falls back
+ * to. Keep the two in step.
+ */
+export const DEFAULT_FIBER_TARGET_G = 30;
+/** The range the Settings slider offers. Wide enough for a high-fibre diet, narrow enough to catch a typo. */
+export const MIN_FIBER_TARGET_G = 10;
+export const MAX_FIBER_TARGET_G = 60;
 export const MIN_SAFE_BMI = 18.5;
 
 export function ageFromDob(dob: string | Date, today: Date = new Date()): number {

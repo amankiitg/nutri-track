@@ -9,6 +9,8 @@ import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import {
   ACTIVITY_LABELS,
   ACTIVITY_MULTIPLIERS,
+  MAX_FIBER_TARGET_G,
+  MIN_FIBER_TARGET_G,
   PACE_OPTIONS,
   projectionFor,
   targetProximity,
@@ -228,7 +230,19 @@ export function GoalStep({
   );
 }
 
-export function PreferencesStep({ form, errors, setField }: StepProps) {
+export function PreferencesStep({
+  form,
+  errors,
+  setField,
+  showFibreTarget = false,
+}: StepProps & {
+  /**
+   * Settings only. Onboarding leaves the database default in place; this is the screen somebody
+   * visits to change a number they have been living with, not one they are choosing for the first
+   * time. The form still carries the value either way, so both paths write the same column.
+   */
+  showFibreTarget?: boolean;
+}) {
   return (
     <>
       <fieldset className="space-y-3">
@@ -253,6 +267,36 @@ export function PreferencesStep({ form, errors, setField }: StepProps) {
           1.6 g/kg suits most people. More protein helps keep muscle while losing.
         </p>
       </fieldset>
+
+      {showFibreTarget && (
+        <fieldset className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <legend className="text-sm font-medium">Fibre target</legend>
+            <span className="text-sm tabular-nums text-muted-foreground">
+              {Math.round(form.fiber_target_g)} g/day
+            </span>
+          </div>
+          <Slider
+            value={[form.fiber_target_g]}
+            min={MIN_FIBER_TARGET_G}
+            max={MAX_FIBER_TARGET_G}
+            step={1}
+            aria-label="Daily fibre target in grams"
+            onValueChange={(values) => {
+              const value = values[0];
+              if (typeof value === "number") setField("fiber_target_g", value);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            30 g a day suits most adults. Going over is not a problem, so there is no upper warning.
+          </p>
+          {errors.fiber_target_g && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.fiber_target_g}
+            </p>
+          )}
+        </fieldset>
+      )}
 
       <ChipGroup
         legend="Dietary tags"

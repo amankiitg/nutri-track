@@ -79,7 +79,7 @@ export function ProfileForm({
         <GoalStep {...stepProps} showReachedNotice />
       </FieldGroup>
       <FieldGroup title="Preferences">
-        <PreferencesStep {...stepProps} />
+        <PreferencesStep {...stepProps} showFibreTarget />
       </FieldGroup>
 
       {saveError && (

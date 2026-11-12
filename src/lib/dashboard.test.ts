@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatTimeInZone,
+  lowFibreNudge,
   macroFraction,
   mealTypeLabel,
   quantityLabel,
@@ -51,6 +52,8 @@ const verdict = (over: Partial<WeekVerdict> = {}): WeekVerdict => ({
   avg_target_calories: null,
   avg_protein_g: null,
   avg_target_protein_g: null,
+  avg_fiber_g: null,
+  avg_target_fiber_g: null,
   verdict: "no_data",
   ...over,
 });
@@ -289,6 +292,23 @@ describe("verdictSentence", () => {
   });
 });
 
+describe("lowFibreNudge", () => {
+  it("fires below 20 g and not at 20 g", () => {
+    // 19.9 rounds to 20 on screen, so the boundary is asserted on the raw average the database
+    // returns, not on what the card prints.
+    expect(lowFibreNudge(verdict({ verdict: "on_track", avg_fiber_g: 19.9 }))).toContain(
+      "Fibre has been low this week.",
+    );
+    expect(lowFibreNudge(verdict({ verdict: "on_track", avg_fiber_g: 20 }))).toBeNull();
+  });
+
+  it("stays quiet when the window cannot be judged", () => {
+    expect(lowFibreNudge(verdict({ verdict: "too_few_days", avg_fiber_g: 8 }))).toBeNull();
+    expect(lowFibreNudge(verdict({ verdict: "no_target", avg_fiber_g: 8 }))).toBeNull();
+    expect(lowFibreNudge(verdict({ verdict: "no_data", avg_fiber_g: null }))).toBeNull();
+  });
+});
+
 describe("mealTypeLabel", () => {
   it("capitalises the types the database stores", () => {
     expect(mealTypeLabel("breakfast")).toBe("Breakfast");
@@ -327,6 +347,7 @@ const meal = (over: Partial<TimelineMeal> = {}): TimelineMeal => ({
   protein_g: 30,
   carbs_g: 40,
   fat_g: 12,
+  fiber_g: 5,
   item_count: 0,
   items: [],
   ...over,

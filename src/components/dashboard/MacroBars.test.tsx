@@ -14,9 +14,9 @@
  * fails here on purpose — the palette is the thing being promised.
  */
 import { describe, expect, it } from "vitest";
-import { render } from "@testing-library/react";
-import { MacroBars } from "./MacroBars";
-import type { DailyTotals } from "@/lib/dashboard";
+import { render, screen } from "@testing-library/react";
+import { MacroBars, VerdictLine } from "./MacroBars";
+import type { DailyTotals, WeekVerdict } from "@/lib/dashboard";
 
 function totals(over: Partial<DailyTotals> = {}): DailyTotals {
   return {
@@ -59,7 +59,7 @@ function gramsValue(container: HTMLElement, label: string): HTMLElement {
 
 describe("MacroBars colours", () => {
   it("keeps each bar its own colour under target", () => {
-    const { container } = render(<MacroBars totals={totals()} />);
+    const { container } = render(<MacroBars totals={totals()} fiberTarget={30} />);
 
     expect(barFill("Protein").className).toContain("bg-sky-500");
     expect(barFill("Carbs").className).toContain("bg-amber-500");
@@ -69,7 +69,9 @@ describe("MacroBars colours", () => {
 
   it("keeps the same colour when the macro is well over target", () => {
     // 167% of protein, the fat day that started this: the bar is still protein-blue.
-    const { container } = render(<MacroBars totals={totals({ protein_g: 187 })} />);
+    const { container } = render(
+      <MacroBars totals={totals({ protein_g: 187 })} fiberTarget={30} />,
+    );
 
     expect(barFill("Protein").className).toContain("bg-sky-500");
     expect(barFill("Protein").className).not.toContain("bg-destructive");
@@ -77,13 +79,17 @@ describe("MacroBars colours", () => {
   });
 
   it("does not recolour the grams value when the macro is over", () => {
-    const { container } = render(<MacroBars totals={totals({ protein_g: 187 })} />);
+    const { container } = render(
+      <MacroBars totals={totals({ protein_g: 187 })} fiberTarget={30} />,
+    );
 
     expect(gramsValue(container, "Protein").className).toBe("text-foreground");
   });
 
   it("puts the red on the over line, and only there", () => {
-    const { container } = render(<MacroBars totals={totals({ protein_g: 187 })} />);
+    const { container } = render(
+      <MacroBars totals={totals({ protein_g: 187 })} fiberTarget={30} />,
+    );
 
     const over = [...container.querySelectorAll("p")].filter(
       (node) => node.textContent?.includes("g over") === true,
@@ -96,7 +102,7 @@ describe("MacroBars colours", () => {
 
   it("uses amber for the first ten per cent past target and red beyond it", () => {
     // 116 of 112 is 103.6%: over, but inside the 10% band, so the line warns rather than shouts.
-    const justOver = render(<MacroBars totals={totals({ protein_g: 116 })} />);
+    const justOver = render(<MacroBars totals={totals({ protein_g: 116 })} fiberTarget={30} />);
     const near = [...justOver.container.querySelectorAll("p")].find(
       (node) => node.textContent?.includes("g over") === true,
     );
@@ -108,16 +114,93 @@ describe("MacroBars colours", () => {
   });
 
   it("shows no over line when every macro is under", () => {
-    const { container } = render(<MacroBars totals={totals()} />);
+    const { container } = render(<MacroBars totals={totals()} fiberTarget={30} />);
 
     expect(container.textContent ?? "").not.toContain("g over");
   });
 
   it("draws no bar for a macro with no target, rather than an empty one", () => {
-    const { container } = render(<MacroBars totals={totals({ target_fat_g: null })} />);
+    const { container } = render(
+      <MacroBars totals={totals({ target_fat_g: null })} fiberTarget={30} />,
+    );
 
     expect(
       container.querySelector('[role="progressbar"][aria-label^="Fat:"]')?.children,
     ).toHaveLength(0);
+  });
+});
+
+describe("the fibre bar", () => {
+  it("has its own green and sits under Fat", () => {
+    const { container } = render(<MacroBars totals={totals()} fiberTarget={30} />);
+
+    expect(barFill("Fibre").className).toContain("bg-[#3DAA5C]");
+    const labels = [...container.querySelectorAll("dt")].map((node) => node.textContent);
+    expect(labels.indexOf("Fibre")).toBeGreaterThan(labels.indexOf("Fat"));
+  });
+
+  it("says how much is left when under target, in the quiet style", () => {
+    const { container } = render(<MacroBars totals={totals({ fiber_g: 12 })} fiberTarget={30} />);
+
+    const line = [...container.querySelectorAll("p")].find(
+      (node) => node.textContent === "18 g to go",
+    );
+    expect(line).toBeDefined();
+    expect(line?.className).toContain("text-muted-foreground");
+    expect(container.textContent ?? "").not.toContain("g over");
+  });
+
+  it("never warns when fibre is over target", () => {
+    const { container } = render(<MacroBars totals={totals({ fiber_g: 42 })} fiberTarget={30} />);
+
+    expect(container.textContent ?? "").not.toContain("g over");
+    expect(container.textContent ?? "").not.toContain("g to go");
+    expect(barFill("Fibre").className).toContain("bg-[#3DAA5C]");
+  });
+});
+
+const verdict = (over: Partial<WeekVerdict> = {}): WeekVerdict => ({
+  window_days: 7,
+  window_start: "2026-11-05",
+  window_end: "2026-11-11",
+  days_logged: 7,
+  days_judged: 7,
+  days_on_track: 5,
+  avg_calories: 1800,
+  avg_target_calories: 1800,
+  avg_protein_g: 110,
+  avg_target_protein_g: 112,
+  avg_fiber_g: 12,
+  avg_target_fiber_g: 30,
+  verdict: "on_track",
+  ...over,
+});
+
+describe("the seven-day fibre line", () => {
+  it("averages fibre against the target under the protein line", () => {
+    render(<VerdictLine verdict={verdict()} />);
+
+    expect(screen.getByText(/Fibre averaging 12 g against 30 g\./)).toBeInTheDocument();
+  });
+
+  it("nudges below 20 g and stays quiet at 20 g", () => {
+    const low = render(<VerdictLine verdict={verdict({ avg_fiber_g: 19 })} />);
+    expect(
+      screen.getByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
+    ).toBeInTheDocument();
+    low.unmount();
+
+    render(<VerdictLine verdict={verdict({ avg_fiber_g: 20 })} />);
+    expect(
+      screen.queryByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not nudge when the window cannot be judged", () => {
+    render(<VerdictLine verdict={verdict({ verdict: "too_few_days", avg_fiber_g: 8 })} />);
+
+    expect(
+      screen.queryByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
+    ).not.toBeInTheDocument();
   });
 });

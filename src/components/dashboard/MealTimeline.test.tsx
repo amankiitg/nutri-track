@@ -35,6 +35,7 @@ const MEAL: TimelineMeal = {
   protein_g: 35,
   carbs_g: 12,
   fat_g: 24,
+  fiber_g: 6,
   item_count: 1,
   items: [
     {
@@ -84,6 +85,17 @@ function drag(moves: readonly number[]): void {
   }
   fireEvent.pointerUp(body, { pointerId: 1 });
 }
+
+describe("the meal summary line", () => {
+  it("names fibre beside the other macros", () => {
+    renderRow();
+
+    const line = screen.getByText(/6 g fibre/);
+    expect(line.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "35 g protein · 12 g carbs · 24 g fat · 6 g fibre · 1 photo",
+    );
+  });
+});
 
 /** The row body, which owns the swipe. */
 const row = () => screen.getByRole("group");

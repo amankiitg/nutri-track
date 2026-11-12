@@ -199,6 +199,8 @@ const periodBucket = z.object({
   avg_protein_g: numericOrNull,
   avg_carbs_g: numericOrNull,
   avg_fat_g: numericOrNull,
+  avg_fiber_g: numericOrNull,
+  avg_target_fiber_g: numericOrNull,
   status: z.string().nullable(),
 });
 
@@ -215,6 +217,8 @@ const periodTotals = z.object({
   avg_target_protein_g: numericOrNull,
   avg_carbs_g: numericOrNull,
   avg_fat_g: numericOrNull,
+  avg_fiber_g: numericOrNull,
+  avg_target_fiber_g: numericOrNull,
   protein_kcal: numericOrNull,
   carbs_kcal: numericOrNull,
   fat_kcal: numericOrNull,

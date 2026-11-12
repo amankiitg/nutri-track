@@ -53,10 +53,14 @@ const MEAL_TYPE_LABELS: Record<MealType, string> = {
   snack: "Snack",
 };
 
-const MACRO_LABELS: Array<{ key: "protein_g" | "carbs_g" | "fat_g"; label: string }> = [
+const MACRO_LABELS: Array<{
+  key: "protein_g" | "carbs_g" | "fat_g" | "fiber_g";
+  label: string;
+}> = [
   { key: "protein_g", label: "Protein" },
   { key: "carbs_g", label: "Carbs" },
   { key: "fat_g", label: "Fat" },
+  { key: "fiber_g", label: "Fibre" },
 ];
 
 /**
@@ -458,7 +462,7 @@ export function ReviewScreen({
           <span className="text-sm text-muted-foreground">This meal</span>
           <span className="text-lg font-semibold">{Math.round(totals.calories)} kcal</span>
         </div>
-        <dl className="grid grid-cols-3 gap-2 text-xs">
+        <dl className="grid grid-cols-2 gap-2 text-xs">
           {MACRO_LABELS.map(({ key, label }) => (
             <div key={key} className="flex justify-between rounded-lg bg-muted/50 px-2 py-1">
               <dt className="text-muted-foreground">{label}</dt>

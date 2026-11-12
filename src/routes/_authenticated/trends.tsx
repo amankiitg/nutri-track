@@ -3,6 +3,7 @@ import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { CalorieBars } from "@/components/trends/CalorieBars";
+import { FibreBars } from "@/components/trends/FibreBars";
 import { MacroSplit } from "@/components/trends/MacroSplit";
 import { PeriodPicker } from "@/components/trends/PeriodPicker";
 import { ChartCard, StatTiles } from "@/components/trends/StatTiles";
@@ -150,6 +151,13 @@ function TrendsPage() {
           </ChartCard>
 
           <MacroSplit totals={summary.data.totals} buckets={summary.data.buckets} bucket={bucket} />
+
+          <ChartCard
+            title="Fibre by day"
+            description="Bars are the average on logged days; the dashed line is your daily target."
+          >
+            <FibreBars buckets={summary.data.buckets} bucket={bucket} />
+          </ChartCard>
         </>
       )}
 

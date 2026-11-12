@@ -297,6 +297,7 @@ export type Database = {
           dietary_tags: string[];
           display_name: string;
           dob: string;
+          fiber_target_g: number;
           goal: Database["public"]["Enums"]["goal_type"];
           height_cm: number;
           pace_kg_per_week: number | null;
@@ -316,6 +317,7 @@ export type Database = {
           dietary_tags?: string[];
           display_name: string;
           dob: string;
+          fiber_target_g?: number;
           goal: Database["public"]["Enums"]["goal_type"];
           height_cm: number;
           pace_kg_per_week?: number | null;
@@ -335,6 +337,7 @@ export type Database = {
           dietary_tags?: string[];
           display_name?: string;
           dob?: string;
+          fiber_target_g?: number;
           goal?: Database["public"]["Enums"]["goal_type"];
           height_cm?: number;
           pace_kg_per_week?: number | null;

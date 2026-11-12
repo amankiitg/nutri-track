@@ -245,7 +245,7 @@ function TimelineRow({
 
         <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
           {Math.round(meal.protein_g)} g protein · {Math.round(meal.carbs_g)} g carbs ·{" "}
-          {Math.round(meal.fat_g)} g fat
+          {Math.round(meal.fat_g)} g fat · {Math.round(meal.fiber_g)} g fibre
           {meal.photo_count > 0 &&
             ` · ${meal.photo_count} photo${meal.photo_count === 1 ? "" : "s"}`}
         </p>
