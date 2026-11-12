@@ -139,22 +139,10 @@ describe("the fibre bar", () => {
     expect(labels.indexOf("Fibre")).toBeGreaterThan(labels.indexOf("Fat"));
   });
 
-  it("says how much is left when under target, in the quiet style", () => {
-    const { container } = render(<MacroBars totals={totals({ fiber_g: 12 })} fiberTarget={30} />);
-
-    const line = [...container.querySelectorAll("p")].find(
-      (node) => node.textContent === "18 g to go",
-    );
-    expect(line).toBeDefined();
-    expect(line?.className).toContain("text-muted-foreground");
-    expect(container.textContent ?? "").not.toContain("g over");
-  });
-
   it("never warns when fibre is over target", () => {
     const { container } = render(<MacroBars totals={totals({ fiber_g: 42 })} fiberTarget={30} />);
 
     expect(container.textContent ?? "").not.toContain("g over");
-    expect(container.textContent ?? "").not.toContain("g to go");
     expect(barFill("Fibre").className).toContain("bg-[#3DAA5C]");
   });
 });
@@ -181,26 +169,5 @@ describe("the seven-day fibre line", () => {
     render(<VerdictLine verdict={verdict()} />);
 
     expect(screen.getByText(/Fibre averaging 12 g against 30 g\./)).toBeInTheDocument();
-  });
-
-  it("nudges below 20 g and stays quiet at 20 g", () => {
-    const low = render(<VerdictLine verdict={verdict({ avg_fiber_g: 19 })} />);
-    expect(
-      screen.getByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
-    ).toBeInTheDocument();
-    low.unmount();
-
-    render(<VerdictLine verdict={verdict({ avg_fiber_g: 20 })} />);
-    expect(
-      screen.queryByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
-    ).not.toBeInTheDocument();
-  });
-
-  it("does not nudge when the window cannot be judged", () => {
-    render(<VerdictLine verdict={verdict({ verdict: "too_few_days", avg_fiber_g: 8 })} />);
-
-    expect(
-      screen.queryByText("Fibre has been low this week. Dal, fruit, whole grains or isabgol help."),
-    ).not.toBeInTheDocument();
   });
 });

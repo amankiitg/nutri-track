@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatTimeInZone,
-  lowFibreNudge,
   macroFraction,
   mealTypeLabel,
   quantityLabel,
@@ -289,23 +288,6 @@ describe("verdictSentence", () => {
     expect(verdictHasNumbers("no_data")).toBe(false);
     expect(verdictHasNumbers("no_target")).toBe(false);
     expect(verdictHasNumbers("too_few_days")).toBe(false);
-  });
-});
-
-describe("lowFibreNudge", () => {
-  it("fires below 20 g and not at 20 g", () => {
-    // 19.9 rounds to 20 on screen, so the boundary is asserted on the raw average the database
-    // returns, not on what the card prints.
-    expect(lowFibreNudge(verdict({ verdict: "on_track", avg_fiber_g: 19.9 }))).toContain(
-      "Fibre has been low this week.",
-    );
-    expect(lowFibreNudge(verdict({ verdict: "on_track", avg_fiber_g: 20 }))).toBeNull();
-  });
-
-  it("stays quiet when the window cannot be judged", () => {
-    expect(lowFibreNudge(verdict({ verdict: "too_few_days", avg_fiber_g: 8 }))).toBeNull();
-    expect(lowFibreNudge(verdict({ verdict: "no_target", avg_fiber_g: 8 }))).toBeNull();
-    expect(lowFibreNudge(verdict({ verdict: "no_data", avg_fiber_g: null }))).toBeNull();
   });
 });
 

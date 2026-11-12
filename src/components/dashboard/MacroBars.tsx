@@ -1,7 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   VERDICT_DAYS,
-  lowFibreNudge,
   macroFraction,
   targetZone,
   verdictHasNumbers,
@@ -46,8 +45,7 @@ const FIBRE_BAR = "bg-[#3DAA5C]";
  *
  * Protein, carbs and fat warn when they go past the target. Fibre does not: a day over 30 g is
  * not a problem, and a warning there would teach the reader to ignore the two that matter. Under
- * target it keeps the same quiet line, saying how many grams are left rather than colouring
- * anything.
+ * target it says nothing at all; the grams beside the bar already carry the count.
  */
 function MacroBar({
   label,
@@ -68,7 +66,6 @@ function MacroBar({
   // Stated in grams as well as shown in colour: "167% of target" is arithmetic, and
   // "+32 g over" is the thing a person can act on.
   const overBy = zone === null ? 0 : Math.max(0, eaten - Math.round(goal ?? 0));
-  const toGo = goal === null ? 0 : Math.max(0, Math.round(goal) - eaten);
 
   return (
     <div className="space-y-1">
@@ -82,11 +79,7 @@ function MacroBar({
         className="h-2 overflow-hidden rounded-full bg-secondary"
         role="progressbar"
         aria-label={`${label}: ${eaten} of ${goalLabel}${
-          overWarning && overBy > 0
-            ? `, ${overBy} g over`
-            : !overWarning && toGo > 0
-              ? `, ${toGo} g to go`
-              : ""
+          overWarning && overBy > 0 ? `, ${overBy} g over` : ""
         }`}
         aria-valuenow={eaten}
         aria-valuemin={0}
@@ -104,10 +97,10 @@ function MacroBar({
           />
         )}
       </div>
-      {/* The warning, and now the only place it appears: amber the moment the target is
+      {/* The warning, and the only place it appears: amber the moment the target is
           passed, red once the day is 110% of it. Two levels rather than one, so a day
           that is 2 g over is not dressed the same as one that is 300 g over. Fibre has no
-          over line at all; under target it says what is left, quietly. */}
+          over line, and no under line either. */}
       {overWarning && overBy > 0 && (
         <p
           className={`text-right text-[11px] ${
@@ -116,9 +109,6 @@ function MacroBar({
         >
           +{overBy} g over
         </p>
-      )}
-      {!overWarning && toGo > 0 && (
-        <p className="text-right text-[11px] text-muted-foreground">{toGo} g to go</p>
       )}
     </div>
   );
@@ -202,10 +192,6 @@ export function VerdictLine({ verdict }: { verdict: WeekVerdict }) {
             Fibre averaging {Math.round(verdict.avg_fiber_g)} g against{" "}
             {Math.round(verdict.avg_target_fiber_g ?? 30)} g.
           </p>
-        )}
-
-        {lowFibreNudge(verdict) !== null && (
-          <p className="text-xs text-muted-foreground">{lowFibreNudge(verdict)}</p>
         )}
 
         {confident && (
