@@ -157,12 +157,18 @@ export async function fetchTrialStats(): Promise<TrialStats> {
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
   const { data, error } = await rpc("admin_trial_stats", {});
   if (error) throw new Error(readableAdminError(error.message));
-  const parsed = trialStatsRow.safeParse(data);
-  if (!parsed.success) throw new Error("The trial figures came back in an unexpected shape.");
+  // A function declared `returns table` comes back through PostgREST as an array of
+  // rows even when it can only ever return one. Reading it as an object was why this
+  // card said "Couldn't load trial figures": the RPC answered, and the parse did not.
+  const parsed = z.array(trialStatsRow).min(1).safeParse(data);
+  if (!parsed.success || parsed.data[0] === undefined) {
+    throw new Error("The trial figures came back in an unexpected shape.");
+  }
+  const row = parsed.data[0];
   return {
-    scansToday: parsed.data.scans_today,
-    budget: parsed.data.budget,
-    userCount: parsed.data.user_count,
+    scansToday: row.scans_today,
+    budget: row.budget,
+    userCount: row.user_count,
   };
 }
 

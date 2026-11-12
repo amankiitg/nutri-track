@@ -15,7 +15,7 @@ import { Check, Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -41,6 +41,7 @@ import {
 } from "@/lib/admin";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 import { fetchAnalysisLimits } from "@/lib/calls";
+import { Section } from "./Section";
 import { TrialLinkControls } from "./TrialLinkControls";
 import { useTrialLinks } from "./use-trial-links";
 
@@ -128,11 +129,21 @@ export function InviteList({ adminId }: { adminId: string }) {
     },
   });
 
+  const inviteCount = invites.isSuccess ? invites.data.length : 0;
+  const signedUpCount = invites.isSuccess
+    ? invites.data.filter((invite) => invite.signedUpAt !== null).length
+    : 0;
+
   return (
-    <Card className="card-soft">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Invites</CardTitle>
-      </CardHeader>
+    <Section
+      id="invites"
+      title={invites.isSuccess ? `Invites (${inviteCount})` : "Invites"}
+      summary={
+        invites.isSuccess
+          ? `${signedUpCount} signed up so far, ${inviteCount - signedUpCount} still to arrive.`
+          : "Who can sign in, and who is still waiting."
+      }
+    >
       <CardContent className="space-y-4">
         <form
           className="space-y-2"
@@ -279,7 +290,7 @@ export function InviteList({ adminId }: { adminId: string }) {
           deactivate an account that already exists.
         </p>
       </CardContent>
-    </Card>
+    </Section>
   );
 }
 
@@ -372,17 +383,18 @@ export function InviteRequestsPanel() {
   const pendingLinks = useTrialLinks(pending.map((request) => request.email));
 
   return (
-    <Card className="card-soft">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">
-          Pending requests
-          {pending.length > 0 && (
-            <Badge variant="default" className="ml-2 align-middle">
-              {pending.length} waiting
-            </Badge>
-          )}
-        </CardTitle>
-      </CardHeader>
+    <Section
+      id="pending"
+      defaultOpen
+      title={requests.isSuccess ? `Pending requests (${pending.length})` : "Pending requests"}
+      summary={
+        requests.isSuccess
+          ? pending.length === 0
+            ? "No requests are waiting."
+            : `${pending.length} waiting for an approval or a decline.`
+          : "Who has asked to join."
+      }
+    >
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
           Recorded when somebody asks from the request page, or signs in with Google and is not on
@@ -477,7 +489,7 @@ export function InviteRequestsPanel() {
           </ul>
         )}
       </CardContent>
-    </Card>
+    </Section>
   );
 }
 
@@ -500,11 +512,16 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
     return DAILY_ANALYSIS_LIMIT;
   };
 
+  const monthCalls = spend.isSuccess ? spend.data.reduce((sum, row) => sum + row.callsMonth, 0) : 0;
+
   return (
-    <Card className="card-soft">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Model spend</CardTitle>
-      </CardHeader>
+    <Section
+      id="spend"
+      title="Model spend"
+      summary={
+        spend.isSuccess ? `${formatCount(monthCalls)} calls this month.` : "Loading the figures."
+      }
+    >
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
           Tokens, not money. There is no price in here on purpose. A rate card would be wrong the
@@ -578,7 +595,7 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
           </ul>
         )}
       </CardContent>
-    </Card>
+    </Section>
   );
 }
 
@@ -596,10 +613,15 @@ export function TrialCard() {
   });
 
   return (
-    <Card className="card-soft">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Trial</CardTitle>
-      </CardHeader>
+    <Section
+      id="trials"
+      title="Trials"
+      summary={
+        stats.isSuccess
+          ? `${stats.data.userCount} started, ${stats.data.scansToday} scans today.`
+          : "Loading the trial figures."
+      }
+    >
       <CardContent className="space-y-3">
         {stats.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
         {stats.isError && <PanelError message="Could not load the trial figures." />}
@@ -618,6 +640,6 @@ export function TrialCard() {
           </>
         )}
       </CardContent>
-    </Card>
+    </Section>
   );
 }

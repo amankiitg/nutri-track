@@ -14,7 +14,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { InviteList, InviteRequestsPanel, SpendPanel } from "./panels";
+import { InviteList, InviteRequestsPanel, SpendPanel, TrialCard } from "./panels";
 import { supabase } from "@/integrations/supabase/client";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -87,6 +87,12 @@ function serviceSays(status: number, body: unknown) {
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
+/** Opens a collapsed section, leaving an already-open one alone. */
+async function openSection(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  const header = await screen.findByRole("button", { name });
+  if (header.getAttribute("aria-expanded") === "false") await user.click(header);
 }
 
 /** The request rows the panels read, replaceable per test. */
@@ -176,6 +182,9 @@ describe("the invite list", () => {
     // shares its line with when the invite was added.
     expect(screen.getByText(/Invited, not arrived/)).toBeInTheDocument();
     expect(screen.getByText(/Joined · admin/)).toBeInTheDocument();
+    // The collapsed header carries the count, so the list can stay shut.
+    expect(screen.getByText("Invites (2)")).toBeInTheDocument();
+    expect(screen.getByText("1 signed up so far, 1 still to arrive.")).toBeInTheDocument();
   });
 
   it("keeps every partial value while an address is typed, character by character", async () => {
@@ -212,6 +221,7 @@ describe("the invite list", () => {
       alreadyInvited: false,
     });
     renderWithQuery(<InviteList adminId="admin-1" />);
+    await openSection(user, /^Invites/);
 
     await user.type(screen.getByLabelText("Their first name"), "Priya");
     await user.type(screen.getByLabelText("Address to invite"), "  New.Friend@Example.COM ");
@@ -235,6 +245,7 @@ describe("the invite list", () => {
     const user = userEvent.setup();
     serviceSays(200, {});
     renderWithQuery(<InviteList adminId="admin-1" />);
+    await openSection(user, /^Invites/);
 
     await user.type(screen.getByLabelText("Address to invite"), "not-an-address");
     expect(screen.getByRole("button", { name: /draft the invite/i })).toBeDisabled();
@@ -256,6 +267,7 @@ describe("the invite list", () => {
       alreadyInvited: true,
     });
     renderWithQuery(<InviteList adminId="admin-1" />);
+    await openSection(user, /^Invites/);
 
     await user.type(screen.getByLabelText("Their first name"), "Priya");
     await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
@@ -270,6 +282,7 @@ describe("the invite list", () => {
     const user = userEvent.setup();
     serviceSays(403, { error: { code: "forbidden", message: "Only an admin can invite people." } });
     renderWithQuery(<InviteList adminId="admin-1" />);
+    await openSection(user, /^Invites/);
 
     await user.type(screen.getByLabelText("Their first name"), "Priya");
     await user.type(screen.getByLabelText("Address to invite"), "friend@example.com");
@@ -291,6 +304,7 @@ describe("the invite list", () => {
     ];
     const user = userEvent.setup();
     renderWithQuery(<InviteList adminId="admin-1" />);
+    await openSection(user, /^Invites/);
 
     expect(await screen.findByText("gone@example.com")).toBeInTheDocument();
     const row = screen.getByText("gone@example.com").closest("li");
@@ -314,9 +328,9 @@ describe("requests from people who are not on the list", () => {
     // The name is what the approval email will greet them by, so it is the line the admin reads.
     expect(await screen.findByText("Hope")).toBeInTheDocument();
     expect(screen.getByText("hopeful@example.com")).toBeInTheDocument();
-    expect(screen.getByText("1 waiting")).toBeInTheDocument();
+    expect(screen.getByText("Pending requests (1)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /decline/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^decline$/i })).toBeInTheDocument();
   });
 
   it("shows only what is waiting, because a decision is not work", async () => {
@@ -360,7 +374,7 @@ describe("requests from people who are not on the list", () => {
     expect(screen.queryByText("already@example.com")).toBeNull();
     expect(screen.queryByText("refused@example.com")).toBeNull();
     expect(screen.queryByText("removed@example.com")).toBeNull();
-    expect(screen.getByText("1 waiting")).toBeInTheDocument();
+    expect(screen.getByText("Pending requests (1)")).toBeInTheDocument();
   });
 
   it("approves through the RPC that does the insert and the marking in one transaction", async () => {
@@ -378,7 +392,7 @@ describe("requests from people who are not on the list", () => {
     const user = userEvent.setup();
     renderWithQuery(<InviteRequestsPanel />);
 
-    await user.click(await screen.findByRole("button", { name: /decline/i }));
+    await user.click(await screen.findByRole("button", { name: /^decline$/i }));
 
     await waitFor(() =>
       expect(updated).toEqual([{ status: "declined", handled_at: expect.any(String) }]),
@@ -469,6 +483,39 @@ describe("requests from people who are not on the list", () => {
   });
 });
 
+describe("the trial card", () => {
+  it("reads the single row a table-returning RPC sends as an array", async () => {
+    // PostgREST answers `returns table` with an array of rows even when the function can
+    // only return one. Parsing it as an object is what made this card say it could not
+    // load the figures while the RPC was answering perfectly.
+    client.rpc.mockImplementation((name: string) => {
+      if (name === "admin_trial_stats") {
+        return Promise.resolve({
+          data: [{ scans_today: 47, budget: 200, user_count: 12 }],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    renderWithQuery(<TrialCard />);
+
+    expect(await screen.findByText("47 of 200 scans used today")).toBeInTheDocument();
+    expect(screen.getByText("12 trial users")).toBeInTheDocument();
+    expect(screen.getByText("12 started, 47 scans today.")).toBeInTheDocument();
+  });
+
+  it("still refuses a payload that is not a row", async () => {
+    client.rpc.mockImplementation(() => Promise.resolve({ data: [{}], error: null }));
+    const user = userEvent.setup();
+
+    renderWithQuery(<TrialCard />);
+    await openSection(user, /^Trials/);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the trial figures.");
+  });
+});
+
 describe("the spend panel", () => {
   /** Two rows: the reader (an admin) and an ordinary account. Their ceilings differ. */
   function spendRows(): void {
@@ -507,6 +554,8 @@ describe("the spend panel", () => {
     // Two rows, so this line appears twice; the assertion is about its shape, not its count.
     expect(screen.getAllByText(/150,045 tokens this month/)[0]).toBeInTheDocument();
     expect(screen.getByText(/no price in here on purpose/i)).toBeInTheDocument();
+    // Two rows at 38 calls each, in the collapsed header.
+    expect(screen.getByText("76 calls this month.")).toBeInTheDocument();
   });
 
   it("counts each row down from that row's own ceiling", async () => {
