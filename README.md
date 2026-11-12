@@ -28,6 +28,41 @@ public/demo/meal-demo.gif, then the placeholder SVG. Replace public/demo/meal-de
 - A **Google Cloud OAuth client** if you want Google sign-in
 - A **Google AI Studio API key** if you want meal parsing (see below)
 
+## Run your own copy
+
+This repository is the whole app: a Vite and TanStack Start frontend, a Supabase schema, and the
+Express service that parses meals. A copy of your own needs your own Supabase project, your own
+Gemini key and your own deployment. The short version:
+
+1. **Install.** `npm install` at the root, then `npm --prefix server install`.
+2. **Create a Supabase project.** Copy `.env.example` to `.env`, then fill in the Supabase URL,
+   the publishable key and the project ref. The `VITE_` pair and the server's `SUPABASE_` pair are
+   the same values under two names.
+3. **Apply the schema.** `npx supabase link --project-ref "$SUPABASE_PROJECT_ID"` and
+   `npx supabase db push`. The migrations create every table, policy, grant and function.
+4. **Allow yourself in.** In the Supabase SQL editor:
+
+   ```sql
+   insert into public.allowed_emails (email) values ('you@example.com');
+   ```
+
+   Sign-up is invite-only. The first account on the allow list is promoted to admin by
+   `bootstrap_first_admin()` while the admin list is empty, and the admin page can invite the
+   next people. See [Invites, requests and the admin page](#invites-requests-and-the-admin-page).
+5. **Add a Gemini key.** Put `GEMINI_API_KEY` in `.env`. Nothing in the browser reads it; the
+   `server/` service does.
+6. **Run it.** `npm run dev` serves the app on <http://localhost:8080>. In another terminal,
+   `npm --prefix server run dev` serves the parser on <http://localhost:8787>. The shipped
+   `VITE_PARSE_MEAL_URL` already points there.
+7. **Deploy.** The frontend builds for Cloudflare Workers and the service runs on Render. Both
+   paths, including every environment name, are in
+   [Deploying to production](#deploying-to-production).
+
+Two things are easy to miss. `npm run build` fails on purpose without a production parse-meal URL,
+so use `npm run build:cloudflare` for a deploy. And Supabase's default SMTP only delivers to
+project members, so configure custom SMTP before you invite anyone else, as described in
+[Email delivery before inviting anyone](#email-delivery-before-inviting-anyone).
+
 ## Setup
 
 ```sh
