@@ -1,0 +1,18 @@
+#!/bin/sh
+# Block a commit that adds a secret.
+#
+# Install once per clone:
+#   ln -sf ../../scripts/gitleaks-pre-commit .git/hooks/pre-commit
+#
+# The scan reads the staged diff, so an ignored file that was never added is not
+# inspected, and neither is a secret sitting in an unstaged edit. A missing gitleaks
+# stops the commit rather than passing it: a hook that silently does nothing reads as a
+# check that ran.
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks is not installed. Run: brew install gitleaks" >&2
+  exit 1
+fi
+
+exec gitleaks git --staged --redact --no-banner --config .gitleaks.toml .

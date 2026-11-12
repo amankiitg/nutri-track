@@ -1,0 +1,11 @@
+title = "NutriTrack secret scan"
+
+[extend]
+useDefault = true
+
+# A component test builds a fake signed trial token by hand. It is not a credential:
+# it decodes to {"email":"priya@example.com"} and a placeholder signature.
+[[allowlists]]
+description = "Fake signed trial token in src/routes/t.test.tsx"
+paths = ['''src/routes/t\.test\.tsx$''']
+regexes = ['''eyJlbWFpbCI6InByaXlhQGV4YW1wbGUuY29tIn0\.c2ln''']
