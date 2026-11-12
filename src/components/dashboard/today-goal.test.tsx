@@ -154,6 +154,27 @@ describe("the target already being behind you", () => {
     expect(await screen.findByText(/your 7-day average is 169\.4 lb/i)).toBeInTheDocument();
   });
 
+  it("prints the average at the weight card's precision, two decimals of kilograms", async () => {
+    // The weight card reads displayRounded, which holds kilograms to the column's two
+    // decimals. A notice that printed 69.5 kg beside a card reading 69.46 kg would be two
+    // answers to the same question on one screen.
+    weightWindow = { averageKg: 69.46, readings: 5 };
+
+    renderToday();
+
+    expect(await screen.findByText(/your 7-day average is 69\.46 kg/i)).toBeInTheDocument();
+  });
+
+  it("prints a whole number of pounds without a trailing zero, as the weight card does", async () => {
+    PROFILE = { ...PROFILE, units: "imperial", target_weight_kg: lbToKg(170) };
+    weightWindow = { averageKg: lbToKg(170), readings: 4 };
+
+    renderToday();
+
+    expect(await screen.findByText(/your 7-day average is 170 lb\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/170\.0 lb/i)).toBeNull();
+  });
+
   it("stays quiet on one low weigh-in", async () => {
     // The bug this replaces: a single 65 kg morning was enough to say the target was reached.
     latestWeight = 65;

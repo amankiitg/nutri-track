@@ -18,7 +18,7 @@
  */
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatWeight, type UnitSystem } from "@/lib/units";
+import { formatMeasuredWeight, type UnitSystem } from "@/lib/units";
 
 export function TargetReachedNotice({
   onSwitch,
@@ -52,7 +52,7 @@ export function TargetReachedNotice({
       </p>
       {averageKg !== null && (
         <p className="mt-1 text-muted-foreground">
-          Your 7-day average is {formatWeight(averageKg, units)}.
+          Your 7-day average is {formatMeasuredWeight(averageKg, units)}.
         </p>
       )}
       <div className="mt-2 flex items-center gap-2">

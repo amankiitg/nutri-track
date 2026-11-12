@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import {
   displayRounded,
   formatLength,
+  formatMeasuredWeight,
   lbToKg,
   cmToIn,
   inToCm,
@@ -107,7 +108,7 @@ export function WeightEntry({
           <p className="text-sm text-muted-foreground">
             Last recorded{" "}
             <span className="font-medium text-foreground tabular-nums">
-              {displayRounded(latest.weight_kg, unitSystem, "mass")} {unit}
+              {formatMeasuredWeight(latest.weight_kg, unitSystem)}
             </span>{" "}
             on{" "}
             <time dateTime={latest.logged_on}>

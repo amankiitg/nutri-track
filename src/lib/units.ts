@@ -103,6 +103,19 @@ export function displayRounded(base: number, units: UnitSystem, quantity: Quanti
   return roundTo(displayValue(base, units, quantity), digits);
 }
 
+/**
+ * A measured weight as the weight card prints it: `displayRounded` in the reader's units,
+ * with its unit.
+ *
+ * Not `formatWeight`, which always prints one decimal: pounds get one decimal and kilograms
+ * get two because that is the precision the stored column supports, and a trailing zero is not
+ * printed. A screen that prints a weigh-in next to the weight card has to use this one, or the
+ * same kilogram reading shows as two different numbers on one page.
+ */
+export function formatMeasuredWeight(kg: number, units: UnitSystem): string {
+  return `${displayRounded(kg, units, "mass")} ${unitLabel("mass", units)}`;
+}
+
 /** A stored value rendered in a system, with its unit. */
 function formatBase(base: number, quantity: Quantity, units: UnitSystem): string {
   return quantity === "mass" ? formatWeight(base, units) : formatLength(base, units);

@@ -5,6 +5,7 @@ import {
   displayValue,
   formatHeight,
   formatLength,
+  formatMeasuredWeight,
   formatWeight,
   ftInToCm,
   inToCm,
@@ -118,5 +119,18 @@ describe("the existing conversions, unchanged", () => {
   it("formats a weight in the unit asked for", () => {
     expect(formatWeight(70, "metric")).toBe("70.0 kg");
     expect(formatWeight(70, "imperial")).toBe("154.3 lb");
+  });
+});
+
+describe("formatMeasuredWeight", () => {
+  it("uses the weight card's precision: two decimals of kilograms", () => {
+    // The card reads `displayRounded`, where kilograms keep the column's two decimals rather
+    // than formatWeight's one. 69.46 and 69.5 must not be printed as the same number.
+    expect(formatMeasuredWeight(69.46, "metric")).toBe("69.46 kg");
+  });
+
+  it("uses the weight card's precision: one decimal of pounds, no trailing zero", () => {
+    expect(formatMeasuredWeight(lbToKg(169.44), "imperial")).toBe("169.4 lb");
+    expect(formatMeasuredWeight(lbToKg(170), "imperial")).toBe("170 lb");
   });
 });
