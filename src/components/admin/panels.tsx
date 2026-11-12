@@ -55,6 +55,17 @@ function PanelError({ message }: { message: string }) {
   );
 }
 
+/**
+ * What actually failed, in the database's own words.
+ *
+ * The trial card used to print one generic line for every failure, which hid a real bug
+ * behind a message that read like an empty state. An admin needs the code to search for,
+ * so it is shown rather than replaced with a friendlier sentence.
+ */
+function errorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
+}
+
 export function InviteList({ adminId }: { adminId: string }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -642,7 +653,9 @@ export function TrialCard() {
     >
       <CardContent className="space-y-3">
         {stats.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {stats.isError && <PanelError message="Could not load the trial figures." />}
+        {stats.isError && (
+          <PanelError message={`Could not load the trial figures. ${errorDetail(stats.error)}`} />
+        )}
         {stats.isSuccess && (
           <>
             <p className="text-sm">
@@ -678,7 +691,9 @@ export function TrialCard() {
           />
 
           {trials.isPending && <p className="text-sm text-muted-foreground">Loading the trials…</p>}
-          {trials.isError && <PanelError message="Could not load the trial list." />}
+          {trials.isError && (
+            <PanelError message={`Could not load the trial list. ${errorDetail(trials.error)}`} />
+          )}
           {trials.isSuccess && trials.data.length === 0 && (
             <p className="text-sm text-muted-foreground">
               {term === "" ? "No trials yet." : "No trial matches that search."}

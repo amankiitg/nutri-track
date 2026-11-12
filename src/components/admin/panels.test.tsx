@@ -487,8 +487,7 @@ describe("requests from people who are not on the list", () => {
 describe("the trial card", () => {
   it("reads the single row a table-returning RPC sends as an array", async () => {
     // PostgREST answers `returns table` with an array of rows even when the function can
-    // only return one. Parsing it as an object is what made this card say it could not
-    // load the figures while the RPC was answering perfectly.
+    // only return one, so the card reads the first row rather than the reply as an object.
     client.rpc.mockImplementation((name: string) => {
       if (name === "admin_trial_stats") {
         return Promise.resolve({
@@ -518,7 +517,56 @@ describe("the trial card", () => {
     renderWithQuery(<TrialCard />);
     await openSection(user, /^Trials/);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the trial figures.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the trial figures. The trial figures came back in an unexpected shape.",
+    );
+  });
+
+  it("shows the database's own error for the figures, not a generic line", async () => {
+    client.rpc.mockImplementation((name: string) =>
+      name === "admin_trial_stats"
+        ? Promise.resolve({
+            data: null,
+            error: {
+              message: "permission denied for function admin_trial_stats",
+              code: "42501",
+            },
+          })
+        : Promise.resolve({ data: [], error: null }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQuery(<TrialCard />);
+    await openSection(user, /^Trials/);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the trial figures. permission denied for function admin_trial_stats (42501)",
+    );
+  });
+
+  it("shows the database's own error for the list, not a generic line", async () => {
+    client.rpc.mockImplementation((name: string) =>
+      name === "admin_trial_stats"
+        ? Promise.resolve({
+            data: [{ scans_today: 0, budget: 200, user_count: 0 }],
+            error: null,
+          })
+        : Promise.resolve({
+            data: null,
+            error: {
+              message: "permission denied for function admin_trial_list",
+              code: "42501",
+            },
+          }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQuery(<TrialCard />);
+    await openSection(user, /^Trials/);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the trial list. permission denied for function admin_trial_list (42501)",
+    );
   });
 
   const TRIAL_ROWS = [

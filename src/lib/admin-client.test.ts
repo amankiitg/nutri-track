@@ -22,6 +22,7 @@ import {
   fetchInvites,
   fetchIsAdmin,
   fetchTrialList,
+  fetchTrialStats,
   removeInvite,
 } from "./admin";
 
@@ -242,9 +243,55 @@ describe("fetchTrialList", () => {
     await expect(fetchTrialList("")).rejects.toThrow(/unexpected shape/);
   });
 
-  it("turns the admin-only refusal into something readable", async () => {
-    client.rpc.mockResolvedValue({ data: null, error: { message: "admin only" } });
-    await expect(fetchTrialList("")).rejects.toThrow(/needs an admin account/);
+  it("keeps the database's own refusal and its code", async () => {
+    client.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "admin only", code: "42501" },
+    });
+    await expect(fetchTrialList("")).rejects.toThrow("admin only (42501)");
+  });
+
+  it("keeps the RPC call on the client, so supabase-js can reach its rest client", async () => {
+    // supabase-js's rpc is a prototype method that reads `this.rest`. Detaching it
+    // (`const rpc = supabase.rpc; rpc(...)`) throws before any request is made. A plain
+    // mock cannot tell the difference, so this fake checks where it was called from.
+    const original = client.rpc;
+    const spy = vi.fn(function (this: unknown) {
+      if (this !== client) {
+        throw new TypeError("Cannot read properties of undefined (reading 'rest')");
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+    client.rpc = spy as unknown as typeof client.rpc;
+    try {
+      await fetchTrialList("");
+      expect(spy).toHaveBeenCalledWith("admin_trial_list", { p_search: null, p_limit: 50 });
+    } finally {
+      client.rpc = original;
+    }
+  });
+});
+
+describe("fetchTrialStats", () => {
+  it("reads the single row a table-returning RPC sends as an array", async () => {
+    client.rpc.mockResolvedValue({
+      data: [{ scans_today: 47, budget: 200, user_count: 12 }],
+      error: null,
+    });
+    expect(await fetchTrialStats()).toEqual({ scansToday: 47, budget: 200, userCount: 12 });
+  });
+
+  it("keeps the database's own message and code in the failure", async () => {
+    client.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        message: "permission denied for function admin_trial_stats",
+        code: "42501",
+      },
+    });
+    await expect(fetchTrialStats()).rejects.toThrow(
+      "permission denied for function admin_trial_stats (42501)",
+    );
   });
 });
 

@@ -145,21 +145,41 @@ export interface TrialStats {
   userCount: number;
 }
 
+/** A PostgREST RPC reply for a function the generated types do not know yet. */
+type AdminRpcResult = {
+  data: unknown;
+  error: { message: string; code?: string } | null;
+};
+
+/**
+ * Calls an RPC the generated client types do not know yet.
+ *
+ * The method stays on the client on purpose. `const rpc = supabase.rpc; rpc(...)` detaches
+ * it, and supabase-js's rpc reads `this.rest`, so every call threw "Cannot read properties
+ * of undefined (reading 'rest')" before a request was made. That was the real reason both
+ * trial panels said they could not load: nothing ever reached the database. Casting the
+ * client rather than the method keeps `this` where it belongs.
+ */
+function adminRpc(fn: string, args: Record<string, unknown>): Promise<AdminRpcResult> {
+  const client = supabase as unknown as {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<AdminRpcResult>;
+  };
+  return client.rpc(fn, args);
+}
+
+/** The database's own words, plus its code, so an admin sees what actually failed. */
+function rpcErrorDetail(error: { message: string; code?: string }): string {
+  return error.code ? `${error.message} (${error.code})` : error.message;
+}
+
 /** The admin Trial card: today's scans, the budget, and how many mailboxes tried. */
 export async function fetchTrialStats(): Promise<TrialStats> {
-  // The function is new in this migration, so the generated client types do not know
-  // it yet. Cast rather than hand-edit the generated types; the next regeneration
-  // picks it up. The budget comes from the database's trial_settings, not an argument,
-  // so the card cannot drift from the number the enforcing function reads.
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("admin_trial_stats", {});
-  if (error) throw new Error(readableAdminError(error.message));
+  // The budget comes from the database's trial_settings, not an argument, so the card
+  // cannot drift from the number the enforcing function reads.
+  const { data, error } = await adminRpc("admin_trial_stats", {});
+  if (error) throw new Error(rpcErrorDetail(error));
   // A function declared `returns table` comes back through PostgREST as an array of
-  // rows even when it can only ever return one. Reading it as an object was why this
-  // card said "Couldn't load trial figures": the RPC answered, and the parse did not.
+  // rows even when it can only ever return one, so the card reads the first row.
   const parsed = z.array(trialStatsRow).min(1).safeParse(data);
   if (!parsed.success || parsed.data[0] === undefined) {
     throw new Error("The trial figures came back in an unexpected shape.");
@@ -204,17 +224,13 @@ export interface TrialUserRow {
  * The result is funnel metadata only: no meal text, no photos.
  */
 export async function fetchTrialList(search: string): Promise<TrialUserRow[]> {
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
   const term = search.trim();
-  const { data, error } = await rpc("admin_trial_list", {
+  const { data, error } = await adminRpc("admin_trial_list", {
     // Null rather than an empty string, so the database sees "no filter" as one value.
     p_search: term === "" ? null : term,
     p_limit: 50,
   });
-  if (error) throw new Error(readableAdminError(error.message));
+  if (error) throw new Error(rpcErrorDetail(error));
   const rows = z.array(trialListRow).safeParse(data);
   if (!rows.success) throw new Error("The trial list came back in an unexpected shape.");
   return rows.data.map((row) => ({
