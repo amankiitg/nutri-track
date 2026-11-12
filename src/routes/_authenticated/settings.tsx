@@ -6,6 +6,8 @@ import { countsNote, fetchCallBudget, presentBudget } from "@/lib/calls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm } from "@/components/onboarding/ProfileForm";
 import { AccountSection } from "@/components/settings/AccountSection";
+import { useMaintainSuggestion } from "@/hooks/use-maintain-suggestion";
+import { useToday } from "@/hooks/use-today";
 
 const parentApi = getRouteApi("/_authenticated");
 
@@ -18,6 +20,20 @@ function SettingsPage() {
   const queryClient = useQueryClient();
   const userId = profile?.user_id ?? "";
   const timeZone = profile?.timezone ?? "UTC";
+  const today = useToday(timeZone);
+
+  /**
+   * The same reached-target decision Today makes, from the same 7-day window and the same
+   * rule. Settings ignores the "Not now" dismissal because this is where a goal is changed,
+   * but it never decides for itself: when Today's rule says no, this is null too.
+   */
+  const maintain = useMaintainSuggestion({
+    userId,
+    today,
+    goal: profile?.goal ?? null,
+    targetKg: profile?.target_weight_kg ?? null,
+    dismissed: null,
+  });
 
   const target = useQuery<Target | null>({
     queryKey: ["current-target", userId, timeZone],
@@ -124,6 +140,7 @@ function SettingsPage() {
 
       <ProfileForm
         profile={profile}
+        maintain={maintain}
         onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: ["current-target"] });
           toast.success("Profile saved. Your new targets start today.");

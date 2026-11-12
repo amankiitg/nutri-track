@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveProfileWithTargets, type Profile } from "@/lib/profile";
+import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import {
   formFromProfile,
   toProfileInsert,
@@ -18,9 +19,15 @@ import { AboutStep, ActivityStep, BodyStep, GoalStep, PreferencesStep } from "./
  */
 export function ProfileForm({
   profile,
+  maintain = null,
   onSaved,
 }: {
   profile: Profile;
+  /**
+   * The reached-target decision, made by the route from the same 7-day window Today reads.
+   * Null means Today would not show it either.
+   */
+  maintain?: MaintainSuggestion | null;
   onSaved?: (() => void) | undefined;
 }) {
   const [form, setForm] = useState<OnboardingForm>(() => formFromProfile(profile));
@@ -75,8 +82,8 @@ export function ProfileForm({
         <ActivityStep {...stepProps} />
       </FieldGroup>
       <FieldGroup title="Your goal">
-        {/* Settings is where the weight has moved, so this is the copy that may say so. */}
-        <GoalStep {...stepProps} showReachedNotice />
+        {/* The notice follows the week of weigh-ins, not the weight typed in this form. */}
+        <GoalStep {...stepProps} maintain={maintain} />
       </FieldGroup>
       <FieldGroup title="Preferences">
         <PreferencesStep {...stepProps} showFibreTarget />

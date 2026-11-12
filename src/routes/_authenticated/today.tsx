@@ -9,19 +9,14 @@ import { MealTimeline } from "@/components/dashboard/MealTimeline";
 import { WeightEntry } from "@/components/dashboard/WeightEntry";
 import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import { EditMealSheet } from "@/components/review/EditMealSheet";
-import {
-  fetchWeightWindow,
-  localDateString,
-  refreshTargetIfStale,
-  saveProfileWithTargets,
-} from "@/lib/profile";
+import { localDateString, refreshTargetIfStale, saveProfileWithTargets } from "@/lib/profile";
 import { formFromProfile, toProfileInsert } from "@/lib/onboarding";
 import {
-  maintainSuggestion,
   readMaintainDismissal,
   saveMaintainDismissal,
   type MaintainDismissal,
 } from "@/lib/maintain-suggestion";
+import { useMaintainSuggestion } from "@/hooks/use-maintain-suggestion";
 import { useToday } from "@/hooks/use-today";
 import {
   VERDICT_DAYS,
@@ -96,39 +91,22 @@ function TodayPage() {
     enabled,
   });
 
-  /**
-   * The trailing 7-day average, which is what the notice is decided from now.
-   *
-   * The latest weigh-in is one noisy estimate; a single low morning used to be enough to
-   * say the target had been reached. The key shares the `weights` prefix, so logging a
-   * weigh-in refetches this without a second invalidation to remember.
-   */
-  const weightWindow = useQuery({
-    queryKey: ["weights", userId, today, "7d"],
-    queryFn: () => fetchWeightWindow(today),
-    enabled,
-  });
-
   useEffect(() => {
     setDismissal(userId === "" ? null : readMaintainDismissal(userId));
   }, [userId]);
 
   /**
    * Whether to say the target has been reached, from the week of weigh-ins rather than the last
-   * one, and not at all when a dismissal is still in force. The rules themselves live in
-   * `maintainSuggestion`, so the screen only decides what to draw.
+   * one, and not at all when a dismissal is still in force. The window and the rules are the
+   * hook's, shared with Settings, so the two screens cannot answer differently.
    */
-  const suggestion =
-    profile === null || profile === undefined
-      ? null
-      : maintainSuggestion({
-          goal: profile.goal,
-          averageKg: weightWindow.data?.averageKg ?? null,
-          readings: weightWindow.data?.readings ?? 0,
-          targetKg: profile.target_weight_kg ?? null,
-          dismissed: dismissal,
-          today,
-        });
+  const suggestion = useMaintainSuggestion({
+    userId,
+    today,
+    goal: profile?.goal ?? null,
+    targetKg: profile?.target_weight_kg ?? null,
+    dismissed: dismissal,
+  });
 
   function refreshDay(): void {
     void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });

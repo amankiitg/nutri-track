@@ -13,8 +13,8 @@ import {
   MIN_FIBER_TARGET_G,
   PACE_OPTIONS,
   projectionFor,
-  targetProximity,
 } from "@/lib/targets";
+import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import { DIETARY_TAG_OPTIONS } from "@/lib/profile";
 import { formatPace, formatWeight } from "@/lib/units";
 import {
@@ -140,20 +140,17 @@ export function GoalStep({
   form,
   errors,
   setField,
-  showReachedNotice = false,
+  maintain = null,
 }: StepProps & {
   /**
-   * Whether this copy of the step may say the target has been reached.
+   * The reached-target decision Settings made from the 7-day window, or null.
    *
-   * Off in onboarding, on in Settings. A new user has no weigh-ins, so "you're at your target"
-   * would be a claim about history they do not have; Settings is where the weight has actually
-   * moved and the notice is the point.
+   * Onboarding passes nothing: a new user has no weigh-ins, so "you're at your target" would
+   * be a claim about history they do not have. Settings passes whatever Today's rule decided,
+   * so the form's own weight and target can never produce a notice of their own.
    */
-  showReachedNotice?: boolean;
+  maintain?: MaintainSuggestion | null;
 }) {
-  const atTarget =
-    showReachedNotice &&
-    targetProximity(form.goal, form.weight_kg, form.target_weight_kg) === "at_target";
   // Null whenever there is nothing honest to print, including a target already passed.
   const projectedOn =
     form.goal === null
@@ -215,9 +212,17 @@ export function GoalStep({
             </div>
           </fieldset>
 
-          {atTarget && <TargetReachedNotice onSwitch={() => setField("goal", "maintain")} />}
+          {maintain !== null && (
+            <TargetReachedNotice
+              averageKg={maintain.averageKg}
+              crossed={maintain.crossed}
+              units={form.units}
+              onSwitch={() => setField("goal", "maintain")}
+            />
+          )}
 
-          {projectedOn && (
+          {/* Not beside the notice: a date to arrive at the target contradicts "you're at it". */}
+          {projectedOn && maintain === null && (
             <p className="text-sm text-muted-foreground">
               At {formatPace(form.pace_kg_per_week, form.units)} you'd reach{" "}
               {formatWeight(form.target_weight_kg ?? 0, form.units)} around{" "}

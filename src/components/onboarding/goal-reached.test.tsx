@@ -1,13 +1,14 @@
 /**
  * The at-target notice, and which screens may show it.
  *
- * The bug this pins: on 77 kg against an 85 kg lose target, both "your target is above your current
- * weight" and "you're at your target weight" appeared at once. They are two answers to one
- * question, so distance now decides which one is honest — a kilogram either side of the target is
- * being there, more than a kilogram on the wrong side is a mistake.
+ * The rule is `maintainSuggestion`'s: the trailing 7-day average, at least three weigh-ins, and
+ * within 0.5 kg of the target or past it. Settings used to answer the same question from the
+ * stored weight alone, which is how 167.2 lb against a 165 lb target showed a notice Today hid.
+ * The screen now renders only the decision the route made, so the form's own numbers cannot
+ * produce a notice of their own.
  *
  * The notice is also not onboarding's to show. A new user has no weigh-ins, so "you're at your
- * target" would be a claim about history they do not have; Settings is where the weight has moved.
+ * target" would be a claim about history they do not have.
  */
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -16,6 +17,7 @@ import userEvent from "@testing-library/user-event";
 import { GoalStep } from "./steps";
 import { ProfileForm } from "./ProfileForm";
 import { DEFAULT_ONBOARDING_FORM, type OnboardingForm } from "@/lib/onboarding";
+import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import type { Profile } from "@/lib/profile";
 import { lbToKg } from "@/lib/units";
 
@@ -33,10 +35,10 @@ const NOTICE = /you're at your target weight/i;
 /** Holds the form the way the wizard and the settings form do, so the button has something to do. */
 function Harness({
   initial,
-  showReachedNotice = false,
+  maintain = null,
 }: {
   initial: OnboardingForm;
-  showReachedNotice?: boolean;
+  maintain?: MaintainSuggestion | null;
 }) {
   const [form, setForm] = useState(initial);
   return (
@@ -44,7 +46,7 @@ function Harness({
       form={form}
       errors={{}}
       setField={(key, value) => setForm((previous) => ({ ...previous, [key]: value }))}
-      showReachedNotice={showReachedNotice}
+      maintain={maintain}
     />
   );
 }
@@ -81,26 +83,54 @@ describe("onboarding: the notice is never shown", () => {
   });
 });
 
-describe("settings: the notice belongs here", () => {
-  it("shows it once the weight is within a kilogram of the target", () => {
-    render(<Harness initial={base({ weight_kg: 69.5 })} showReachedNotice />);
+describe("settings: it shows Today's decision, not its own", () => {
+  const AT_TARGET: MaintainSuggestion = { averageKg: 69.5, crossed: false };
+
+  it("shows the decision it was handed, with the average in the reader's units", () => {
+    // The form's stored weight is two kilos from the target, which used to hide the notice here.
+    // The week of weigh-ins is what decides now.
+    render(<Harness initial={base({ weight_kg: 72 })} maintain={AT_TARGET} />);
 
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
     expect(screen.getByText(/switch to maintain to stop the deficit/i)).toBeInTheDocument();
-    // The date is the other thing that must not be there: it is not still to come.
+    expect(screen.getByText(/your 7-day average is 69\.5 kg/i)).toBeInTheDocument();
+    // The date is the other thing that must not be there: the average has arrived.
     expect(screen.queryByText(/you'd reach/i)).toBeNull();
   });
 
-  it("does not show it for a target that is ahead", () => {
-    render(<Harness initial={base({ weight_kg: 65, target_weight_kg: 55 })} showReachedNotice />);
+  it("says nothing when the route passed nothing, even with the form weight on the target", () => {
+    // The old Settings-only check, deleted: a stored 70 kg against a 70 kg target was enough on
+    // this screen whatever the week said.
+    render(<Harness initial={base({ weight_kg: 70, target_weight_kg: 70 })} />);
 
     expect(screen.queryByText(NOTICE)).toBeNull();
-    expect(screen.getByText(/you'd reach/i)).toBeInTheDocument();
+    expect(screen.queryByText(/7-day average/i)).toBeNull();
+  });
+
+  it("prints the average in pounds", () => {
+    render(
+      <Harness
+        initial={base({
+          units: "imperial",
+          weight_kg: lbToKg(170),
+          target_weight_kg: lbToKg(170),
+        })}
+        maintain={{ averageKg: lbToKg(169.4), crossed: false }}
+      />,
+    );
+
+    expect(screen.getByText(/your 7-day average is 169\.4 lb/i)).toBeInTheDocument();
+  });
+
+  it('says "past" when the week has crossed the target', () => {
+    render(<Harness initial={base({})} maintain={{ averageKg: 69.2, crossed: true }} />);
+
+    expect(screen.getByText(/you're past your target weight/i)).toBeInTheDocument();
   });
 
   it("switches the form to Maintain on one tap, leaving the Save to the person", async () => {
     const user = userEvent.setup();
-    render(<Harness initial={base({ weight_kg: 69.5 })} showReachedNotice />);
+    render(<Harness initial={base({ weight_kg: 72 })} maintain={AT_TARGET} />);
 
     await user.click(screen.getByRole("button", { name: /switch to maintain/i }));
 
@@ -111,7 +141,7 @@ describe("settings: the notice belongs here", () => {
   });
 
   it("does not submit anything: the button sits inside the settings form", () => {
-    render(<Harness initial={base({ weight_kg: 69.5 })} showReachedNotice />);
+    render(<Harness initial={base({})} maintain={AT_TARGET} />);
 
     const button = screen.getByRole("button", { name: /switch to maintain/i });
     expect(button).toHaveAttribute("type", "button");
@@ -121,13 +151,13 @@ describe("settings: the notice belongs here", () => {
     const { unmount } = render(
       <Harness
         initial={base({ goal: "gain", weight_kg: 70.5, target_weight_kg: 70 })}
-        showReachedNotice
+        maintain={{ averageKg: 70.5, crossed: false }}
       />,
     );
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
     unmount();
 
-    render(<Harness initial={base({ goal: "gain", weight_kg: 65 })} showReachedNotice />);
+    render(<Harness initial={base({ goal: "gain", weight_kg: 65 })} />);
     expect(screen.queryByText(NOTICE)).toBeNull();
     expect(screen.getByText(/you'd reach/i)).toBeInTheDocument();
   });
@@ -162,31 +192,35 @@ const profile = (over: Partial<Profile>): Profile =>
   }) as Profile;
 
 describe("settings, driven through the form", () => {
-  it("shows the notice for 77 kg against a 77.5 kg target, which onboarding would refuse", () => {
-    // The same pair that onboarding blocks: this screen has no form to walk to, and somebody who
-    // has arrived at their target keeps the goal they set.
+  it("carries the route's decision into the form, average included", () => {
     render(
       <ProfileForm
-        profile={profile({ units: "metric", weight_kg: 77, target_weight_kg: 77.5 })}
+        profile={profile({})}
+        maintain={{ averageKg: lbToKg(166.4), crossed: false }}
         onSaved={vi.fn()}
       />,
     );
 
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(screen.getByText(/your 7-day average is 166\.4 lb/i)).toBeInTheDocument();
     expect(screen.queryByText(/within a kilogram of your current weight/i)).toBeNull();
   });
 
-  it("shows the notice for 169.8 lb against a 170 lb target, and no direction error", () => {
-    render(<ProfileForm profile={profile({})} onSaved={vi.fn()} />);
+  it("never decides from the stored weight: 167.2 lb against a 165 lb target stays quiet", () => {
+    // 0.998 kg apart, inside the old one-kilogram Settings check, so this screen used to say
+    // "at your target" while Today's week of weigh-ins did not.
+    render(
+      <ProfileForm
+        profile={profile({ weight_kg: lbToKg(167.2), target_weight_kg: lbToKg(165) })}
+        onSaved={vi.fn()}
+      />,
+    );
 
-    expect(screen.getByText(NOTICE)).toBeInTheDocument();
-    expect(screen.queryByText(/your target is above your current weight/i)).toBeNull();
-    expect(screen.queryByText(/your target is below your current weight/i)).toBeNull();
-    // 1 lb apart, so there is no date to print either.
-    expect(screen.queryByText(/you'd reach/i)).toBeNull();
+    expect(screen.queryByText(NOTICE)).toBeNull();
+    expect(screen.queryByText(/7-day average/i)).toBeNull();
   });
 
-  it("shows the error for 77 kg against an 85 kg lose target, and never the notice", async () => {
+  it("still refuses a target above the current weight, and the notice is not its business", async () => {
     const user = userEvent.setup();
     render(
       <ProfileForm
