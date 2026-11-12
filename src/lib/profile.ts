@@ -223,6 +223,33 @@ const refreshDecision = z.object({
   next_effective_from: z.string(),
 });
 
+/** The trailing week of weigh-ins, as the target refresh sees it. */
+export interface WeightWindow {
+  /** Mean weight over the last 7 days, already rounded by the database. */
+  averageKg: number | null;
+  /** How many weigh-ins that average covers. */
+  readings: number;
+}
+
+/**
+ * The 7-day average weight, without touching the target.
+ *
+ * Same function as the refresh (`target_refresh_needed`), read for a different purpose: the
+ * "Switch to Maintain" notice needs the figure the app already treats as the honest one,
+ * and asking the same function keeps one definition of the window and one rounding rule.
+ * No write, so this is safe to call on every dashboard load.
+ */
+export async function fetchWeightWindow(today: string): Promise<WeightWindow> {
+  const { data, error } = await supabase.rpc("target_refresh_needed", { p_today: today });
+  if (error) throw error;
+
+  const parsed = refreshDecision.safeParse(Array.isArray(data) ? data[0] : data);
+  if (!parsed.success) {
+    throw new Error(`Unexpected shape from target_refresh_needed: ${parsed.error.message}`);
+  }
+  return { averageKg: parsed.data.average_kg, readings: parsed.data.readings };
+}
+
 export interface TargetRefreshResult {
   /** True when a row was written. */
   refreshed: boolean;

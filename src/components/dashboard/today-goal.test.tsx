@@ -1,10 +1,13 @@
 /**
  * The reached-target notice on Today.
  *
- * Driven through the route rather than by calling `targetReached`, because the thing that was
- * wrong was a screen: the maths can be right and the notice still never reach the person. The tap
- * is covered here too, and it is a *save* on this screen — Today has no Save button, so a tap that
- * only changed local state would look like it worked and change nothing.
+ * Driven through the route rather than by calling the maths, because the thing that was wrong was
+ * a screen: a rule can be right and the notice still never reach the person. The tap is covered
+ * here too, and it is a *save* on this screen — Today has no Save button, so a tap that only
+ * changed local state would look like it worked and change nothing.
+ *
+ * The window is a fake, as the model is elsewhere: the 7-day average and its count come from
+ * `target_refresh_needed`, and what the screen does with them is what is under test.
  *
  * Lives outside `src/routes/` so the file-based router never sees it.
  */
@@ -13,20 +16,27 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lbToKg } from "@/lib/units";
+import { saveMaintainDismissal } from "@/lib/maintain-suggestion";
 
 const h = vi.hoisted(() => ({
   saveProfile: vi.fn(),
   invalidate: vi.fn(() => Promise.resolve()),
 }));
 
-/** The latest weigh-in, which is what the notice is decided from. */
+/** The latest weigh-in, which the weight card shows and the notice no longer decides from. */
 let latestWeight = 69.5;
+
+/** The trailing 7-day window the notice is decided from: the average and how many readings. */
+let weightWindow: { averageKg: number | null; readings: number } = {
+  averageKg: 69.5,
+  readings: 5,
+};
 
 /** The profile the route hands the screen. Mutable, because the numbers are the test. */
 let PROFILE = {
   user_id: "user-1",
   timezone: "UTC",
-  units: "metric" as const,
+  units: "metric" as "metric" | "imperial",
   display_name: "Aman",
   goal: "lose" as const,
   weight_kg: 72,
@@ -79,6 +89,7 @@ vi.mock("@/lib/dashboard", async (importOriginal) => ({
 vi.mock("@/lib/profile", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/profile")>()),
   refreshTargetIfStale: async () => ({ refreshed: false }),
+  fetchWeightWindow: async () => weightWindow,
   saveProfileWithTargets: h.saveProfile,
 }));
 
@@ -88,6 +99,10 @@ import { Route } from "@/routes/_authenticated/today";
 
 const Page = (Route as unknown as { options: { component: React.ComponentType } }).options
   .component;
+
+/** Today, as `useToday` resolves it for a UTC profile. */
+const TODAY = new Date().toISOString().slice(0, 10);
+const YESTERDAY = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
 function renderToday() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -100,8 +115,10 @@ function renderToday() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   h.saveProfile.mockResolvedValue(undefined);
   latestWeight = 69.5;
+  weightWindow = { averageKg: 69.5, readings: 5 };
   PROFILE = {
     user_id: "user-1",
     timezone: "UTC",
@@ -122,36 +139,61 @@ describe("the target already being behind you", () => {
     expect(screen.getByText(/switch to maintain to stop the deficit/i)).toBeInTheDocument();
   });
 
-  it("stays quiet while the target is still ahead", async () => {
-    latestWeight = 75;
+  it("shows the 7-day average it decided from", async () => {
+    renderToday();
+
+    expect(await screen.findByText(/your 7-day average is 69\.5 kg/i)).toBeInTheDocument();
+  });
+
+  it("prints that average in the reader's own units", async () => {
+    PROFILE = { ...PROFILE, units: "imperial", target_weight_kg: lbToKg(170) };
+    weightWindow = { averageKg: lbToKg(169.4), readings: 4 };
 
     renderToday();
 
-    // Wait for the screen to have drawn its numbers, then check the notice never arrived.
+    expect(await screen.findByText(/your 7-day average is 169\.4 lb/i)).toBeInTheDocument();
+  });
+
+  it("stays quiet on one low weigh-in", async () => {
+    // The bug this replaces: a single 65 kg morning was enough to say the target was reached.
+    latestWeight = 65;
+    weightWindow = { averageKg: 65, readings: 1 };
+
+    renderToday();
+
     expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
     expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
   });
 
-  it("stays quiet when the target is on the wrong side, which is the form's error to report", async () => {
-    // 77 kg against an 85 kg lose target: this screen has no business saying "at your target"
-    // next to it, which is the pair of messages the distance rule separated.
-    latestWeight = 77;
+  it("stays quiet while the average is still ahead", async () => {
+    weightWindow = { averageKg: 75, readings: 5 };
+
+    renderToday();
+
+    expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
+  });
+
+  it('says "past", not "at", when the average is well beyond the target', async () => {
+    // 77 kg against an 85 kg lose target: the numbers cannot tell an overshoot from a target
+    // typed above the current weight, so the sentence does not claim to be at a target it is
+    // eight kilos under. Settings is where that direction is an error.
+    weightWindow = { averageKg: 77, readings: 5 };
     PROFILE = { ...PROFILE, target_weight_kg: 85 };
 
     renderToday();
 
-    expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
+    expect(await screen.findByText(/you're past your target weight/i)).toBeInTheDocument();
     expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
     expect(screen.queryByText(/your target is above your current weight/i)).toBeNull();
   });
 
-  it("says so for 169.8 lb against a 170 lb target, a pound that is 90 g", async () => {
-    latestWeight = lbToKg(169.8);
-    PROFILE = { ...PROFILE, target_weight_kg: lbToKg(170) };
+  it("says so when the average has crossed the target", async () => {
+    weightWindow = { averageKg: 69.2, readings: 3 };
 
     renderToday();
 
-    expect(await screen.findByText(/you're at your target weight/i)).toBeInTheDocument();
+    expect(await screen.findByText(/you're past your target weight/i)).toBeInTheDocument();
   });
 
   it("saves Maintain on one tap, because there is no Save button on this screen", async () => {
@@ -176,5 +218,45 @@ describe("the target already being behind you", () => {
     await screen.findByText(/you're at your target weight/i);
 
     expect(h.saveProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe("putting the suggestion away", () => {
+  it("hides it for a week without changing the goal", async () => {
+    const user = userEvent.setup();
+    renderToday();
+
+    await user.click(await screen.findByRole("button", { name: /not now/i }));
+
+    expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
+    expect(h.saveProfile).not.toHaveBeenCalled();
+    expect(window.localStorage.length).toBe(1);
+  });
+
+  it("stays hidden on the next visit while the week is running", async () => {
+    saveMaintainDismissal("user-1", {
+      targetKg: 70,
+      averageKg: 69.5,
+      dismissedOn: YESTERDAY,
+    });
+
+    renderToday();
+
+    expect(await screen.findByText(/of 2,000 kcal/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you're at your target weight/i)).toBeNull();
+  });
+
+  it("comes back when the average crosses the target inside the week", async () => {
+    // Dismissed while still 0.4 kg short. Crossing is the news the dismissal was waiting for.
+    saveMaintainDismissal("user-1", {
+      targetKg: 70,
+      averageKg: 70.4,
+      dismissedOn: TODAY,
+    });
+    weightWindow = { averageKg: 69.9, readings: 5 };
+
+    renderToday();
+
+    expect(await screen.findByText(/you're at your target weight/i)).toBeInTheDocument();
   });
 });

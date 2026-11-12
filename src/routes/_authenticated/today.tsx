@@ -9,9 +9,19 @@ import { MealTimeline } from "@/components/dashboard/MealTimeline";
 import { WeightEntry } from "@/components/dashboard/WeightEntry";
 import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import { EditMealSheet } from "@/components/review/EditMealSheet";
-import { localDateString, refreshTargetIfStale, saveProfileWithTargets } from "@/lib/profile";
+import {
+  fetchWeightWindow,
+  localDateString,
+  refreshTargetIfStale,
+  saveProfileWithTargets,
+} from "@/lib/profile";
 import { formFromProfile, toProfileInsert } from "@/lib/onboarding";
-import { targetProximity } from "@/lib/targets";
+import {
+  maintainSuggestion,
+  readMaintainDismissal,
+  saveMaintainDismissal,
+  type MaintainDismissal,
+} from "@/lib/maintain-suggestion";
 import { useToday } from "@/hooks/use-today";
 import {
   VERDICT_DAYS,
@@ -50,6 +60,13 @@ function TodayPage() {
    * previous meal's items for a frame.
    */
   const [editingMeal, setEditingMeal] = useState<TimelineMeal | null>(null);
+  /**
+   * The suggestion this device has already been shown and put away, or null.
+   *
+   * Read in an effect rather than during render: it lives in localStorage, which does not
+   * exist on the server, and the first paint has to be the same on both sides.
+   */
+  const [dismissal, setDismissal] = useState<MaintainDismissal | null>(null);
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -80,19 +97,38 @@ function TodayPage() {
   });
 
   /**
-   * How near the goal's target this person is, so the screen can say they have arrived instead of
-   * quietly keeping a deficit they no longer need.
+   * The trailing 7-day average, which is what the notice is decided from now.
    *
-   * The latest weigh-in answers it when there is one, because that is the number the app uses
-   * everywhere else; the profile's stored weight is the fallback for somebody who has never logged
-   * one. A target on the wrong side is an error the settings form has to fix, not a notice: it is
-   * not this screen's to report, and saying "at your target" next to it was the bug.
+   * The latest weigh-in is one noisy estimate; a single low morning used to be enough to
+   * say the target had been reached. The key shares the `weights` prefix, so logging a
+   * weigh-in refetches this without a second invalidation to remember.
    */
-  const latestWeightKg = weights.data?.[0]?.weight_kg ?? profile?.weight_kg ?? null;
-  const proximity =
+  const weightWindow = useQuery({
+    queryKey: ["weights", userId, today, "7d"],
+    queryFn: () => fetchWeightWindow(today),
+    enabled,
+  });
+
+  useEffect(() => {
+    setDismissal(userId === "" ? null : readMaintainDismissal(userId));
+  }, [userId]);
+
+  /**
+   * Whether to say the target has been reached, from the week of weigh-ins rather than the last
+   * one, and not at all when a dismissal is still in force. The rules themselves live in
+   * `maintainSuggestion`, so the screen only decides what to draw.
+   */
+  const suggestion =
     profile === null || profile === undefined
       ? null
-      : targetProximity(profile.goal, latestWeightKg, profile.target_weight_kg ?? null);
+      : maintainSuggestion({
+          goal: profile.goal,
+          averageKg: weightWindow.data?.averageKg ?? null,
+          readings: weightWindow.data?.readings ?? 0,
+          targetKg: profile.target_weight_kg ?? null,
+          dismissed: dismissal,
+          today,
+        });
 
   function refreshDay(): void {
     void queryClient.invalidateQueries({ queryKey: ["daily-totals"] });
@@ -249,10 +285,22 @@ function TodayPage() {
           </Card>
 
           {/* Under the ring, because that is the number the deficit is baked into. */}
-          {proximity === "at_target" && (
+          {suggestion !== null && (
             <TargetReachedNotice
+              averageKg={suggestion.averageKg}
+              crossed={suggestion.crossed}
+              units={unitSystem}
               pending={switchToMaintain.isPending}
               onSwitch={() => switchToMaintain.mutate()}
+              onDismiss={() => {
+                const record: MaintainDismissal = {
+                  targetKg: profile?.target_weight_kg ?? 0,
+                  averageKg: suggestion.averageKg,
+                  dismissedOn: today,
+                };
+                saveMaintainDismissal(userId, record);
+                setDismissal(record);
+              }}
             />
           )}
 

@@ -106,6 +106,7 @@ vi.mock("@/lib/dashboard", async (importOriginal) => ({
 vi.mock("@/lib/profile", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/profile")>()),
   refreshTargetIfStale: async () => ({ refreshed: false }),
+  fetchWeightWindow: async () => ({ averageKg: null, readings: 0 }),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
