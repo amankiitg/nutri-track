@@ -172,6 +172,63 @@ export async function fetchTrialStats(): Promise<TrialStats> {
   };
 }
 
+const trialListRow = z.object({
+  email: z.string(),
+  source: z.enum(["code", "link"]),
+  invited: z.boolean(),
+  scans_used: z.number(),
+  scans_limit: z.number(),
+  first_seen: z.string(),
+  last_active: z.string().nullable(),
+  requested_after: z.boolean(),
+});
+
+export interface TrialUserRow {
+  email: string;
+  /** How they first arrived: the code form on /try, or a /t/ link. */
+  source: "code" | "link";
+  invited: boolean;
+  scansUsed: number;
+  scansLimit: number;
+  firstSeen: string;
+  lastActive: string | null;
+  /** True when they asked to join after the trial started. */
+  requestedAfter: boolean;
+}
+
+/**
+ * The recent trials, newest first: at most 50, filtered by the search text.
+ *
+ * One RPC and no other read path. trial_users is service-role only, so the admin page
+ * cannot query it directly, and the function behind this makes the admin check itself.
+ * The result is funnel metadata only: no meal text, no photos.
+ */
+export async function fetchTrialList(search: string): Promise<TrialUserRow[]> {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  const term = search.trim();
+  const { data, error } = await rpc("admin_trial_list", {
+    // Null rather than an empty string, so the database sees "no filter" as one value.
+    p_search: term === "" ? null : term,
+    p_limit: 50,
+  });
+  if (error) throw new Error(readableAdminError(error.message));
+  const rows = z.array(trialListRow).safeParse(data);
+  if (!rows.success) throw new Error("The trial list came back in an unexpected shape.");
+  return rows.data.map((row) => ({
+    email: row.email,
+    source: row.source,
+    invited: row.invited,
+    scansUsed: row.scans_used,
+    scansLimit: row.scans_limit,
+    firstSeen: row.first_seen,
+    lastActive: row.last_active,
+    requestedAfter: row.requested_after,
+  }));
+}
+
 /** Adds an address to the list. Returns the normalised form that was stored. */
 export async function addInvite(email: string, addedBy: string): Promise<string> {
   const normalized = normalizeEmail(email);

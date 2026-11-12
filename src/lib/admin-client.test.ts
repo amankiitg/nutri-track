@@ -21,6 +21,7 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchIsAdmin,
+  fetchTrialList,
   removeInvite,
 } from "./admin";
 
@@ -188,6 +189,62 @@ describe("approveRequest", () => {
     client.rpc.mockResolvedValue({ data: "friend@example.com", error: null });
     expect(await approveRequest("req-1")).toBe("friend@example.com");
     expect(client.rpc).toHaveBeenCalledWith("admin_approve_request", { p_request: "req-1" });
+  });
+});
+
+describe("fetchTrialList", () => {
+  const ROW = {
+    email: "priya@example.com",
+    source: "link",
+    invited: true,
+    scans_used: 7,
+    scans_limit: 10,
+    first_seen: "2026-11-12T09:00:00.000Z",
+    last_active: null,
+    requested_after: false,
+  };
+
+  it("maps the rows and asks for no filter when the box is empty", async () => {
+    client.rpc.mockResolvedValue({ data: [ROW], error: null });
+
+    expect(await fetchTrialList("   ")).toEqual([
+      {
+        email: "priya@example.com",
+        source: "link",
+        invited: true,
+        scansUsed: 7,
+        scansLimit: 10,
+        firstSeen: "2026-11-12T09:00:00.000Z",
+        lastActive: null,
+        requestedAfter: false,
+      },
+    ]);
+    // Null, not an empty string: one value means "no filter" to the function.
+    expect(client.rpc).toHaveBeenCalledWith("admin_trial_list", {
+      p_search: null,
+      p_limit: 50,
+    });
+  });
+
+  it("passes the trimmed search through the one admin RPC", async () => {
+    client.rpc.mockResolvedValue({ data: [], error: null });
+
+    await fetchTrialList("  Priya@Example.com ");
+
+    expect(client.rpc).toHaveBeenCalledWith("admin_trial_list", {
+      p_search: "Priya@Example.com",
+      p_limit: 50,
+    });
+  });
+
+  it("refuses to guess when the shape is wrong", async () => {
+    client.rpc.mockResolvedValue({ data: [{ not: "a trial" }], error: null });
+    await expect(fetchTrialList("")).rejects.toThrow(/unexpected shape/);
+  });
+
+  it("turns the admin-only refusal into something readable", async () => {
+    client.rpc.mockResolvedValue({ data: null, error: { message: "admin only" } });
+    await expect(fetchTrialList("")).rejects.toThrow(/needs an admin account/);
   });
 });
 

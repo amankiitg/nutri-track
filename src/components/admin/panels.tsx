@@ -9,7 +9,7 @@
  * for a non-admin, so a bug in the route cannot turn this into a leak — it can only show
  * an error.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchSpend,
+  fetchTrialList,
   fetchTrialStats,
   formatCount,
   formatDay,
@@ -612,6 +613,23 @@ export function TrialCard() {
     retry: false,
   });
 
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+
+  // A short wait, so typing an address is one request rather than one per keystroke.
+  // 250ms is chosen, not measured: long enough for ordinary typing, short enough that
+  // the list still feels live.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setTerm(search.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const trials = useQuery({
+    queryKey: ["admin-trial-list", term],
+    queryFn: () => fetchTrialList(term),
+    retry: false,
+  });
+
   return (
     <Section
       id="trials"
@@ -639,6 +657,55 @@ export function TrialCard() {
             </p>
           </>
         )}
+
+        <div className="space-y-2 border-t border-border pt-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">Recent trials</h3>
+            <p className="text-xs text-muted-foreground">
+              The last 50, newest first. A trial keeps no meals and no photos, so this is the whole
+              record.
+            </p>
+          </div>
+
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by email"
+            inputMode="email"
+            autoComplete="off"
+            aria-label="Search recent trials"
+            className="text-base"
+          />
+
+          {trials.isPending && <p className="text-sm text-muted-foreground">Loading the trials…</p>}
+          {trials.isError && <PanelError message="Could not load the trial list." />}
+          {trials.isSuccess && trials.data.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              {term === "" ? "No trials yet." : "No trial matches that search."}
+            </p>
+          )}
+
+          {trials.isSuccess && trials.data.length > 0 && (
+            <ul className="divide-y divide-border">
+              {trials.data.map((trial) => (
+                <li key={trial.email} className="space-y-0.5 py-2">
+                  <p className="truncate text-sm font-medium">{trial.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {trial.source === "link" ? "/t/ link" : "Email code"} · Invited:{" "}
+                    {trial.invited ? "yes" : "no"} · {trial.scansUsed} of {trial.scansLimit} scans
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    First seen {formatDay(trial.firstSeen, "UTC")} · Last active{" "}
+                    {trial.lastActive === null ? "never" : formatDay(trial.lastActive, "UTC")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Asked to join afterwards: {trial.requestedAfter ? "yes" : "no"}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </CardContent>
     </Section>
   );

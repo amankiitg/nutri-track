@@ -128,6 +128,7 @@ beforeEach(() => {
   client.rpc.mockImplementation((name: string) => {
     if (name === "admin_invites") return Promise.resolve({ data: INVITE_ROWS, error: null });
     if (name === "admin_spend") return Promise.resolve({ data: [], error: null });
+    if (name === "admin_trial_list") return Promise.resolve({ data: [], error: null });
     if (name === "admin_approve_request")
       return Promise.resolve({ data: "hopeful@example.com", error: null });
     return Promise.resolve({ data: null, error: null });
@@ -495,6 +496,7 @@ describe("the trial card", () => {
           error: null,
         });
       }
+      if (name === "admin_trial_list") return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
 
@@ -506,13 +508,109 @@ describe("the trial card", () => {
   });
 
   it("still refuses a payload that is not a row", async () => {
-    client.rpc.mockImplementation(() => Promise.resolve({ data: [{}], error: null }));
+    client.rpc.mockImplementation((name: string) =>
+      name === "admin_trial_stats"
+        ? Promise.resolve({ data: [{}], error: null })
+        : Promise.resolve({ data: [], error: null }),
+    );
     const user = userEvent.setup();
 
     renderWithQuery(<TrialCard />);
     await openSection(user, /^Trials/);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the trial figures.");
+  });
+
+  const TRIAL_ROWS = [
+    {
+      email: "priya@example.com",
+      source: "link",
+      invited: true,
+      scans_used: 7,
+      scans_limit: 10,
+      first_seen: "2026-11-10T09:00:00.000Z",
+      last_active: "2026-11-12T08:00:00.000Z",
+      requested_after: true,
+    },
+    {
+      email: "sam@example.com",
+      source: "code",
+      invited: false,
+      scans_used: 2,
+      scans_limit: 10,
+      first_seen: "2026-11-11T09:00:00.000Z",
+      last_active: null,
+      requested_after: false,
+    },
+  ];
+
+  /** Stats plus a list that answers the search argument the way the RPC would. */
+  function trialRows(): void {
+    client.rpc.mockImplementation((name: string, args?: { p_search?: string | null }) => {
+      if (name === "admin_trial_stats") {
+        return Promise.resolve({
+          data: [{ scans_today: 9, budget: 200, user_count: 2 }],
+          error: null,
+        });
+      }
+      if (name === "admin_trial_list") {
+        const term = args?.p_search ?? "";
+        return Promise.resolve({
+          data: term === "" ? TRIAL_ROWS : TRIAL_ROWS.filter((row) => row.email.includes(term)),
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+  }
+
+  it("shows one row per trial with how they arrived, scans, dates and the later request", async () => {
+    trialRows();
+    const user = userEvent.setup();
+
+    renderWithQuery(<TrialCard />);
+    await openSection(user, /^Trials/);
+
+    expect(await screen.findByText("priya@example.com")).toBeInTheDocument();
+    // The link route and the code route are different funnels, so the row says which.
+    expect(screen.getByText(/\/t\/ link · Invited: yes · 7 of 10 scans/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/First seen 10 Nov 2026 · Last active 12 Nov 2026/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Asked to join afterwards: yes")).toBeInTheDocument();
+
+    expect(screen.getByText("sam@example.com")).toBeInTheDocument();
+    expect(screen.getByText(/Email code · Invited: no · 2 of 10 scans/)).toBeInTheDocument();
+    // Never active is a fact about the trial, not a missing value to hide.
+    expect(screen.getByText(/Last active never/)).toBeInTheDocument();
+    expect(screen.getByText("Asked to join afterwards: no")).toBeInTheDocument();
+  });
+
+  it("filters the list through the search box, through the RPC", async () => {
+    trialRows();
+    const user = userEvent.setup();
+
+    renderWithQuery(<TrialCard />);
+    await openSection(user, /^Trials/);
+    expect(await screen.findByText("sam@example.com")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search recent trials"), "priya");
+
+    await waitFor(
+      () => {
+        expect(screen.queryByText("sam@example.com")).toBeNull();
+        expect(screen.getByText("priya@example.com")).toBeInTheDocument();
+      },
+      { timeout: 2000 },
+    );
+    await waitFor(
+      () =>
+        expect(client.rpc).toHaveBeenCalledWith("admin_trial_list", {
+          p_search: "priya",
+          p_limit: 50,
+        }),
+      { timeout: 2000 },
+    );
   });
 });
 
