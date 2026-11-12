@@ -56,7 +56,7 @@ alter table public.invite_requests
 -- ---------------------------------------------------------------------------
 -- 3. One address, one identity.
 --
--- Gmail treats `amank.iitg+nt@gmail.com` and `amankiitg@gmail.com` as the same mailbox, and so does
+-- Gmail treats `test.user+nt@gmail.com` and `testuser@gmail.com` as the same mailbox, and so does
 -- Google sign-in. An invite list that does not would let the same person request twice, be invited
 -- twice, and be refused at the door under one spelling while the list holds the other. So the
 -- comparison everywhere is against a canonical form.

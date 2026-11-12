@@ -21,8 +21,8 @@ describe("the invite request mailto", () => {
   });
 
   it("encodes a plus, which is a legal character in an address and not a space", () => {
-    expect(inviteRequestMailto("aman+nutritrack@gmail.com")).toContain(
-      "Please%20invite%20aman%2Bnutritrack%40gmail.com",
+    expect(inviteRequestMailto("test.user+nutritrack@gmail.com")).toContain(
+      "Please%20invite%20test.user%2Bnutritrack%40gmail.com",
     );
   });
 

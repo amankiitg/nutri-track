@@ -98,10 +98,10 @@ beforeEach(() => {
 describe("addInvite", () => {
   it("normalises before it sends, whatever the caller passes", async () => {
     // The panel happens to normalise first. This is the layer that must not rely on that.
-    const stored = await addInvite("  Aman.IITG@Gmail.COM ", "admin-1");
+    const stored = await addInvite("  Test.User@Gmail.COM ", "admin-1");
 
-    expect(stored).toBe("aman.iitg@gmail.com");
-    expect(inserted).toEqual([{ email: "aman.iitg@gmail.com", added_by: "admin-1" }]);
+    expect(stored).toBe("test.user@gmail.com");
+    expect(inserted).toEqual([{ email: "test.user@gmail.com", added_by: "admin-1" }]);
   });
 
   it("returns the stored form, so the caller can say what happened", async () => {
@@ -117,8 +117,8 @@ describe("addInvite", () => {
 describe("removeInvite", () => {
   it("deletes by the normalised address, which is how it was stored", async () => {
     // Deleting by the raw string would silently match nothing and look like it worked.
-    await removeInvite("  Aman.IITG@Gmail.COM ");
-    expect(deletedBy).toEqual([["email", "aman.iitg@gmail.com"]]);
+    await removeInvite("  Test.User@Gmail.COM ");
+    expect(deletedBy).toEqual([["email", "test.user@gmail.com"]]);
   });
 });
 

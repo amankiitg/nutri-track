@@ -27,11 +27,11 @@ import {
 
 describe("normalizeEmail", () => {
   it("matches the rule the database enforces: lower(trim(email))", () => {
-    expect(normalizeEmail("  Aman.IITG@Gmail.COM ")).toBe("aman.iitg@gmail.com");
+    expect(normalizeEmail("  Test.User@Gmail.COM ")).toBe("test.user@gmail.com");
   });
 
   it("leaves an already normal address alone", () => {
-    expect(normalizeEmail("aman.iitg@gmail.com")).toBe("aman.iitg@gmail.com");
+    expect(normalizeEmail("test.user@gmail.com")).toBe("test.user@gmail.com");
   });
 
   it("does not strip dots, which is a Gmail quirk the list does not share", () => {
@@ -41,9 +41,12 @@ describe("normalizeEmail", () => {
 });
 
 describe("isPlausibleEmail", () => {
-  it.each(["aman@example.com", "A.B+tag@sub.example.co.uk", " a@b.co "])("accepts %s", (input) => {
-    expect(isPlausibleEmail(input)).toBe(true);
-  });
+  it.each(["test.user@example.com", "A.B+tag@sub.example.co.uk", " a@b.co "])(
+    "accepts %s",
+    (input) => {
+      expect(isPlausibleEmail(input)).toBe(true);
+    },
+  );
 
   it.each([
     ["", "empty"],
@@ -57,7 +60,7 @@ describe("isPlausibleEmail", () => {
   });
 
   it("is applied to the normalised form, so padding cannot sneak past it", () => {
-    expect(isPlausibleEmail("  aman@example.com  ")).toBe(true);
+    expect(isPlausibleEmail("  test.user@example.com  ")).toBe(true);
     expect(isPlausibleEmail("  aman @example.com  ")).toBe(false);
   });
 });
@@ -65,7 +68,7 @@ describe("isPlausibleEmail", () => {
 describe("presentSpend", () => {
   const base: UserSpend = {
     userId: "u1",
-    email: "aman@example.com",
+    email: "test.user@example.com",
     timeZone: "America/New_York",
     callsToday: 11,
     resetsToday: "2026-09-12T04:00:00.000Z",

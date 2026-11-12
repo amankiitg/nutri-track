@@ -43,7 +43,7 @@ const client = supabase as unknown as {
 
 const INVITE_ROWS = [
   {
-    email: "aman.iitg@gmail.com",
+    email: "test.user@gmail.com",
     added_by: null,
     created_at: "2026-09-07T12:00:00.000Z",
     signed_up_at: "2026-09-09T12:00:00.000Z",
@@ -680,7 +680,7 @@ describe("the spend panel", () => {
           last_call_at: "2026-09-07T18:02:00.000Z",
         });
         return Promise.resolve({
-          data: [row("user-1", "aman.iitg@gmail.com"), row("user-2", "friend@example.com")],
+          data: [row("user-1", "test.user@gmail.com"), row("user-2", "friend@example.com")],
           error: null,
         });
       }

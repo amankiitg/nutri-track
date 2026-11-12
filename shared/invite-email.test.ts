@@ -24,8 +24,8 @@ import {
   TRIAL_LINE,
 } from "./invite-email";
 
-const TAGGED = "amank.iitg+nt1@gmail.com";
-const TAGGED_ENCODED = "amank.iitg%2Bnt1%40gmail.com";
+const TAGGED = "test.user+nt1@gmail.com";
+const TAGGED_ENCODED = "test.user%2Bnt1%40gmail.com";
 
 describe("the approval", () => {
   it("puts the address in the link, in the button and in the plain text", () => {

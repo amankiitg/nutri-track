@@ -420,17 +420,17 @@ describe("the page as a whole", () => {
 
 describe("an address in the link", () => {
   it("prefills it and continues without anybody pressing Continue", async () => {
-    h.search = { email: "Amank.IITG@Gmail.com" };
+    h.search = { email: "Test.User@Gmail.com" };
     entryState("has_account");
     render(<Page />);
 
     // The approval email's button lands here, so the page has to carry on by itself.
     expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
-    expect(h.rpc).toHaveBeenCalledWith("auth_entry_state", { p_email: "amank.iitg@gmail.com" });
+    expect(h.rpc).toHaveBeenCalledWith("auth_entry_state", { p_email: "test.user@gmail.com" });
   });
 
   it("asks the database exactly once, however many times the page renders", async () => {
-    h.search = { email: "amank.iitg@gmail.com" };
+    h.search = { email: "test.user@gmail.com" };
     entryState("has_account");
     const { rerender } = render(<Page />);
     await screen.findByRole("heading", { name: "Welcome back" });
