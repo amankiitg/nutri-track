@@ -666,7 +666,7 @@ export function TrialCard() {
               aria-hidden="true"
             />
             <p className="text-xs text-muted-foreground">
-              {stats.data.userCount} trial user{stats.data.userCount === 1 ? "" : "s"}
+              {stats.data.userCount} trial{stats.data.userCount === 1 ? "" : "s"} recorded
             </p>
           </>
         )}

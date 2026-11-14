@@ -502,7 +502,7 @@ describe("the trial card", () => {
     renderWithQuery(<TrialCard />);
 
     expect(await screen.findByText("47 of 200 scans used today")).toBeInTheDocument();
-    expect(screen.getByText("12 trial users")).toBeInTheDocument();
+    expect(screen.getByText("12 trials recorded")).toBeInTheDocument();
     expect(screen.getByText("12 started, 47 scans today.")).toBeInTheDocument();
   });
 
