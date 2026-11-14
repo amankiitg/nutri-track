@@ -1,17 +1,21 @@
 /**
- * The signed trial token: an HMAC over an email, an expiry, a version and (for a personal
- * link) a first name, valid for 30 days.
+ * The signed trial token: an HMAC over either an email or an anonymous device id, an
+ * expiry, a version and (for a personal link) a first name, valid for 30 days.
  *
- * Issued by the server once a visitor proves their email code, or by an admin as a
- * personal link (/t/<token>, by hand or in an invite email), and kept in localStorage so
- * a returning visitor skips the email step.
+ * Two shapes share one signature and one secret:
  *
- * The version is the revocation. It must equal trial_users.token_version, which the
- * database checks on every scan; revoking bumps that column, so every token already
- * issued for the mailbox stops working. A token signed before versions existed has no
- * `v` and reads as 0, the column's default, so it keeps working until a revoke. The browser never has the signing key; it
- * only carries the token back, and the server re-checks the signature and the expiry
- * on every use.
+ *   email token     issued after a visitor proves an email code, or by an admin as a
+ *                   personal link (/t/<token>), and kept in localStorage. The email is
+ *                   the identity, and its version is the mailbox's revocation.
+ *   device token    issued after Turnstile to a browser that gave no email. It names a
+ *                   trial_devices row, which is the scan counter. Its version is that
+ *                   row's revoke, unused today but the same mechanism.
+ *
+ * The browser never has the signing key; it only carries the token back, and the server
+ * re-checks the signature and the expiry on every use. Verification returns a
+ * discriminated result so the routes cannot mistake one kind for the other: an email
+ * token can never be spent as a device, and a device token can never be mistaken for a
+ * mailbox.
  *
  * Pure and clock-injectable, so signing and expiry are unit tested without a key in a
  * fixture or a wall clock to wait on.
@@ -30,9 +34,26 @@ export interface TrialTokenPayload {
   n?: string;
 }
 
+export interface AnonymousTrialTokenPayload {
+  /** The trial_devices row this browser may spend scans from. */
+  a: string;
+  exp: number;
+  /** trial_devices.token_version when the token was signed. */
+  v: number;
+}
+
 export interface TrialTokenOptions {
   version?: number;
   firstName?: string | null;
+}
+
+function signPayload(
+  payload: TrialTokenPayload | AnonymousTrialTokenPayload,
+  secret: string,
+): string {
+  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  return payloadB64 + "." + signature;
 }
 
 export function signTrialToken(
@@ -48,17 +69,42 @@ export function signTrialToken(
   };
   const name = options.firstName?.trim() ?? "";
   if (name !== "") payload.n = name;
-  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const signature = createHmac("sha256", secret).update(payloadB64).digest("base64url");
-  return payloadB64 + "." + signature;
+  return signPayload(payload, secret);
 }
 
+/**
+ * Signs an anonymous trial token. The device id is a trial_devices primary key, which
+ * the database issued, so an empty one is a bug here rather than something to sign.
+ */
+export function signAnonymousTrialToken(
+  deviceId: string,
+  secret: string,
+  nowMs: number = Date.now(),
+  options: TrialTokenOptions = {},
+): string {
+  const id = deviceId.trim();
+  if (id === "") throw new Error("cannot sign an anonymous trial token without a device id");
+  return signPayload(
+    { a: id, exp: Math.floor(nowMs / 1000) + TRIAL_TOKEN_TTL_SECONDS, v: options.version ?? 0 },
+    secret,
+  );
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type TrialTokenResult =
-  | { ok: true; email: string; version: number; firstName: string | null }
+  | {
+      ok: true;
+      kind: "email";
+      email: string;
+      version: number;
+      firstName: string | null;
+    }
+  | { ok: true; kind: "anonymous"; deviceId: string; version: number }
   | { ok: false; reason: "invalid" | "expired" };
 
 /**
- * Verifies the token and returns the email it names.
+ * Verifies the token and returns the identity it names.
  *
  * The signature is compared in constant time, so a wrong key cannot be found by
  * timing. The expiry is checked against the injected clock, so a test can freeze it.
@@ -88,10 +134,13 @@ export function verifyTrialToken(
     return { ok: false, reason: "invalid" };
   }
 
-  const record = payload as { email?: unknown; exp?: unknown; v?: unknown; n?: unknown };
-  if (typeof record.email !== "string" || record.email === "") {
-    return { ok: false, reason: "invalid" };
-  }
+  const record = payload as {
+    email?: unknown;
+    a?: unknown;
+    exp?: unknown;
+    v?: unknown;
+    n?: unknown;
+  };
   if (typeof record.exp !== "number" || record.exp <= Math.floor(nowMs / 1000)) {
     return { ok: false, reason: "expired" };
   }
@@ -102,7 +151,26 @@ export function verifyTrialToken(
   if (typeof version !== "number" || !Number.isInteger(version) || version < 0) {
     return { ok: false, reason: "invalid" };
   }
-  const firstName = typeof record.n === "string" && record.n.trim() !== "" ? record.n : null;
 
-  return { ok: true, email: record.email, version, firstName };
+  // Exactly one identity. A payload carrying both, or neither, is not one this service
+  // signs, and treating it as either would let a hand-built token choose its own checks.
+  const hasEmail = typeof record.email === "string" && record.email !== "";
+  const hasDevice = typeof record.a === "string" && record.a !== "";
+  if (hasEmail === hasDevice) return { ok: false, reason: "invalid" };
+
+  if (hasDevice) {
+    if (typeof record.a !== "string" || !UUID_PATTERN.test(record.a)) {
+      return { ok: false, reason: "invalid" };
+    }
+    return { ok: true, kind: "anonymous", deviceId: record.a, version };
+  }
+
+  const firstName = typeof record.n === "string" && record.n.trim() !== "" ? record.n : null;
+  return {
+    ok: true,
+    kind: "email",
+    email: record.email as string,
+    version,
+    firstName,
+  };
 }

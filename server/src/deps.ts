@@ -34,10 +34,10 @@ export function createProductionDeps(config: Config): AppDeps {
       : null;
 
   // The trial store talks to PostgREST as anon; it is always built, because the trial
-  // routes gate on trialAvailable(config) before using it. It carries the trial server
-  // secret, which the database functions compare against the Vault copy. The email
-  // client is null without RESEND_API_KEY, which is one of the things trialAvailable
-  // requires.
+  // routes gate on their secrets before using it. It carries the trial server secret,
+  // which the database functions compare against the Vault copy. The email client is
+  // null without RESEND_API_KEY; only the email flow needs it, and only when
+  // TRIAL_REQUIRE_EMAIL is true.
   const trial = createTrialStore(authClient, config.TRIAL_SERVER_SECRET);
   const email =
     config.RESEND_API_KEY !== undefined ? createResendClient(config.RESEND_API_KEY) : null;

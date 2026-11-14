@@ -683,7 +683,7 @@ export function TrialCard() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by email"
+            placeholder="Search by email, or anonymous"
             inputMode="email"
             autoComplete="off"
             aria-label="Search recent trials"
@@ -702,20 +702,30 @@ export function TrialCard() {
 
           {trials.isSuccess && trials.data.length > 0 && (
             <ul className="divide-y divide-border">
-              {trials.data.map((trial) => (
-                <li key={trial.email} className="space-y-0.5 py-2">
-                  <p className="truncate text-sm font-medium">{trial.email}</p>
+              {trials.data.map((trial, index) => (
+                <li
+                  key={trial.email ?? "anonymous-" + trial.firstSeen + "-" + index}
+                  className="space-y-0.5 py-2"
+                >
+                  <p className="truncate text-sm font-medium">{trial.email ?? "Anonymous"}</p>
                   <p className="text-xs text-muted-foreground">
-                    {trial.source === "link" ? "/t/ link" : "Email code"} · Invited:{" "}
-                    {trial.invited ? "yes" : "no"} · {trial.scansUsed} of {trial.scansLimit} scans
+                    {trial.source === "anonymous"
+                      ? "Anonymous trial"
+                      : trial.source === "link"
+                        ? "/t/ link"
+                        : "Email code"}{" "}
+                    · Invited: {trial.invited ? "yes" : "no"} · {trial.scansUsed} of{" "}
+                    {trial.scansLimit} scans
                   </p>
                   <p className="text-xs text-muted-foreground">
                     First seen {formatDay(trial.firstSeen, "UTC")} · Last active{" "}
                     {trial.lastActive === null ? "never" : formatDay(trial.lastActive, "UTC")}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Asked to join afterwards: {trial.requestedAfter ? "yes" : "no"}
-                  </p>
+                  {trial.source !== "anonymous" && (
+                    <p className="text-xs text-muted-foreground">
+                      Asked to join afterwards: {trial.requestedAfter ? "yes" : "no"}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

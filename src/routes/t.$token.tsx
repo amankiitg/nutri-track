@@ -45,7 +45,13 @@ export function TrialLink({ token }: { token: string }) {
       (result) => {
         if (!active) return;
         if (result.status === "ok") {
-          storeTrial({ token, email: result.email, invited: result.invited });
+          storeTrial({
+            token,
+            email: result.email,
+            invited: result.invited,
+            anonymous: false,
+            deviceId: null,
+          });
           setState({ kind: "ready", firstName: result.firstName });
         } else {
           setState({ kind: "expired" });

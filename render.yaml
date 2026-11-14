@@ -87,6 +87,11 @@ services:
       # under the name 'trial_server_secret'. The two must agree or every call fails.
       - key: TRIAL_SERVER_SECRET
         sync: false
+      # Whether /try asks for an email and a 6-digit code. False (the default) is the
+      # anonymous trial: Turnstile, then a token, with no email and no Resend. True
+      # restores the old flow exactly and makes RESEND_API_KEY required.
+      - key: TRIAL_REQUIRE_EMAIL
+        sync: false
 
       # --- CORS ---------------------------------------------------------------
       # Comma-separated. Must list the origin the frontend is actually served from.

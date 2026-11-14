@@ -3,7 +3,12 @@
  */
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { signTrialToken, TRIAL_TOKEN_TTL_SECONDS, verifyTrialToken } from "../src/trial-token";
+import {
+  signAnonymousTrialToken,
+  signTrialToken,
+  TRIAL_TOKEN_TTL_SECONDS,
+  verifyTrialToken,
+} from "../src/trial-token";
 
 const SECRET = "trial-secret-for-tests";
 const NOW = Date.UTC(2026, 2, 2, 12, 0, 0);
@@ -13,6 +18,7 @@ describe("signTrialToken / verifyTrialToken", () => {
     const token = signTrialToken("trial@example.com", SECRET, NOW);
     expect(verifyTrialToken(token, SECRET, NOW)).toEqual({
       ok: true,
+      kind: "email",
       email: "trial@example.com",
       version: 0,
       firstName: null,
@@ -42,6 +48,7 @@ describe("signTrialToken / verifyTrialToken", () => {
     const atExpiry = NOW + TRIAL_TOKEN_TTL_SECONDS * 1000;
     expect(verifyTrialToken(token, SECRET, atExpiry - 1000)).toEqual({
       ok: true,
+      kind: "email",
       email: "trial@example.com",
       version: 0,
       firstName: null,
@@ -64,6 +71,7 @@ describe("signTrialToken / verifyTrialToken", () => {
     });
     expect(verifyTrialToken(token, SECRET, NOW)).toEqual({
       ok: true,
+      kind: "email",
       email: "friend@example.com",
       version: 3,
       firstName: "Priya",
@@ -90,6 +98,7 @@ describe("signTrialToken / verifyTrialToken", () => {
     const signature = createHmac("sha256", SECRET).update(payload).digest("base64url");
     expect(verifyTrialToken(payload + "." + signature, SECRET, NOW)).toEqual({
       ok: true,
+      kind: "email",
       email: "early@example.com",
       version: 0,
       firstName: null,
@@ -102,5 +111,57 @@ describe("signTrialToken / verifyTrialToken", () => {
     ).toString("base64url");
     const signature = createHmac("sha256", SECRET).update(payload).digest("base64url");
     expect(verifyTrialToken(payload + "." + signature, SECRET, NOW).ok).toBe(false);
+  });
+
+  describe("anonymous device tokens", () => {
+    const DEVICE = "11111111-1111-4111-8111-111111111111";
+
+    it("round-trips the device id and version, and says which kind it is", () => {
+      const token = signAnonymousTrialToken(DEVICE, SECRET, NOW, { version: 2 });
+      expect(verifyTrialToken(token, SECRET, NOW)).toEqual({
+        ok: true,
+        kind: "anonymous",
+        deviceId: DEVICE,
+        version: 2,
+      });
+    });
+
+    it("expires on the same 30-day clock as an email token", () => {
+      const token = signAnonymousTrialToken(DEVICE, SECRET, NOW);
+      const atExpiry = NOW + TRIAL_TOKEN_TTL_SECONDS * 1000;
+      expect(verifyTrialToken(token, SECRET, atExpiry - 1000).ok).toBe(true);
+      expect(verifyTrialToken(token, SECRET, atExpiry)).toEqual({
+        ok: false,
+        reason: "expired",
+      });
+    });
+
+    it("refuses to sign an empty device id", () => {
+      expect(() => signAnonymousTrialToken("   ", SECRET, NOW)).toThrow(/device id/);
+    });
+
+    it("refuses an anonymous payload whose device id is not a UUID", () => {
+      const payload = Buffer.from(
+        JSON.stringify({ a: "device-1", exp: NOW / 1000 + 60, v: 0 }),
+      ).toString("base64url");
+      const signature = createHmac("sha256", SECRET).update(payload).digest("base64url");
+      expect(verifyTrialToken(payload + "." + signature, SECRET, NOW)).toEqual({
+        ok: false,
+        reason: "invalid",
+      });
+    });
+
+    it("refuses a payload that names both an email and a device, or neither", () => {
+      for (const claims of [{ email: "x@example.com", a: DEVICE }, {}]) {
+        const payload = Buffer.from(
+          JSON.stringify({ ...claims, exp: NOW / 1000 + 60, v: 0 }),
+        ).toString("base64url");
+        const signature = createHmac("sha256", SECRET).update(payload).digest("base64url");
+        expect(verifyTrialToken(payload + "." + signature, SECRET, NOW)).toEqual({
+          ok: false,
+          reason: "invalid",
+        });
+      }
+    });
   });
 });

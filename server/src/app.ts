@@ -23,13 +23,14 @@ import { assertPathsOwnedBy, inviteRequestSchema, parseMealRequestSchema } from 
 import type { IssuedTrialLink } from "./caller-store";
 import {
   clientIp,
+  parseAnonymousTrialMeal,
   parseTrialMeal,
   TRIAL_LINK_BASE,
   TRIAL_LINK_EXPIRED_MESSAGE,
   TRIAL_UNAVAILABLE_MESSAGE,
   type TrialStore,
 } from "./trial";
-import { signTrialToken, verifyTrialToken } from "./trial-token";
+import { signAnonymousTrialToken, signTrialToken, verifyTrialToken } from "./trial-token";
 import { verifyTurnstile } from "./turnstile";
 
 export interface AppDeps {
@@ -77,6 +78,12 @@ const trialVerifyCodeSchema = z.object({
   code: z.string().min(1).max(10),
 });
 
+const trialStartSchema = z.object({
+  turnstileToken: z.string().min(1),
+  /** The browser's existing device row, so a reissued token keeps its scan count. */
+  deviceId: z.string().uuid().nullish(),
+});
+
 const trialParseSchema = z
   .object({
     token: z.string().min(1),
@@ -98,15 +105,22 @@ const trialParseSchema = z
     }
   });
 
-/** The four trial secrets, or a 503. After this returns, each value is present. */
+/**
+ * The trial's required secrets, or a 503. After this returns each value is present.
+ *
+ * Resend is only on the email path, and only required when TRIAL_REQUIRE_EMAIL is true.
+ * The anonymous flow must work with no Resend key at all.
+ */
 function requireTrialSecrets(config: Config): { turnstile: string; token: string } {
   const { TURNSTILE_SECRET, RESEND_API_KEY, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET } = config;
   if (
     TURNSTILE_SECRET === undefined ||
-    RESEND_API_KEY === undefined ||
     TRIAL_TOKEN_SECRET === undefined ||
     TRIAL_SERVER_SECRET === undefined
   ) {
+    throw new ApiError(503, "internal_error", TRIAL_UNAVAILABLE_MESSAGE);
+  }
+  if (config.TRIAL_REQUIRE_EMAIL && RESEND_API_KEY === undefined) {
     throw new ApiError(503, "internal_error", TRIAL_UNAVAILABLE_MESSAGE);
   }
   return { turnstile: TURNSTILE_SECRET, token: TRIAL_TOKEN_SECRET };
@@ -267,7 +281,55 @@ export function createApp(deps: AppDeps): Express {
   app.get("/trial/settings", async (_req: Request, res: Response) => {
     requireTrialSecrets(deps.config);
     const scansLimit = await deps.trial.getScansLimit();
-    res.json({ scans_limit: scansLimit });
+    // The server's flag is the one the page follows, so /try and this service cannot
+    // disagree about which flow to offer. VITE_TRIAL_REQUIRE_EMAIL is only the default
+    // before this answer arrives.
+    res.json({ scans_limit: scansLimit, require_email: deps.config.TRIAL_REQUIRE_EMAIL });
+  });
+
+  /**
+   * The anonymous trial's first step: prove a person, issue a device row, sign a token.
+   *
+   * No email, no code, no Resend. Turnstile is verified before the database is touched,
+   * because this is the only way to mint an anonymous token. The response carries the
+   * device id as well as the token, so the browser can keep both in localStorage and a
+   * later reissue does not reset its scan count.
+   *
+   * The email flow's routes stay live above; this one is refused only while
+   * TRIAL_REQUIRE_EMAIL is on, which is what makes the switch a switch.
+   */
+  app.post("/trial/start", async (req: Request, res: Response) => {
+    const secrets = requireTrialSecrets(deps.config);
+    if (deps.config.TRIAL_REQUIRE_EMAIL) {
+      throw new ApiError(409, "email_required", "Enter your email to see your results.");
+    }
+
+    const parsed = trialStartSchema.safeParse(req.body);
+    if (!parsed.success) throw validationError(parsed.error);
+
+    const ip = clientIp(req.headers, req.ip);
+    const human = await verifyTurnstile(secrets.turnstile, parsed.data.turnstileToken, ip);
+    if (!human) {
+      throw new ApiError(403, "forbidden", "Could not verify you are a person. Try again.");
+    }
+
+    const started = await deps.trial.startAnonymousDevice(ip, parsed.data.deviceId ?? null);
+    if (started.status !== "ok" || started.device_id === undefined) {
+      throw new ApiError(503, "internal_error", TRIAL_UNAVAILABLE_MESSAGE);
+    }
+
+    const token = signAnonymousTrialToken(started.device_id, secrets.token, nowMs(), {
+      version: started.token_version ?? 0,
+    });
+
+    log("info", "anonymous trial started", { scansTotal: started.scans_total ?? null });
+    res.json({
+      status: "ok",
+      token,
+      device_id: started.device_id,
+      scans_left: started.scans_left,
+      scans_total: started.scans_total ?? null,
+    });
   });
 
   /**
@@ -353,7 +415,8 @@ export function createApp(deps: AppDeps): Express {
     if (!parsed.success) throw validationError(parsed.error);
 
     const verified = verifyTrialToken(parsed.data.token, secrets.token, nowMs());
-    if (!verified.ok) {
+    // A device token is not a personal link. It answers the same way a forged one does.
+    if (!verified.ok || verified.kind !== "email") {
       res.json({ status: "expired", message: TRIAL_LINK_EXPIRED_MESSAGE });
       return;
     }
@@ -414,22 +477,27 @@ export function createApp(deps: AppDeps): Express {
 
     const ip = clientIp(req.headers, req.ip);
     const eatenAt = parsed.data.eatenAt === undefined ? new Date() : new Date(parsed.data.eatenAt);
+    const meal = {
+      ip,
+      text: parsed.data.text ?? null,
+      photos: parsed.data.photos.map((photo) => ({
+        base64: photo.base64,
+        mimeType: photo.mimeType,
+      })),
+      mealType: parsed.data.mealType ?? null,
+      eatenAt,
+    };
 
-    const outcome = await parseTrialMeal(
-      {
-        email: verified.email,
-        version: verified.version,
-        ip,
-        text: parsed.data.text ?? null,
-        photos: parsed.data.photos.map((photo) => ({
-          base64: photo.base64,
-          mimeType: photo.mimeType,
-        })),
-        mealType: parsed.data.mealType ?? null,
-        eatenAt,
-      },
-      { config: deps.config, llm: deps.llm, trial: deps.trial },
-    );
+    const outcome =
+      verified.kind === "anonymous"
+        ? await parseAnonymousTrialMeal(
+            { deviceId: verified.deviceId, version: verified.version, ...meal },
+            { config: deps.config, llm: deps.llm, trial: deps.trial },
+          )
+        : await parseTrialMeal(
+            { email: verified.email, version: verified.version, ...meal },
+            { config: deps.config, llm: deps.llm, trial: deps.trial },
+          );
 
     log("info", "parsed a trial meal", {
       items: outcome.items.length,

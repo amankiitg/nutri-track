@@ -193,8 +193,9 @@ export async function fetchTrialStats(): Promise<TrialStats> {
 }
 
 const trialListRow = z.object({
-  email: z.string(),
-  source: z.enum(["code", "link"]),
+  // Null for an anonymous device: there is no address to show, only its scan count.
+  email: z.string().nullable(),
+  source: z.enum(["code", "link", "anonymous"]),
   invited: z.boolean(),
   scans_used: z.number(),
   scans_limit: z.number(),
@@ -204,9 +205,10 @@ const trialListRow = z.object({
 });
 
 export interface TrialUserRow {
-  email: string;
-  /** How they first arrived: the code form on /try, or a /t/ link. */
-  source: "code" | "link";
+  /** Null for an anonymous device trial. */
+  email: string | null;
+  /** How they first arrived: the code form on /try, a /t/ link, or no email at all. */
+  source: "code" | "link" | "anonymous";
   invited: boolean;
   scansUsed: number;
   scansLimit: number;

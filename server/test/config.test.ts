@@ -33,6 +33,31 @@ describe("loadConfig", () => {
       // trial_settings table in the database.
       DAILY_ANALYSIS_LIMIT: 20,
       ADMIN_DAILY_ANALYSIS_LIMIT: 60,
+      // The anonymous trial is the default: no email step, no Resend required.
+      TRIAL_REQUIRE_EMAIL: false,
+    });
+  });
+
+  describe("TRIAL_REQUIRE_EMAIL", () => {
+    it("defaults to false, which is the anonymous flow", () => {
+      expect(loadConfig(VALID).TRIAL_REQUIRE_EMAIL).toBe(false);
+      expect(loadConfig({ ...VALID, TRIAL_REQUIRE_EMAIL: "" }).TRIAL_REQUIRE_EMAIL).toBe(false);
+    });
+
+    it("reads true and false, case and spaces included", () => {
+      expect(loadConfig({ ...VALID, TRIAL_REQUIRE_EMAIL: "true" }).TRIAL_REQUIRE_EMAIL).toBe(true);
+      expect(loadConfig({ ...VALID, TRIAL_REQUIRE_EMAIL: " TRUE " }).TRIAL_REQUIRE_EMAIL).toBe(
+        true,
+      );
+      expect(loadConfig({ ...VALID, TRIAL_REQUIRE_EMAIL: "false" }).TRIAL_REQUIRE_EMAIL).toBe(
+        false,
+      );
+    });
+
+    it("stops the boot on anything else rather than guessing", () => {
+      expect(() => loadConfig({ ...VALID, TRIAL_REQUIRE_EMAIL: "yes" })).toThrow(
+        /TRIAL_REQUIRE_EMAIL/,
+      );
     });
   });
 

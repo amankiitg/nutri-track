@@ -13,7 +13,7 @@ import { TrialRequestError } from "@/lib/trial";
 const mocks = vi.hoisted(() => ({
   verifyTrialLink: vi.fn(),
   parseTrialMeal: vi.fn(),
-  getTrialScansLimit: vi.fn(),
+  getTrialSettings: vi.fn(),
   loadTurnstile: vi.fn(),
   requestInvite: vi.fn(),
 }));
@@ -24,7 +24,7 @@ vi.mock("@/lib/trial", async (importOriginal) => {
     ...actual,
     verifyTrialLink: (...args: unknown[]) => mocks.verifyTrialLink(...args),
     parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
-    getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
+    getTrialSettings: (...args: unknown[]) => mocks.getTrialSettings(...args),
   };
 });
 
@@ -97,7 +97,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
-  mocks.getTrialScansLimit.mockResolvedValue(10);
+  mocks.getTrialSettings.mockResolvedValue({ scansLimit: 10, requireEmail: false });
   mocks.verifyTrialLink.mockResolvedValue({
     status: "ok",
     email: "priya@example.com",

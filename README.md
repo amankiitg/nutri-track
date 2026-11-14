@@ -49,6 +49,7 @@ Gemini key and your own deployment. The short version:
    Sign-up is invite-only. The first account on the allow list is promoted to admin by
    `bootstrap_first_admin()` while the admin list is empty, and the admin page can invite the
    next people. See [Invites, requests and the admin page](#invites-requests-and-the-admin-page).
+
 5. **Add a Gemini key.** Put `GEMINI_API_KEY` in `.env`. Nothing in the browser reads it; the
    `server/` service does.
 6. **Run it.** `npm run dev` serves the app on <http://localhost:8080>. In another terminal,
@@ -489,14 +490,17 @@ runs_, not when the Worker serves.
 | `VITE_SUPABASE_URL`             | `https://luxomuhczhtczfxwornl.supabase.co`              |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_…` value                            |
 | `VITE_PARSE_MEAL_URL`           | `https://nutritrack-parse-meal.onrender.com/parse-meal` |
-| `VITE_TURNSTILE_SITE_KEY`       | `0x4AAAAAAF6qU7ugp2HStVCT`                             |
+| `VITE_TURNSTILE_SITE_KEY`       | `0x4AAAAAAF6qU7ugp2HStVCT`                              |
+| `VITE_TRIAL_REQUIRE_EMAIL`      | `false` (the anonymous trial; `true` restores email)    |
 
-`npm run build:cloudflare` supplies the production `VITE_PARSE_MEAL_URL` and
-`VITE_TURNSTILE_SITE_KEY` inline, so the repository's `.env` can keep pointing at
-`http://localhost:8787/parse-meal` for local development. That is the whole reason the two
-are separate commands: one `.env` cannot serve both, and Vite's `process.env` wins over
-`.env`, so the inline values take effect without editing the file. (A host that builds from
-git would instead need the four values in its own build environment.)
+`npm run build:cloudflare` supplies the production `VITE_PARSE_MEAL_URL`,
+`VITE_TURNSTILE_SITE_KEY` and `VITE_TRIAL_REQUIRE_EMAIL` inline, so the repository's
+`.env` can keep pointing at `http://localhost:8787/parse-meal` for local development.
+That is the whole reason the two are separate commands: one `.env` cannot serve both, and
+Vite's `process.env` wins over `.env`, so the inline values take effect without editing
+the file. (A host that builds from git would instead need these values in its own build
+environment.) The same flag exists on the parse-meal service as `TRIAL_REQUIRE_EMAIL`;
+`/trial/settings` reports the server's copy, and the page follows it.
 
 `vite.config.ts` **refuses to build for production** with a missing, `localhost`, or
 non-`https` parse-meal URL, and with a missing `VITE_TURNSTILE_SITE_KEY`. Nothing
