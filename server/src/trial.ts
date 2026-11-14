@@ -72,14 +72,35 @@ const trialScanResultSchema = z.object({
   call_id: z.string().optional(),
 });
 
+const trialAnonStartResultSchema = z.object({
+  status: z.string(),
+  /** The trial_devices row the signed token names. */
+  device_id: z.string().optional(),
+  token_version: z.number().int().optional(),
+  scans_left: z.number().optional().default(0),
+  scans_total: z.number().nullable().optional(),
+});
+
 export type TrialSendResult = z.infer<typeof trialSendResultSchema>;
 export type TrialScanResult = z.infer<typeof trialScanResultSchema>;
+export type TrialAnonStartResult = z.infer<typeof trialAnonStartResultSchema>;
 
 export interface TrialStore {
   sendCode(email: string, firstName: string, ip: string | null): Promise<TrialSendResult>;
   verifyCode(email: string, code: string): Promise<string>;
   /** `version` is the token's; the database refuses it unless it is the mailbox's current one. */
   startScan(email: string, ip: string | null, version: number): Promise<TrialScanResult>;
+  /**
+   * Issues (or reuses) an anonymous device row. `deviceId` is the browser's existing
+   * row when it has one, so an expired token does not reset its scans.
+   */
+  startAnonymousDevice(ip: string | null, deviceId: string | null): Promise<TrialAnonStartResult>;
+  /** Spends one scan from an anonymous device, with the token's version checked. */
+  startAnonymousScan(
+    deviceId: string,
+    ip: string | null,
+    version: number,
+  ): Promise<TrialScanResult>;
   /** What a token for this mailbox is worth now; a null version skips only the version check. */
   linkStatus(email: string, version: number | null): Promise<TrialLinkStatus>;
   logCall(callId: string, record: LlmCallRecord): Promise<void>;
@@ -151,6 +172,31 @@ export function createTrialStore(
       const { data, error } = await client.rpc("trial_scan_start", {
         p_server_secret: serverSecret,
         p_email: email,
+        p_ip: ip,
+        p_version: version,
+      });
+      if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      const parsed = trialScanResultSchema.safeParse(data);
+      if (!parsed.success) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      return parsed.data;
+    },
+
+    async startAnonymousDevice(ip, deviceId) {
+      const { data, error } = await client.rpc("trial_anon_start", {
+        p_server_secret: serverSecret,
+        p_ip: ip,
+        p_device_id: deviceId,
+      });
+      if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      const parsed = trialAnonStartResultSchema.safeParse(data);
+      if (!parsed.success) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
+      return parsed.data;
+    },
+
+    async startAnonymousScan(deviceId, ip, version) {
+      const { data, error } = await client.rpc("trial_anon_scan_start", {
+        p_server_secret: serverSecret,
+        p_device_id: deviceId,
         p_ip: ip,
         p_version: version,
       });
@@ -247,6 +293,18 @@ export interface TrialParseInput {
   eatenAt: Date;
 }
 
+export interface TrialAnonymousParseInput {
+  /** The trial_devices row the anonymous token names. */
+  deviceId: string;
+  /** The token's version, checked against the device's current one. */
+  version: number;
+  ip: string | null;
+  text: string | null;
+  photos: Photo[];
+  mealType: MealType | null;
+  eatenAt: Date;
+}
+
 export interface TrialParseOutcome {
   items: MealItemDraft[];
   scans_left: number;
@@ -262,42 +320,50 @@ export interface TrialParseDeps {
   trial: TrialStore;
 }
 
+/** The meal itself, whichever identity paid for the scan. */
+interface TrialMeal {
+  text: string | null;
+  photos: Photo[];
+  mealType: MealType | null;
+  eatenAt: Date;
+}
+
 /**
- * A trial scan, end to end: consume a slot, call the model, return the review items.
+ * The model half of a trial scan, shared by the email and anonymous paths.
  *
- * The photo bytes are only ever in memory. The slot is consumed before the model call
- * so a retry cannot spend two scans on one meal, and the reserved row's id is what the
- * post-model record() fills in — one row per scan, never two.
+ * The photo bytes are only ever in memory. The slot has already been consumed by the
+ * caller, and the reserved row's id is what the post-model record() fills in — one row
+ * per scan, never two.
  */
-export async function parseTrialMeal(
-  input: TrialParseInput,
+async function analyzeTrialScan(
+  meal: TrialMeal,
+  scan: TrialScanResult,
   deps: TrialParseDeps,
 ): Promise<TrialParseOutcome> {
-  const scan = await deps.trial.startScan(input.email, input.ip, input.version);
   if (scan.status !== "ok") {
     throw trialScanError(scan);
   }
 
-  const source: MealSource = input.photos.length > 0 ? "photo" : "text";
+  const source: MealSource = meal.photos.length > 0 ? "photo" : "text";
   const request: ParseMealRequest = {
     source,
-    text: input.text,
+    text: meal.text,
     photoPaths: [],
-    eatenAt: input.eatenAt.toISOString(),
-    mealType: input.mealType,
+    eatenAt: meal.eatenAt.toISOString(),
+    mealType: meal.mealType,
     hint: null,
   };
 
   const callId = scan.call_id ?? "";
 
-  const messages = [buildSystemMessage(), buildUserMessage(request, input.photos)];
+  const messages = [buildSystemMessage(), buildUserMessage(request, meal.photos)];
   const { items, model, attempts } = await analyzeMeal(messages, {
     llm: deps.llm,
     model: deps.config.GEMINI_VISION_MODEL,
     record: (record) => deps.trial.logCall(callId, record),
   });
 
-  const mealType = input.mealType ?? guessMealType(input.eatenAt, "UTC");
+  const mealType = meal.mealType ?? guessMealType(meal.eatenAt, "UTC");
 
   return {
     items,
@@ -307,4 +373,27 @@ export async function parseTrialMeal(
     model,
     attempts,
   };
+}
+
+/**
+ * A trial scan, end to end: consume a slot, call the model, return the review items.
+ *
+ * The slot is consumed before the model call so a retry cannot spend two scans on one
+ * meal.
+ */
+export async function parseTrialMeal(
+  input: TrialParseInput,
+  deps: TrialParseDeps,
+): Promise<TrialParseOutcome> {
+  const scan = await deps.trial.startScan(input.email, input.ip, input.version);
+  return analyzeTrialScan(input, scan, deps);
+}
+
+/** The same scan, paid for by an anonymous device rather than a mailbox. */
+export async function parseAnonymousTrialMeal(
+  input: TrialAnonymousParseInput,
+  deps: TrialParseDeps,
+): Promise<TrialParseOutcome> {
+  const scan = await deps.trial.startAnonymousScan(input.deviceId, input.ip, input.version);
+  return analyzeTrialScan(input, scan, deps);
 }

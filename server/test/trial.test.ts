@@ -26,6 +26,7 @@ const CONFIG = {
   DAILY_ANALYSIS_LIMIT: 20,
   ADMIN_DAILY_ANALYSIS_LIMIT: 60,
   TRIAL_SERVER_SECRET: "trial-server-secret-example",
+  TRIAL_REQUIRE_EMAIL: false,
 } satisfies Config;
 
 const goodReply = JSON.stringify({
@@ -110,6 +111,12 @@ describe("parseTrialMeal", () => {
         started.push({ email, ip, version });
         return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
       },
+      async startAnonymousDevice() {
+        return { status: "ok", device_id: "device-1", scans_left: 10, scans_total: 10 };
+      },
+      async startAnonymousScan() {
+        return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
+      },
       async logCall(callId, record) {
         logged.push({ callId, model: record.model });
       },
@@ -138,6 +145,12 @@ describe("parseTrialMeal", () => {
         return "ok";
       },
       async startScan() {
+        return { status: "no_scans_left", scans_left: 0, scans_total: 10 };
+      },
+      async startAnonymousDevice() {
+        return { status: "ok", device_id: "device-1", scans_left: 10, scans_total: 10 };
+      },
+      async startAnonymousScan() {
         return { status: "no_scans_left", scans_left: 0, scans_total: 10 };
       },
       async logCall() {},

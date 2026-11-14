@@ -33,15 +33,19 @@ import {
   clearPendingTrial,
   clearTrial,
   getPendingTrial,
+  getStoredDeviceId,
   getStoredTrial,
-  getTrialScansLimit,
+  getTrialSettings,
   parseTrialMeal,
   savePendingTrial,
   sendTrialCode,
+  startAnonymousTrial,
   storeTrial,
   TrialRequestError,
+  trialRequireEmailDefault,
   verifyTrialCode,
   type PendingTrialMeal,
+  type StoredTrial,
   type TrialParseResult,
   type TrialPhoto,
 } from "@/lib/trial";
@@ -61,9 +65,10 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   // A personal link has no email, code or Turnstile step, so it does not need the site key.
   const available = link !== undefined || siteKey !== null;
 
-  const [stored, setStored] = useState<{ token: string; email: string; invited: boolean } | null>(
-    null,
-  );
+  // The server's /trial/settings is the truth once it answers; the build-time flag is
+  // only the default before then, so a server with the email step off never flashes it.
+  const [requireEmail, setRequireEmail] = useState<boolean>(trialRequireEmailDefault());
+  const [stored, setStored] = useState<StoredTrial | null>(null);
   const [step, setStep] = useState<"meal" | "email" | "code">("meal");
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -80,7 +85,14 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   const [scanLimit, setScanLimit] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [pendingMeal, setPendingMeal] = useState<PendingTrialMeal | null>(null);
+  // The meal waiting on an invisible Turnstile challenge, for the anonymous flow.
+  const [pendingScan, setPendingScan] = useState<{
+    text: string | null;
+    photos: TrialPhoto[];
+  } | null>(null);
   const [inviteResult, setInviteResult] = useState<InviteResult | null>(null);
+  // The address the anonymous end screen asks for. It is the only place this flow asks.
+  const [inviteEmail, setInviteEmail] = useState("");
 
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileReady = useRef(false);
@@ -92,7 +104,7 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     const saved = getStoredTrial();
     if (saved !== null) {
       setStored(saved);
-      setEmail(saved.email);
+      setEmail(saved.email ?? "");
       setInvited(saved.invited);
       setStep("meal");
       return;
@@ -107,26 +119,34 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     }
   }, []);
 
-  // The per-mailbox scan limit, read in the background; only the exhausted wall needs it.
+  // The scan limit and the flow flag, read in the background. The server's answer wins:
+  // it is the same process that enforces the limits and the /trial/start switch.
   useEffect(() => {
     if (!available) return;
     let cancelled = false;
-    void getTrialScansLimit()
-      .then((limit) => {
-        if (!cancelled) setScanLimit(limit);
+    void getTrialSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setScanLimit(settings.scansLimit);
+        setRequireEmail(settings.requireEmail);
       })
       .catch(() => {
-        // The wall falls back to a sentence without the number.
+        // The wall falls back to a sentence without the number, and the build-time flag
+        // keeps the page on the flow it was compiled for.
       });
     return () => {
       cancelled = true;
     };
   }, [available]);
 
-  // Render the invisible Turnstile widget once, when the email step is showing.
+  // Render the invisible Turnstile widget once. The email flow needs it on the email
+  // step; the anonymous flow needs it on the meal step, because that is where the token
+  // is issued. A personal link and a returning visitor need it not at all.
   useEffect(() => {
-    if (siteKey === null || step !== "email" || turnstileReady.current) return;
-    if (turnstileRef.current === null) return;
+    if (siteKey === null || turnstileReady.current) return;
+    if (link !== undefined || stored !== null) return;
+    const wanted = requireEmail ? step === "email" : step === "meal";
+    if (!wanted || turnstileRef.current === null) return;
 
     let cancelled = false;
     void loadTurnstile()
@@ -151,7 +171,7 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [siteKey, step]);
+  }, [siteKey, step, requireEmail, stored, link]);
 
   /** Step 1: ask for a code. The Turnstile token is checked server-side first. */
   const sendCode = useCallback(async () => {
@@ -224,8 +244,15 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     try {
       const outcome = await verifyTrialCode(email, code.trim());
       if (outcome.status === "ok" && outcome.token !== undefined) {
-        storeTrial({ token: outcome.token, email, invited });
-        setStored({ token: outcome.token, email, invited });
+        const ticket: StoredTrial = {
+          token: outcome.token,
+          email,
+          invited,
+          anonymous: false,
+          deviceId: null,
+        };
+        storeTrial(ticket);
+        setStored(ticket);
         const meal = pendingMeal;
         clearPendingTrial();
         setPendingMeal(null);
@@ -254,9 +281,22 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     }
   }
 
-  /** Analyse when there is a token, or park the meal and ask for the email. */
+  /**
+   * Analyse when there is a token. With none, either park the meal for the email step
+   * (the flag is on) or take the anonymous path: Turnstile, then a device token, then
+   * the same scan. Nothing is sent to the model until the token exists.
+   */
   function beginScan(input: { text: string | null; photos: TrialPhoto[] }): void {
-    if (stored === null) {
+    // A double tap while the invisible challenge is running would start two token
+    // exchanges. Neither has spent a scan yet, but the second is never wanted.
+    if (busy || pendingScan !== null) return;
+
+    if (stored !== null) {
+      void scan(input, stored.token);
+      return;
+    }
+
+    if (requireEmail) {
       const meal: PendingTrialMeal =
         input.photos.length > 0
           ? { kind: "photo", photos: input.photos }
@@ -266,49 +306,124 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
       setStep("email");
       return;
     }
-    void scan(input, stored.token);
+
+    if (turnstileToken === "") {
+      const api = turnstileApi();
+      const widgetId = turnstileWidgetId.current;
+      if (api === undefined || widgetId === null) {
+        setError("Complete the check to continue.");
+        return;
+      }
+      setError(null);
+      setPendingScan(input);
+      api.execute(widgetId);
+      return;
+    }
+
+    setPendingScan(input);
   }
 
-  async function scan(
-    input: { text: string | null; photos: TrialPhoto[] },
-    token: string,
-  ): Promise<void> {
-    setError(null);
-    setBusy(true);
-    try {
-      const outcome = await parseTrialMeal({
-        token,
-        text: input.text,
-        photos: input.photos,
-        eatenAt: new Date(),
-        mealType: null,
-      });
-      setResult(outcome);
-      setScansLeft(outcome.scans_left);
-    } catch (caught) {
-      const code = caught instanceof TrialRequestError ? caught.code : null;
-      if (code === "trial_exhausted") {
-        // Out of scans already (say, a link reopened after the tenth): the wall, not an alert.
-        setScansLeft(0);
-        return;
-      }
-      if (code === "trial_link_expired") {
-        clearTrial();
-        setStored(null);
-        if (link !== undefined) {
-          setLinkExpired(true);
-        } else {
-          // The code flow can simply start again: a new code issues a token for the current version.
-          setStep("meal");
-          setError("Your trial has ended. Enter a meal to start a new one.");
+  const scan = useCallback(
+    async (input: { text: string | null; photos: TrialPhoto[] }, token: string): Promise<void> => {
+      setError(null);
+      setBusy(true);
+      try {
+        const outcome = await parseTrialMeal({
+          token,
+          text: input.text,
+          photos: input.photos,
+          eatenAt: new Date(),
+          mealType: null,
+        });
+        setResult(outcome);
+        setScansLeft(outcome.scans_left);
+      } catch (caught) {
+        const code = caught instanceof TrialRequestError ? caught.code : null;
+        if (code === "trial_exhausted") {
+          // Out of scans already (say, a link reopened after the tenth): the wall, not an alert.
+          setScansLeft(0);
+          return;
         }
-        return;
+        if (code === "trial_link_expired") {
+          // The device id stays in localStorage, so the anonymous flow renews the token
+          // against the same scan counter rather than starting over.
+          clearTrial();
+          setStored(null);
+          if (link !== undefined) {
+            setLinkExpired(true);
+          } else {
+            setStep("meal");
+            setError("Your trial has ended. Enter a meal to start a new one.");
+          }
+          return;
+        }
+        setError(caught instanceof Error ? caught.message : "Could not analyse that meal.");
+      } finally {
+        setBusy(false);
       }
-      setError(caught instanceof Error ? caught.message : "Could not analyse that meal.");
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    [link],
+  );
+
+  /**
+   * Turnstile's token, exchanged for a device token, then the meal the visitor entered.
+   *
+   * One turn of this issues one token and spends one scan. The Turnstile token is cleared
+   * afterwards because it is single-use; a failure needs a fresh challenge, which is what
+   * the next Analyse does.
+   */
+  const beginAnonymousScan = useCallback(
+    async (
+      input: { text: string | null; photos: TrialPhoto[] },
+      turnstileProof: string,
+    ): Promise<void> => {
+      setError(null);
+      setBusy(true);
+      try {
+        const issued = await startAnonymousTrial(turnstileProof, getStoredDeviceId());
+        const ticket: StoredTrial = {
+          token: issued.token,
+          email: null,
+          invited: false,
+          anonymous: true,
+          deviceId: issued.deviceId,
+        };
+        storeTrial(ticket);
+        setStored(ticket);
+        setScansLeft(issued.scansLeft);
+        setTurnstileToken("");
+        await scan(input, issued.token);
+      } catch (caught) {
+        setTurnstileToken("");
+        if (caught instanceof TrialRequestError && caught.code === "email_required") {
+          // The build and the server disagreed about the flag. Follow the server, and keep
+          // the meal the visitor already entered.
+          setRequireEmail(true);
+          const meal: PendingTrialMeal =
+            input.photos.length > 0
+              ? { kind: "photo", photos: input.photos }
+              : { kind: "text", text: input.text ?? "" };
+          setPendingMeal(meal);
+          savePendingTrial({ step: "email", email, firstName, invited, meal });
+          setStep("email");
+          return;
+        }
+        setError(caught instanceof Error ? caught.message : "Could not start the trial.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [scan, email, firstName, invited],
+  );
+
+  // The invisible challenge answers asynchronously. The meal waits here, never at the
+  // model, until the token has been exchanged for a device token.
+  useEffect(() => {
+    if (pendingScan === null || turnstileToken === "") return;
+    const input = pendingScan;
+    setPendingScan(null);
+    void beginAnonymousScan(input, turnstileToken);
+  }, [pendingScan, turnstileToken, beginAnonymousScan]);
 
   const requestInviteNow = useCallback(async () => {
     setError(null);
@@ -321,6 +436,25 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
       setBusy(false);
     }
   }, [email, firstName]);
+
+  /** The anonymous end screen's form: the only place this flow asks for an address. */
+  async function submitAnonymousInvite(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setError(null);
+    setInviteResult(null);
+    const address = normalizeEmail(inviteEmail);
+    if (!isPlausibleEmail(address)) {
+      setError("Enter an email address, like name@example.com.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const outcome = await requestInvite(address, { fromTrial: true });
+      setInviteResult(outcome ?? "rate_limited");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (linkExpired) return <TrialLinkExpired />;
 
@@ -337,6 +471,9 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   }
 
   const exhausted = scansLeft !== null && scansLeft <= 0;
+  // A personal link and an email trial keep their old end screens; the anonymous one
+  // asks for an address there and nowhere else.
+  const anonymousTrial = stored?.anonymous === true;
 
   return (
     <main className="paper-grain min-h-dvh">
@@ -344,6 +481,9 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <BrandMark size={24} /> NutriTrack
         </Link>
+
+        {/* One invisible widget for both flows. An invisible render has no size. */}
+        <div ref={turnstileRef} />
 
         <div className="my-auto animate-rise py-10">
           {step === "meal" && !exhausted && (
@@ -517,8 +657,6 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                   />
                 </div>
 
-                <div ref={turnstileRef} />
-
                 {error !== null && (
                   <p role="alert" className="text-sm text-destructive">
                     {error}
@@ -577,7 +715,75 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
 
           {exhausted && (
             <div className="mt-8 space-y-4 rounded-2xl border border-border bg-muted/30 p-5">
-              {invited ? (
+              {anonymousTrial ? (
+                <>
+                  <h2 className="text-xl font-semibold">Your trial is done. Want full access?</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Ask for an invite and you&apos;ll be able to save your meals and see your day.
+                  </p>
+
+                  {inviteResult === null && (
+                    <form
+                      onSubmit={(e) => void submitAnonymousInvite(e)}
+                      noValidate
+                      className="space-y-2"
+                    >
+                      <Label htmlFor="trial-invite-email">Email</Label>
+                      <Input
+                        id="trial-invite-email"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        required
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        className="h-11"
+                      />
+                      <Button type="submit" className="w-full rounded-full" disabled={busy}>
+                        {busy && (
+                          <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden="true" />
+                        )}
+                        Request an invite
+                      </Button>
+                    </form>
+                  )}
+
+                  {inviteResult === "already_invited" && (
+                    <p
+                      role="status"
+                      className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+                    >
+                      That address is already invited. Sign in below to keep tracking.
+                    </p>
+                  )}
+
+                  {inviteResult !== null &&
+                    inviteResult !== "rate_limited" &&
+                    inviteResult !== "already_invited" && (
+                      <p
+                        role="status"
+                        className="rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+                      >
+                        Request sent. We&apos;ll email you at <strong>{inviteEmail}</strong> when
+                        you&apos;re approved.
+                      </p>
+                    )}
+
+                  {inviteResult === "rate_limited" && (
+                    <p role="alert" className="text-sm text-destructive">
+                      Couldn&apos;t send the request right now. Email invites@tracknutri.app
+                      instead.
+                    </p>
+                  )}
+
+                  <p className="text-sm text-muted-foreground">
+                    Already invited?{" "}
+                    <Link to="/auth" className="underline">
+                      Sign in
+                    </Link>
+                  </p>
+                </>
+              ) : invited ? (
                 <>
                   <h2 className="text-xl font-semibold">
                     Your trial is done. Sign in to keep tracking.

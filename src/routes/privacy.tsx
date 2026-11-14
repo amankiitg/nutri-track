@@ -40,7 +40,7 @@ function PrivacyPage() {
     <main className="app-shell space-y-8 py-10 text-sm leading-relaxed">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Privacy</h1>
-        <p className="text-muted-foreground">Last updated 9 November 2026.</p>
+        <p className="text-muted-foreground">Last updated 14 November 2026.</p>
       </header>
 
       <p>
@@ -92,8 +92,8 @@ function PrivacyPage() {
           name, which is what makes an unsubscribe possible.
         </p>
         <p>
-          The free trial checks you are a person with Cloudflare Turnstile before it sends a code.
-          Turnstile sees the check, not your meals.
+          The free trial checks you are a person with Cloudflare Turnstile before it issues a trial
+          token. Turnstile sees the check, not your meals.
         </p>
       </Section>
 
@@ -154,14 +154,21 @@ function PrivacyPage() {
 
       <Section title="Free trial">
         <p>
-          The free trial lets you scan a few meals before you join. It asks for an email address
-          and, optionally, a first name. Those are kept only to count your scans and to contact you
-          about your invite.
+          The free trial lets you scan a few meals before you join. It does not ask for an email
+          address: the trial is a signed token kept in your browser, and a device identifier the
+          server issues is what counts your scans. Clearing your browser storage starts a new
+          device, which is why there is also a limit per network.
         </p>
         <p>
-          A hashed form of your network address is kept, never the address itself, to stop one
-          person from running many trials. Trial photos are analysed and not stored, and Cloudflare
-          Turnstile checks you are a person before the trial starts.
+          A salted hash of your network address is kept, never the address itself, to stop one
+          person from running many trials. It is used only to count how many trial scans came from
+          one network in a day. Trial photos are analysed and not stored, and Cloudflare Turnstile
+          checks you are a person before the trial starts.
+        </p>
+        <p>
+          The only point the trial asks for an email address is the end screen, if you want an
+          invite. That address is kept to contact you about the invite; it is not part of the trial
+          or its scan count.
         </p>
       </Section>
 

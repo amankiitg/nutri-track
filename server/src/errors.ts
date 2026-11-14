@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | "trial_busy"
   | "trial_link_expired"
   | "trial_already_access"
+  | "email_required"
   | "upstream_error"
   | "unparseable_response"
   | "internal_error";

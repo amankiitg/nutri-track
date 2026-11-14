@@ -4,7 +4,7 @@
  * typed paths, the reload that keeps the meal, and the invited/uninvited end screens.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { TrialPage } from "./try";
@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   sendTrialCode: vi.fn(),
   verifyTrialCode: vi.fn(),
   parseTrialMeal: vi.fn(),
-  getTrialScansLimit: vi.fn(),
+  getTrialSettings: vi.fn(),
+  startAnonymousTrial: vi.fn(),
   preparePhoto: vi.fn(),
   requestInvite: vi.fn(),
   turnstileCallback: null as ((token: string) => void) | null,
@@ -26,7 +27,8 @@ vi.mock("@/lib/trial", async (importOriginal) => {
     sendTrialCode: (...args: unknown[]) => mocks.sendTrialCode(...args),
     verifyTrialCode: (...args: unknown[]) => mocks.verifyTrialCode(...args),
     parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
-    getTrialScansLimit: (...args: unknown[]) => mocks.getTrialScansLimit(...args),
+    getTrialSettings: (...args: unknown[]) => mocks.getTrialSettings(...args),
+    startAnonymousTrial: (...args: unknown[]) => mocks.startAnonymousTrial(...args),
   };
 });
 
@@ -102,7 +104,8 @@ beforeEach(() => {
     if (typeof mock === "function") (mock as { mockReset?: () => void }).mockReset?.();
   }
   mocks.turnstileCallback = null;
-  mocks.getTrialScansLimit.mockResolvedValue(10);
+  // The email flow is the default in these tests; the anonymous cases set this false.
+  mocks.getTrialSettings.mockResolvedValue({ scansLimit: 10, requireEmail: true });
   mocks.requestInvite.mockResolvedValue("requested");
 });
 
@@ -141,6 +144,7 @@ describe("the meal-first trial page", () => {
     expect(screen.getByPlaceholderText(/type what you ate/i)).toBeTruthy();
     expect(screen.queryByLabelText("Email")).toBeNull();
     expect(mocks.sendTrialCode).not.toHaveBeenCalled();
+    expect(mocks.startAnonymousTrial).not.toHaveBeenCalled();
   });
 
   it("analyses typed text only after the code is verified, without retyping", async () => {
@@ -354,5 +358,116 @@ describe("the meal-first trial page", () => {
       expect.objectContaining({ token: "token-1", text: "dal" }),
     );
     expect(mocks.sendTrialCode).not.toHaveBeenCalled();
+    expect(mocks.startAnonymousTrial).not.toHaveBeenCalled();
+  });
+});
+
+const ANON_DEVICE = "11111111-1111-4111-8111-111111111111";
+
+describe("the anonymous trial (flag false)", () => {
+  beforeEach(() => {
+    mocks.getTrialSettings.mockResolvedValue({ scansLimit: 10, requireEmail: false });
+    mocks.startAnonymousTrial.mockResolvedValue({
+      token: "device-token",
+      deviceId: ANON_DEVICE,
+      scansLeft: 10,
+      scansTotal: 10,
+    });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+  });
+
+  /** The invisible widget has to be rendered before a click can run its challenge. */
+  async function waitForTurnstile(): Promise<void> {
+    await waitFor(() => expect(mocks.turnstileCallback).not.toBeNull());
+  }
+
+  it("asks for no email: Turnstile, a device token, then the analysis", async () => {
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await waitForTurnstile();
+
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("button", { name: /email me a code/i })).toBeNull();
+    expect(mocks.sendTrialCode).not.toHaveBeenCalled();
+    expect(mocks.startAnonymousTrial).toHaveBeenCalledWith("test-token", null);
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "device-token", text: "dal and roti" }),
+    );
+    expect(localStorage.getItem("nutritrack-trial-anonymous")).toBe("1");
+    expect(localStorage.getItem("nutritrack-trial-device")).toBe(ANON_DEVICE);
+  });
+
+  it("never analyses before the device token is issued", async () => {
+    let release: (value: {
+      token: string;
+      deviceId: string;
+      scansLeft: number;
+      scansTotal: number;
+    }) => void = () => {};
+    mocks.startAnonymousTrial.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await waitForTurnstile();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    await waitFor(() => expect(mocks.startAnonymousTrial).toHaveBeenCalled());
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
+
+    release({
+      token: "device-token",
+      deviceId: ANON_DEVICE,
+      scansLeft: 10,
+      scansTotal: 10,
+    });
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a stored anonymous token without Turnstile", async () => {
+    localStorage.setItem("nutritrack-trial-token", "device-token");
+    localStorage.setItem("nutritrack-trial-anonymous", "1");
+    localStorage.setItem("nutritrack-trial-device", ANON_DEVICE);
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    expect(await screen.findByRole("button", { name: /scan another meal/i })).toBeTruthy();
+    expect(mocks.startAnonymousTrial).not.toHaveBeenCalled();
+    expect(mocks.parseTrialMeal).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "device-token" }),
+    );
+  });
+
+  it("asks for an email only at the end screen, and offers sign-in", async () => {
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(0));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await waitForTurnstile();
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Your trial is done. Want full access?" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth");
+
+    await user.type(screen.getByLabelText("Email"), "late@example.com");
+    await user.click(screen.getByRole("button", { name: /request an invite/i }));
+
+    expect(mocks.requestInvite).toHaveBeenCalledWith("late@example.com", { fromTrial: true });
+    expect(await screen.findByText(/Request sent/)).toBeTruthy();
   });
 });

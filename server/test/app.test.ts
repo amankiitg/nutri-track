@@ -19,10 +19,21 @@ import {
   RETRY_INSTRUCTION_NOT_JSON,
 } from "../src/parse-meal";
 import type { EmailClient } from "../src/resend";
-import type { TrialLinkStatus, TrialScanResult, TrialSendResult, TrialStore } from "../src/trial";
+import type {
+  TrialAnonStartResult,
+  TrialLinkStatus,
+  TrialScanResult,
+  TrialSendResult,
+  TrialStore,
+} from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
 import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE } from "../../shared/invite-email";
-import { signTrialToken, TRIAL_TOKEN_TTL_SECONDS, verifyTrialToken } from "../src/trial-token";
+import {
+  signAnonymousTrialToken,
+  signTrialToken,
+  TRIAL_TOKEN_TTL_SECONDS,
+  verifyTrialToken,
+} from "../src/trial-token";
 
 const USER: VerifiedUser = { id: "user-1", email: "aman@example.com" };
 const TOKEN = "a-valid-access-token";
@@ -41,6 +52,7 @@ const CONFIG: Config = {
   // limits live in the database's trial_settings table, not here.
   DAILY_ANALYSIS_LIMIT,
   ADMIN_DAILY_ANALYSIS_LIMIT,
+  TRIAL_REQUIRE_EMAIL: false,
 };
 
 /** Macros agree with the calories: 4*10 + 4*54 + 9*6 = 310 against a claimed 300. */
@@ -88,6 +100,10 @@ interface HarnessOptions {
   scanResult?: TrialScanResult;
   /** What trial_send_code answers. */
   sendResult?: TrialSendResult;
+  /** What trial_anon_start answers. */
+  anonStartResult?: TrialAnonStartResult;
+  /** What trial_anon_scan_start answers. */
+  anonScanResult?: TrialScanResult;
   /** The token version admin_trial_link_issue returns. */
   linkVersion?: number;
   /** Makes issuing a trial link fail, as a refused admin check would. */
@@ -119,6 +135,8 @@ function buildHarness(options: HarnessOptions = {}) {
   const markedLinks: string[] = [];
   const linkStatusCalls: Array<{ email: string; version: number | null }> = [];
   const scanCalls: Array<{ email: string; version: number }> = [];
+  const anonStartCalls: Array<{ ip: string | null; deviceId: string | null }> = [];
+  const anonScanCalls: Array<{ deviceId: string; version: number }> = [];
   const replies = options.replies ?? [goodReply];
   let replyIndex = 0;
 
@@ -222,6 +240,22 @@ function buildHarness(options: HarnessOptions = {}) {
       scanCalls.push({ email, version });
       return options.scanResult ?? { status: "ok", scans_left: 9, call_id: "call-1" };
     },
+    async startAnonymousDevice(ip, deviceId) {
+      anonStartCalls.push({ ip, deviceId });
+      return (
+        options.anonStartResult ?? {
+          status: "ok",
+          device_id: "11111111-1111-4111-8111-111111111111",
+          token_version: 0,
+          scans_left: 10,
+          scans_total: 10,
+        }
+      );
+    },
+    async startAnonymousScan(deviceId, _ip, version) {
+      anonScanCalls.push({ deviceId, version });
+      return options.anonScanResult ?? { status: "ok", scans_left: 9, call_id: "call-1" };
+    },
     async linkStatus(email, version) {
       linkStatusCalls.push({ email, version });
       return options.linkStatus ?? { status: "invalid", invited: false };
@@ -263,6 +297,8 @@ function buildHarness(options: HarnessOptions = {}) {
     markedLinks,
     linkStatusCalls,
     scanCalls,
+    anonStartCalls,
+    anonScanCalls,
     draftedMime,
     order,
   };
@@ -836,7 +872,7 @@ describe("GET /trial/settings", () => {
     expect(response.body.error.message).toBe("Trial unavailable right now");
   });
 
-  it("relays the scan limit from the store when the trial is configured", async () => {
+  it("relays the scan limit and the flow flag from the server", async () => {
     const { app } = buildHarness({
       config: {
         ...CONFIG,
@@ -844,11 +880,149 @@ describe("GET /trial/settings", () => {
         RESEND_API_KEY: "resend-key",
         TRIAL_TOKEN_SECRET: "token-secret",
         TRIAL_SERVER_SECRET: "server-secret",
+        TRIAL_REQUIRE_EMAIL: false,
       },
     });
     const response = await request(app).get("/trial/settings");
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ scans_limit: 10 });
+    expect(response.body).toEqual({ scans_limit: 10, require_email: false });
+  });
+
+  it("answers without Resend when the email step is off", async () => {
+    const { app } = buildHarness({
+      config: {
+        ...CONFIG,
+        TURNSTILE_SECRET: "turnstile-secret",
+        TRIAL_TOKEN_SECRET: "token-secret",
+        TRIAL_SERVER_SECRET: "server-secret",
+        TRIAL_REQUIRE_EMAIL: false,
+      },
+    });
+    const response = await request(app).get("/trial/settings");
+    expect(response.status).toBe(200);
+  });
+});
+
+/* Anonymous trials                                                          */
+
+const ANON_DEVICE = "11111111-1111-4111-8111-111111111111";
+const ANON_CONFIG: Config = {
+  ...CONFIG,
+  TURNSTILE_SECRET: "turnstile-secret",
+  // The same value TOKEN_SECRET holds below; spelled out because this constant is
+  // evaluated before that one is declared.
+  TRIAL_TOKEN_SECRET: "token-secret",
+  TRIAL_SERVER_SECRET: "server-secret",
+  TRIAL_REQUIRE_EMAIL: false,
+};
+
+function turnstileSays(success: boolean): void {
+  fetchSpy.mockResolvedValueOnce(
+    new Response(JSON.stringify({ success }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
+}
+
+describe("POST /trial/start", () => {
+  it("issues an anonymous token after Turnstile, with no email and no Resend", async () => {
+    const { app, anonStartCalls } = buildHarness({ config: ANON_CONFIG });
+    turnstileSays(true);
+
+    const response = await request(app)
+      .post("/trial/start")
+      .send({ turnstileToken: "turnstile-token" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.device_id).toBe(ANON_DEVICE);
+    expect(response.body.scans_left).toBe(10);
+    expect(anonStartCalls).toHaveLength(1);
+    expect(anonStartCalls[0]?.deviceId).toBeNull();
+    expect(verifyTrialToken(response.body.token, TOKEN_SECRET, NOW.getTime())).toEqual({
+      ok: true,
+      kind: "anonymous",
+      deviceId: ANON_DEVICE,
+      version: 0,
+    });
+    // No Resend key is in ANON_CONFIG, and no code was sent.
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // Turnstile only
+  });
+
+  it("reuses the browser's device id so a reissued token keeps its scans", async () => {
+    const { app, anonStartCalls } = buildHarness({ config: ANON_CONFIG });
+    turnstileSays(true);
+
+    await request(app)
+      .post("/trial/start")
+      .send({ turnstileToken: "turnstile-token", deviceId: ANON_DEVICE });
+
+    expect(anonStartCalls).toEqual([{ ip: expect.any(String), deviceId: ANON_DEVICE }]);
+  });
+
+  it("refuses with email_required while the flag is on, before Turnstile", async () => {
+    const { app, anonStartCalls } = buildHarness({ config: TRIAL_CONFIG });
+
+    const response = await request(app)
+      .post("/trial/start")
+      .send({ turnstileToken: "turnstile-token" });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe("email_required");
+    expect(anonStartCalls).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a failed Turnstile and issues no device", async () => {
+    const { app, anonStartCalls } = buildHarness({ config: ANON_CONFIG });
+    turnstileSays(false);
+
+    const response = await request(app)
+      .post("/trial/start")
+      .send({ turnstileToken: "turnstile-token" });
+
+    expect(response.status).toBe(403);
+    expect(anonStartCalls).toEqual([]);
+  });
+});
+
+describe("POST /trial/parse with an anonymous token", () => {
+  const deviceToken = () => signAnonymousTrialToken(ANON_DEVICE, TOKEN_SECRET, NOW.getTime());
+
+  it("spends a device scan and calls the model", async () => {
+    const { app, anonScanCalls, scanCalls } = buildHarness({ config: ANON_CONFIG });
+
+    const response = await request(app)
+      .post("/trial/parse")
+      .send({ token: deviceToken(), text: "dal and rice", photos: [] });
+
+    expect(response.status).toBe(200);
+    expect(anonScanCalls).toEqual([{ deviceId: ANON_DEVICE, version: 0 }]);
+    expect(scanCalls).toEqual([]);
+  });
+
+  it("refuses a revoked device token with the expired sentence and calls no model", async () => {
+    const { app, completions } = buildHarness({
+      config: ANON_CONFIG,
+      anonScanResult: { status: "revoked", scans_left: 0 },
+    });
+
+    const response = await request(app)
+      .post("/trial/parse")
+      .send({ token: deviceToken(), text: "dal", photos: [] });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("trial_link_expired");
+    expect(completions).toEqual([]);
+  });
+
+  it("does not accept a device token as a personal link", async () => {
+    const { app, linkStatusCalls } = buildHarness({ config: ANON_CONFIG });
+
+    const response = await request(app).post("/trial/link").send({ token: deviceToken() });
+
+    expect(response.body.status).toBe("expired");
+    expect(linkStatusCalls).toEqual([]);
   });
 });
 
@@ -1028,6 +1202,7 @@ const TRIAL_CONFIG: Config = {
   RESEND_API_KEY: "resend-key",
   TRIAL_TOKEN_SECRET: TOKEN_SECRET,
   TRIAL_SERVER_SECRET: "server-secret",
+  TRIAL_REQUIRE_EMAIL: true,
 };
 
 function linkToken(
@@ -1213,6 +1388,7 @@ describe("POST /trial/link/issue", () => {
     const token = url.slice("https://tracknutri.app/t/".length);
     expect(verifyTrialToken(token, TOKEN_SECRET, NOW.getTime())).toEqual({
       ok: true,
+      kind: "email",
       email: "priya@example.com",
       version: 2,
       firstName: "Priya",
@@ -1299,6 +1475,7 @@ describe("the invite drafts carry a personal trial link", () => {
       expect(new Set(tokens).size).toBe(1);
       expect(verifyTrialToken(tokens[0] ?? "", TOKEN_SECRET, NOW.getTime())).toEqual({
         ok: true,
+        kind: "email",
         email: "priya@example.com",
         version: 1,
         firstName: "Priya",

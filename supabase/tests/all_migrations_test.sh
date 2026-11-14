@@ -65,8 +65,11 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_links.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial_list.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_fibre.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous.sql"
 
 # Roll back newest first, checking each predecessor comes back.
+apply "${ROOT}/supabase/rollback/20261114120000_trial_anonymous.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous_rollback.sql"
 apply "${ROOT}/supabase/rollback/20261112120000_admin_trial_list.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial_list_rollback.sql"
 apply "${ROOT}/supabase/rollback/20261110120000_trial_links.sql"
@@ -81,6 +84,7 @@ apply "${MIGRATIONS}/20261109180000_trial_scans_limit.sql"
 apply "${MIGRATIONS}/20261110120000_trial_links.sql"
 apply "${MIGRATIONS}/20261110130000_trial_meal_first_invited.sql"
 apply "${MIGRATIONS}/20261112120000_admin_trial_list.sql"
+apply "${MIGRATIONS}/20261114120000_trial_anonymous.sql"
 echo "ok - the trial migrations (and the trials list) apply again after their rollback"
 
 # The fibre migration adds a profile column and replaces two functions. Its rollback has to

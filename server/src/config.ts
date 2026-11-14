@@ -71,6 +71,22 @@ const wholeNumberOrDefault = (fallback: number) =>
       message: "must be a whole number of at least 1",
     });
 
+/**
+ * A true/false switch that may be absent.
+ *
+ * Empty is false, because that is how a dashboard leaves a variable nobody set. Anything
+ * other than "true" or "false" stops the boot with the variable named, rather than being
+ * read as the default — the same rule TEXT_THINKING_BUDGET and SWEEP_DRY_RUN follow.
+ */
+const flagOrDefault = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value === undefined || value.trim() === "" ? "false" : value.trim().toLowerCase(),
+  )
+  .pipe(z.enum(["true", "false"]))
+  .transform((value) => value === "true");
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** Render injects PORT; the default is for local development. */
@@ -123,6 +139,16 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1).optional(),
   TRIAL_TOKEN_SECRET: z.string().min(1).optional(),
   TRIAL_SERVER_SECRET: z.string().min(1).optional(),
+  /**
+   * Whether /try asks for an email and a 6-digit code. False (the default) is the
+   * anonymous trial: Turnstile, then a signed token, with no email address and no
+   * Resend. True restores the old flow exactly, and makes RESEND_API_KEY required.
+   *
+   * This is a behaviour switch, not a secret. The web build carries the same value as
+   * VITE_TRIAL_REQUIRE_EMAIL; /trial/settings reports this one so the page follows the
+   * server if the two ever disagree.
+   */
+  TRIAL_REQUIRE_EMAIL: flagOrDefault,
 
   /**
    * The admin invite feature's Google credentials, and the only secrets this service holds.
@@ -152,8 +178,10 @@ const EXPECTED = [
   "PORT (optional, defaults to 8787)",
   "DAILY_ANALYSIS_LIMIT (optional, defaults to 20)",
   "ADMIN_DAILY_ANALYSIS_LIMIT (optional, defaults to 60)",
-  "TURNSTILE_SECRET, RESEND_API_KEY, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
+  "TURNSTILE_SECRET, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
   "  (all optional; without any of them /try says the trial is unavailable)",
+  "RESEND_API_KEY (optional; required only when TRIAL_REQUIRE_EMAIL=true)",
+  "TRIAL_REQUIRE_EMAIL (optional; true or false, defaults to false)",
   "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
   "  INVITE_SENDER_ADDRESS (all optional; without them /invite says it is not set up)",
 ];
@@ -174,16 +202,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 /**
  * Whether the trial can run at all.
  *
- * The trial needs all three secrets: Turnstile to prove the visitor is a person,
- * Resend to send the code, and the HMAC secret to sign the trial token. With any of
- * them missing the trial endpoints answer "Trial unavailable right now" rather than
- * running with one of the protections silently absent.
+ * The anonymous trial needs Turnstile to prove the visitor is a person and the HMAC
+ * secret to sign the token; the server secret gates the database functions. The email
+ * flow additionally needs Resend, and only when TRIAL_REQUIRE_EMAIL is on. With any
+ * required piece missing the trial endpoints answer "Trial unavailable right now"
+ * rather than running with one of the protections silently absent.
  */
 export function trialAvailable(config: Config): boolean {
-  return (
+  const base =
     config.TURNSTILE_SECRET !== undefined &&
-    config.RESEND_API_KEY !== undefined &&
     config.TRIAL_TOKEN_SECRET !== undefined &&
-    config.TRIAL_SERVER_SECRET !== undefined
-  );
+    config.TRIAL_SERVER_SECRET !== undefined;
+  if (!base) return false;
+  // Resend is only on the email path. The anonymous trial must run without it.
+  return !config.TRIAL_REQUIRE_EMAIL || config.RESEND_API_KEY !== undefined;
 }

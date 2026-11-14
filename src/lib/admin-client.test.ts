@@ -227,6 +227,35 @@ describe("fetchTrialList", () => {
     });
   });
 
+  it("keeps an anonymous row's null email and its source", async () => {
+    client.rpc.mockResolvedValue({
+      data: [
+        {
+          ...ROW,
+          email: null,
+          source: "anonymous",
+          invited: false,
+          scans_used: 4,
+          last_active: "2026-11-13T10:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+
+    expect(await fetchTrialList("anonymous")).toEqual([
+      {
+        email: null,
+        source: "anonymous",
+        invited: false,
+        scansUsed: 4,
+        scansLimit: 10,
+        firstSeen: "2026-11-12T09:00:00.000Z",
+        lastActive: "2026-11-13T10:00:00.000Z",
+        requestedAfter: false,
+      },
+    ]);
+  });
+
   it("passes the trimmed search through the one admin RPC", async () => {
     client.rpc.mockResolvedValue({ data: [], error: null });
 
