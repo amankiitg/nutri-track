@@ -22,6 +22,7 @@ import {
   renderInviteHtml,
   renderInviteText,
   TRIAL_LINE,
+  TRIAL_URL,
 } from "./invite-email";
 
 const TAGGED = "test.user+nt1@gmail.com";
@@ -91,11 +92,11 @@ describe("the invite", () => {
   });
 });
 
-// The personal trial line, in both emails: present, linked and in both parts when the service
-// signed a link, and absent (with the rest unchanged) when it did not.
-const URL_WITH_TOKEN = "https://tracknutri.app/t/eyJlbWFpbCI6InAifQ.c2ln";
-const WITH = { firstName: "Priya", invitedEmail: "priya@example.com", trialUrl: URL_WITH_TOKEN };
-const WITHOUT = { firstName: "Priya", invitedEmail: "priya@example.com" };
+// The trial line, in both emails: the same sentence and the same plain /try link, in both parts.
+// Never a /t/<token>: drafting mints no token, so a link with one in it would be a link nobody
+// issued. The personal route is still live for the links already sent, and the /t route's own
+// tests are where that lives.
+const RECIPIENT = { firstName: "Priya", invitedEmail: "priya@example.com" };
 
 const templates = [
   ["invite", renderInviteHtml, renderInviteText],
@@ -104,29 +105,24 @@ const templates = [
 
 describe("the trial line", () => {
   for (const [name, html, text] of templates) {
-    it(`links the person's trial in the ${name} HTML and text`, () => {
-      expect(html(WITH)).toContain(`href="${URL_WITH_TOKEN}"`);
-      expect(html(WITH)).toContain(TRIAL_LINE);
-      expect(text(WITH)).toContain(`${TRIAL_LINE}:\n${URL_WITH_TOKEN}`);
+    it(`links the plain /try page in the ${name} HTML and text`, () => {
+      expect(html(RECIPIENT)).toContain(`href="${TRIAL_URL}"`);
+      expect(html(RECIPIENT)).toContain(TRIAL_LINE);
+      expect(text(RECIPIENT)).toContain(`${TRIAL_LINE}:\n${TRIAL_URL}`);
     });
 
     it(`puts it under the Open NutriTrack button in the ${name}`, () => {
-      const body = html(WITH);
+      const body = html(RECIPIENT);
       expect(body.indexOf(">Open NutriTrack<")).toBeLessThan(body.indexOf(TRIAL_LINE));
     });
 
-    it(`leaves the ${name} exactly as before without a link`, () => {
-      expect(html(WITHOUT)).not.toContain(TRIAL_LINE);
-      expect(text(WITHOUT)).not.toContain(TRIAL_LINE);
-      expect(html({ ...WITHOUT, trialUrl: null })).toBe(html(WITHOUT));
-      expect(text({ ...WITHOUT, trialUrl: null })).toBe(text(WITHOUT));
+    it(`carries no personal link in the ${name}`, () => {
+      expect(html(RECIPIENT)).not.toContain("https://tracknutri.app/t/");
+      expect(text(RECIPIENT)).not.toContain("https://tracknutri.app/t/");
     });
   }
 
-  it("escapes the link in the HTML", () => {
-    const odd = 'https://tracknutri.app/t/a"b<c';
-    expect(renderInviteHtml({ ...WITHOUT, trialUrl: odd })).toContain(
-      'href="https://tracknutri.app/t/a&quot;b&lt;c"',
-    );
+  it("offers /try, which is the page the trial opens", () => {
+    expect(TRIAL_URL).toBe("https://tracknutri.app/try");
   });
 });

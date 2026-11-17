@@ -38,6 +38,7 @@ import {
   removeInvite,
   requestStatus,
   revokedRequests,
+  trialLinkControlsEnabled,
   type InviteRequest,
 } from "@/lib/admin";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
@@ -73,7 +74,13 @@ export function InviteList({ adminId }: { adminId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const invites = useQuery({ queryKey: ["admin-invites"], queryFn: fetchInvites });
-  const trialLinks = useTrialLinks(invites.data?.map((invite) => invite.email) ?? []);
+  // The per-address link controls are off: neither email carries a /t/<token> any more. Passing no
+  // addresses rather than fetching and hiding keeps the admin page from asking for links it will
+  // not draw. See `trialLinkControlsEnabled`.
+  const showTrialLinks = trialLinkControlsEnabled();
+  const trialLinks = useTrialLinks(
+    showTrialLinks ? (invites.data?.map((invite) => invite.email) ?? []) : [],
+  );
 
   /**
    * One action, not two. The service drafts the email and adds the address in a single request,
@@ -92,9 +99,6 @@ export function InviteList({ adminId }: { adminId: string }) {
           ? `Draft ready. ${outcome.email} was already on the list, so nothing changed there.`
           : `Draft ready for ${outcome.email}. Read it in Gmail, then send it.`,
       );
-      if (!outcome.trialLinkSent) {
-        toast.warning("The draft has no trial link. Copy one from the row to send it by hand.");
-      }
       void queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-trial-links"] });
     },
@@ -232,7 +236,7 @@ export function InviteList({ adminId }: { adminId: string }) {
                       {invite.addedBy !== null && ` by ${invite.addedBy}`}
                     </p>
                     {/* Somebody with an account would only be told to sign in, so no link. */}
-                    {status.tone !== "joined" && (
+                    {showTrialLinks && status.tone !== "joined" && (
                       <TrialLinkControls
                         email={invite.email}
                         firstName={null}
@@ -392,7 +396,8 @@ export function InviteRequestsPanel() {
   });
 
   const pending = requests.isSuccess ? pendingRequests(requests.data) : [];
-  const pendingLinks = useTrialLinks(pending.map((request) => request.email));
+  const showTrialLinks = trialLinkControlsEnabled();
+  const pendingLinks = useTrialLinks(showTrialLinks ? pending.map((request) => request.email) : []);
 
   return (
     <Section
@@ -468,11 +473,13 @@ export function InviteRequestsPanel() {
                   {request.fromTrial && (
                     <p className="text-xs font-medium text-muted-foreground">Trial: 10/10 used</p>
                   )}
-                  <TrialLinkControls
-                    email={request.email}
-                    firstName={request.firstName}
-                    sent={pendingLinks.get(request.email)}
-                  />
+                  {showTrialLinks && (
+                    <TrialLinkControls
+                      email={request.email}
+                      firstName={request.firstName}
+                      sent={pendingLinks.get(request.email)}
+                    />
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button

@@ -27,7 +27,7 @@ import type {
   TrialStore,
 } from "../src/trial";
 import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
-import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE } from "../../shared/invite-email";
+import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE, TRIAL_URL } from "../../shared/invite-email";
 import {
   signAnonymousTrialToken,
   signTrialToken,
@@ -339,7 +339,6 @@ describe("POST /invite", () => {
       firstName: "Priya",
       draftId: "draft-1",
       alreadyInvited: false,
-      trialLinkSent: false,
     });
   });
 
@@ -431,7 +430,6 @@ describe("POST /invite", () => {
         firstName: "Hope",
         draftId: "draft-1",
         alreadyInvited: true,
-        trialLinkSent: false,
       });
       const mime = draftedMime[0] ?? "";
       expect(mime).toContain("You're in: welcome to NutriTrack");
@@ -1438,18 +1436,19 @@ function mimeParts(mime: string): { type: string; body: string }[] {
     });
 }
 
-function trialTokensIn(body: string): string[] {
-  return [...body.matchAll(/https:\/\/tracknutri\.app\/t\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/g)].map(
-    (m) => m[1] ?? "",
-  );
-}
-
-describe("the invite drafts carry a personal trial link", () => {
+/**
+ * No personal trial link is minted for an invite any more: both emails point at the plain /try
+ * page. The token still exists for links already sent, so these tests ask for the absence of a
+ * `/t/<token>` and of the two writes that used to make one, not only for the presence of /try.
+ */
+describe("the invite drafts carry the plain trial link", () => {
   const body = { email: "Priya@Example.com", firstName: "Priya" };
 
   for (const kind of ["invite", "approved"] as const) {
-    it(`puts a valid link in the HTML and the text of the ${kind} email, and records it after the draft`, async () => {
-      const { app, draftedMime, order, markedLinks } = buildHarness({
+    it(`points the ${kind} email at /try in both parts, and mints nothing`, async () => {
+      // A trial secret is configured on purpose: whether a token was signed used to depend on it,
+      // and the point now is that nothing is signed even when it could be.
+      const { app, draftedMime, issuedLinks, markedLinks } = buildHarness({
         config: TRIAL_CONFIG,
         isAdmin: true,
         linkVersion: 1,
@@ -1460,62 +1459,42 @@ describe("the invite drafts carry a personal trial link", () => {
         .send({ ...body, kind });
 
       expect(response.status).toBe(200);
-      expect(response.body.trialLinkSent).toBe(true);
+      // The field is gone rather than false: there is no link to have sent.
+      expect(response.body.trialLinkSent).toBeUndefined();
+
       const mime = draftedMime[0] ?? "";
       expect(mime).toContain(kind === "invite" ? SUBJECT : "welcome to NutriTrack");
 
       const parts = mimeParts(mime);
       const html = parts.find((part) => part.type === "text/html")?.body ?? "";
       const text = parts.find((part) => part.type === "text/plain")?.body ?? "";
+      expect(html).toContain(`href="${TRIAL_URL}"`);
       expect(html).toContain(TRIAL_LINE);
       expect(text).toContain(TRIAL_LINE);
+      expect(text).toContain(TRIAL_URL);
 
-      const tokens = [...trialTokensIn(html), ...trialTokensIn(text)];
-      expect(tokens).toHaveLength(2);
-      expect(new Set(tokens).size).toBe(1);
-      expect(verifyTrialToken(tokens[0] ?? "", TOKEN_SECRET, NOW.getTime())).toEqual({
-        ok: true,
-        kind: "email",
-        email: "priya@example.com",
-        version: 1,
-        firstName: "Priya",
-      });
-
-      // Issued before the draft (the email needs the URL), recorded only once the draft exists.
-      expect(order.indexOf("issue")).toBeLessThan(order.indexOf("draft"));
-      expect(order.indexOf("mark")).toBeGreaterThan(order.indexOf("draft"));
-      expect(markedLinks).toEqual(["priya@example.com"]);
+      // Nobody's personal link: not in either part, and nothing issued or recorded behind them.
+      expect(html).not.toContain("https://tracknutri.app/t/");
+      expect(text).not.toContain("https://tracknutri.app/t/");
+      expect(issuedLinks).toEqual([]);
+      expect(markedLinks).toEqual([]);
     });
   }
 
-  it("still drafts the invite, without the line, when the link cannot be issued", async () => {
-    const { app, draftedMime, addedEmails, markedLinks } = buildHarness({
-      config: TRIAL_CONFIG,
-      isAdmin: true,
-      issueThrows: true,
-    });
+  it("carries the same /try link when no trial is configured at all", async () => {
+    const { app, draftedMime, issuedLinks } = buildHarness({ isAdmin: true });
     const response = await request(app)
       .post("/invite")
       .set("Authorization", `Bearer ${TOKEN}`)
       .send(body);
 
     expect(response.status).toBe(200);
-    expect(response.body.trialLinkSent).toBe(false);
     const parts = mimeParts(draftedMime[0] ?? "");
-    expect(parts.map((part) => part.body).join("\n")).not.toContain(TRIAL_LINE);
-    expect(addedEmails).toEqual(["priya@example.com"]);
-    expect(markedLinks).toEqual([]);
-  });
-
-  it("drafts without the line when the trial has no token secret", async () => {
-    const { app, draftedMime, issuedLinks } = buildHarness({ isAdmin: true });
-    await request(app).post("/invite").set("Authorization", `Bearer ${TOKEN}`).send(body);
+    const html = parts.find((part) => part.type === "text/html")?.body ?? "";
+    const text = parts.find((part) => part.type === "text/plain")?.body ?? "";
+    expect(html).toContain(`href="${TRIAL_URL}"`);
+    expect(text).toContain(TRIAL_URL);
     expect(issuedLinks).toEqual([]);
-    expect(
-      mimeParts(draftedMime[0] ?? "")
-        .map((part) => part.body)
-        .join("\n"),
-    ).not.toContain(TRIAL_LINE);
   });
 
   it("names the approval subject on the approval", () => {
