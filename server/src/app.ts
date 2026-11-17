@@ -257,10 +257,10 @@ export function createApp(deps: AppDeps): Express {
       throw new ApiError(503, "internal_error", "Inviting is not set up on the server yet.");
     }
 
+    // No trial link: both emails point at the plain /try page, so drafting signs nothing.
     const outcome = await invite(parsed.data, {
       store,
       gmail: deps.gmail,
-      signTrialLink: linkSigner(deps),
     });
 
     // The address itself is not logged. Who was invited is recorded in `allowed_emails`, which is

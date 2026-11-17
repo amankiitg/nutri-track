@@ -274,8 +274,6 @@ const draftedInviteSchema = z.object({
   firstName: z.string(),
   draftId: z.string(),
   alreadyInvited: z.boolean(),
-  // Absent from a service that predates trial links, which means no link went out.
-  trialLinkSent: z.boolean().default(false),
 });
 
 export type DraftedInvite = z.infer<typeof draftedInviteSchema>;
@@ -343,6 +341,24 @@ async function postAsAdmin(path: string, body: unknown): Promise<unknown> {
 /* -------------------------------------------------------------------------- */
 /* Personal trial links                                                        */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Whether the admin page draws the per-address trial link controls.
+ *
+ * Off by default, and off from now on: neither email carries a personal link any more. The trial
+ * offer under the button is the plain `/try` page, so copying and revoking a `/t/<token>` is no
+ * longer part of sending an invite. Everything behind those two buttons is still here and still
+ * works — the `/t/<token>` route, the service's signer and the three `admin_trial_link_*`
+ * functions — so a build with `VITE_ADMIN_TRIAL_LINKS=true` brings the buttons back, which is
+ * what would revoke a link that is already in somebody's inbox.
+ *
+ * A build-time flag rather than a database setting: it decides what a panel draws, and drawing is
+ * not the permission check — each RPC asks `is_admin()` itself.
+ */
+export function trialLinkControlsEnabled(): boolean {
+  const value = import.meta.env["VITE_ADMIN_TRIAL_LINKS"];
+  return typeof value === "string" && value.trim().toLowerCase() === "true";
+}
 
 const issuedTrialLinkSchema = z.object({
   url: z.string().startsWith("https://tracknutri.app/t/"),
