@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { saveProfileWithTargets, type Profile } from "@/lib/profile";
+import { saveFailureDetail, saveProfileWithTargets, type Profile } from "@/lib/profile";
 import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import {
   formFromProfile,
@@ -62,7 +62,13 @@ export function ProfileForm({
       setErrors({});
       onSaved?.();
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Could not save. Please try again.");
+      // The raw value goes to the console as well: a PostgREST failure is a plain object here, not
+      // an Error, and its hint is the most useful field of the four.
+      console.error(error);
+      const detail = saveFailureDetail(error);
+      setSaveError(
+        detail === null ? "Could not save. Please try again." : `Could not save. ${detail}`,
+      );
     } finally {
       setSaving(false);
     }
