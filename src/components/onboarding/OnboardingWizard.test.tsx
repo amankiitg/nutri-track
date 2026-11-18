@@ -316,4 +316,33 @@ describe("onboarding — nothing is written before Confirm", () => {
     expect(supabase.from).not.toHaveBeenCalled();
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
+
+  it("asks for no dietary tags, and still completes", async () => {
+    const onConfirm = vi.fn<Confirm>().mockResolvedValue(undefined);
+    renderWizard(onConfirm);
+
+    fillAbout(WORKED_EXAMPLE_DOB);
+    continueStep();
+    fillBody("165", "70");
+    continueStep();
+    chooseRadio(/moderately active/i);
+    continueStep();
+    chooseRadio(/lose weight/i);
+    setInput(/target weight/i, "65");
+    continueStep();
+
+    // Preferences is the step the tag chips used to sit on, and the review row has gone too.
+    expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
+    expect(screen.queryByText(/dietary tags/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /vegetarian/i })).toBeNull();
+
+    continueStep();
+    expect(screen.queryByText(/dietary tags/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /confirm and save/i }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    // The column still gets written: empty, which is the column's own default, and what any
+    // save from now on sends because the form carries the value rather than asking for it.
+    expect(onConfirm.mock.calls[0]?.[0]).toMatchObject({ dietary_tags: [] });
+  });
 });

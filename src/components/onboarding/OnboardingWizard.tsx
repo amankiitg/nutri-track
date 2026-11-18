@@ -243,10 +243,6 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
 
             <ReviewSection title="Preferences" onEdit={() => goTo("preferences")}>
               <ReviewRow label="Protein" value={`${form.protein_g_per_kg.toFixed(1)} g/kg`} />
-              <ReviewRow
-                label="Dietary tags"
-                value={form.dietary_tags.length > 0 ? form.dietary_tags.join(", ") : "None"}
-              />
               <ReviewRow label="Time zone" value={form.timezone} />
             </ReviewSection>
 

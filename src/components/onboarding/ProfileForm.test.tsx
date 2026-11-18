@@ -50,6 +50,14 @@ const PROFILE = {
   updated_at: "2026-03-01T00:00:00Z",
 } as unknown as Profile;
 
+/** The same row in the other unit system: imperial, 5 ft 9 in. */
+const IMPERIAL_PROFILE = {
+  ...PROFILE,
+  sex: "male",
+  height_cm: 175,
+  units: "imperial",
+} as unknown as Profile;
+
 const MACRO_BUTTON = /macro preferences/i;
 const DETAILS_BUTTON = /profile details/i;
 
@@ -96,6 +104,26 @@ describe("the Settings form is collapsed where it should be", () => {
 
     expect(screen.getByText("Protein 1.6 g/kg · Fat 30% · Fibre 30 g")).toBeInTheDocument();
     expect(screen.getByText("Female · 165 cm · America/New_York")).toBeInTheDocument();
+  });
+
+  it("uses feet and inches for an imperial profile, in the height field’s own format", () => {
+    // 175 cm is 68.9 inches, which rounds to 5 ft 9 in.
+    render(<ProfileForm profile={IMPERIAL_PROFILE} onSaved={vi.fn()} />);
+
+    expect(screen.getByText("Male · 5′ 9″ · America/New_York")).toBeInTheDocument();
+  });
+
+  it("follows a unit change made inside the shut panel", async () => {
+    const user = userEvent.setup();
+    render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} />);
+
+    expect(screen.getByText("Female · 165 cm · America/New_York")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: DETAILS_BUTTON }));
+    await user.click(screen.getByRole("radio", { name: /imperial/i }));
+    await user.click(screen.getByRole("button", { name: DETAILS_BUTTON }));
+
+    // 165 cm is 64.96 inches: 5 ft 5 in once the field rounds it, which is what the field shows.
+    expect(screen.getByText("Female · 5′ 5″ · America/New_York")).toBeInTheDocument();
   });
 });
 

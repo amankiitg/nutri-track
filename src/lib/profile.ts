@@ -7,17 +7,10 @@ export type Profile = Tables<"profiles">;
 export type ProfileInsert = TablesInsert<"profiles">;
 export type Target = Tables<"targets">;
 
-export const DIETARY_TAG_OPTIONS = [
-  "vegetarian",
-  "vegan",
-  "pescatarian",
-  "gluten-free",
-  "dairy-free",
-  "halal",
-  "kosher",
-  "low-carb",
-  "nut allergy",
-] as const;
+// `DIETARY_TAG_OPTIONS` used to live here: the list of tags the profile form offered.
+// Nothing ever read `profiles.dietary_tags` — not the meal analysis, not a target, not a
+// SQL function — so the control and its vocabulary are gone. The column stays, and a save
+// still sends whatever is in it, so an existing row keeps what it had.
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
