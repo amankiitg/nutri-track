@@ -532,12 +532,22 @@ export async function logWeight(input: WeightLogInput): Promise<void> {
   if (profileError) throw profileError;
 }
 
-/** "+0.4 kg since the last weigh-in", or null when there is nothing to compare. */
+/**
+ * The change since the previous weigh-in, in kilograms, exactly as stored: "the one before",
+ * not the seven-day average, which is the trend line's job.
+ *
+ * Unrounded, on purpose. This used to round the kilogram difference to a tenth before the
+ * card converted it, and that rounding was made in the wrong unit: 167.6 lb to 166.6 lb is
+ * 76.02 kg to 75.57 kg in the column, so the change is 0.45 kg. Rounded to 0.5 kg there, it
+ * reached the card as 0.5 kg, which is 1.10 lb, and printed as 1.1 lb for a pound.
+ *
+ * A difference is one quantity: take it from the stored values here, convert it once and
+ * round it once where it is printed. `formatWeightDelta` in lib/units owns both of those,
+ * including the rule that a change which rounds away is not shown at all.
+ */
 export function weightDelta(entries: readonly WeightEntry[]): number | null {
   const latest = entries[0];
   const previous = entries[1];
   if (!latest || !previous) return null;
-  // Rounded the way it is displayed, so "+0.0 kg" never appears from a real change.
-  const delta = Math.round((latest.weight_kg - previous.weight_kg) * 10) / 10;
-  return delta === 0 ? null : delta;
+  return latest.weight_kg - previous.weight_kg;
 }

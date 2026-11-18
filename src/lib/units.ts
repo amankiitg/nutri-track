@@ -82,6 +82,17 @@ function roundTo(value: number, digits: number): number {
 }
 
 /**
+ * The decimal places a measured weight is shown with: what the stored column supports.
+ *
+ * Pounds get one and kilograms get two, because 0.01 kg is 0.022 lb: a second decimal of
+ * pounds is finer than the stored number, so printing it would show a digit nothing in the
+ * chain has. `displayRounded` and `formatWeightDelta` both take their precision from here.
+ */
+function massDigits(units: UnitSystem): 1 | 2 {
+  return units === "imperial" ? 1 : 2;
+}
+
+/**
  * The number to show for a stored value, rounded to the precision the store can actually
  * support — which is not always the precision the column has.
  *
@@ -99,7 +110,7 @@ function roundTo(value: number, digits: number): number {
  * kilograms, which is what the column expects.
  */
 export function displayRounded(base: number, units: UnitSystem, quantity: Quantity): number {
-  const digits = quantity === "mass" ? (units === "imperial" ? 1 : 2) : 1;
+  const digits = quantity === "mass" ? massDigits(units) : 1;
   return roundTo(displayValue(base, units, quantity), digits);
 }
 
@@ -114,6 +125,25 @@ export function displayRounded(base: number, units: UnitSystem, quantity: Quanti
  */
 export function formatMeasuredWeight(kg: number, units: UnitSystem): string {
   return `${displayRounded(kg, units, "mass")} ${unitLabel("mass", units)}`;
+}
+
+/**
+ * A change in weight, printed once at the card's own precision for the unit.
+ *
+ * Fixed decimals, unlike `displayRounded`, which drops a trailing zero: a change is read
+ * beside the two weigh-ins that produced it, and "0.5 kg" under "76.00 kg" looks like a
+ * different kind of number from "0.50 kg".
+ *
+ * The rounding happens here and only here. Rounding the change in kilograms before
+ * converting it is what printed 1.1 lb for a 1.0 lb change: 0.45 kg of stored difference
+ * became 0.5 kg, and 0.5 kg is 1.10 lb.
+ *
+ * Null when the change rounds away in the reader's unit, so "+0.0 lb" is never shown.
+ */
+export function formatWeightDelta(deltaKg: number, units: UnitSystem): string | null {
+  const digits = massDigits(units);
+  const rounded = Number(displayValue(Math.abs(deltaKg), units, "mass").toFixed(digits));
+  return rounded === 0 ? null : rounded.toFixed(digits);
 }
 
 /** A stored value rendered in a system, with its unit. */

@@ -7,6 +7,7 @@ import {
   formatLength,
   formatMeasuredWeight,
   formatWeight,
+  formatWeightDelta,
   ftInToCm,
   inToCm,
   kgToLb,
@@ -132,5 +133,51 @@ describe("formatMeasuredWeight", () => {
   it("uses the weight card's precision: one decimal of pounds, no trailing zero", () => {
     expect(formatMeasuredWeight(lbToKg(169.44), "imperial")).toBe("169.4 lb");
     expect(formatMeasuredWeight(lbToKg(170), "imperial")).toBe("170 lb");
+  });
+});
+
+/**
+ * The change since the previous weigh-in.
+ *
+ * The first case is the reported bug: 167.6 lb to 166.6 lb showed 1.1 lb. The card used to round
+ * the kilogram difference to a tenth (0.45 kg became 0.5 kg) and then convert that rounded
+ * number, so the last digit was decided in the unit the reader does not use.
+ */
+describe("formatWeightDelta", () => {
+  /** What the column holds for a pound reading: kilograms to two decimals. */
+  const storedKg = (lb: number) => Number(lbToKg(lb).toFixed(2));
+
+  it("prints a pound of change as 1.0 lb, not 1.1", () => {
+    const delta = storedKg(166.6) - storedKg(167.6);
+    expect(delta).toBeCloseTo(-0.45, 2);
+    expect(formatWeightDelta(delta, "imperial")).toBe("1.0");
+  });
+
+  it("keeps two decimals for kilograms, trailing zero and all", () => {
+    // Fixed decimals rather than displayRounded’s dropped zero: 0.50 kg sits under "76.00 kg".
+    expect(formatWeightDelta(76.0 - 75.5, "metric")).toBe("0.50");
+    expect(formatWeightDelta(0.4, "metric")).toBe("0.40");
+    expect(formatWeightDelta(0.4, "imperial")).toBe("0.9");
+  });
+
+  it("says the same thing in either system", () => {
+    const delta = storedKg(166.6) - storedKg(167.6);
+    const metric = Number(formatWeightDelta(delta, "metric"));
+    const imperial = Number(formatWeightDelta(delta, "imperial"));
+    // One change, two readings: each is the other converted, inside its own half-step.
+    expect(metric).toBeCloseTo(0.45, 2);
+    expect(kgToLb(metric)).toBeCloseTo(imperial, 1);
+  });
+
+  it("round-trips a pound reading unchanged", () => {
+    // 167.6 lb is stored as 76.02 kg and has to come back as the same number in the box.
+    expect(formatMeasuredWeight(storedKg(167.6), "imperial")).toBe("167.6 lb");
+  });
+
+  it("says nothing when the change rounds away in the reader’s unit", () => {
+    expect(formatWeightDelta(0.002, "metric")).toBeNull();
+    expect(formatWeightDelta(0.002, "imperial")).toBeNull();
+    expect(formatWeightDelta(0, "metric")).toBeNull();
+    expect(formatWeightDelta(-0.004, "imperial")).toBeNull();
   });
 });

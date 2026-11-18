@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { lbToKg } from "@/lib/units";
 import { WeightEntry } from "./WeightEntry";
 
 /** 79.20 kg is the stored form of 174.6 lb — the reported case. */
@@ -64,5 +65,69 @@ describe("the weight box for a stored weigh-in", () => {
 
     // 174.6 lb is 79.197... kg, and the column takes two decimals.
     expect(onSave).toHaveBeenCalledWith({ weightKg: 79.2 });
+  });
+});
+
+/**
+ * The change line, rendered.
+ *
+ * The arithmetic was never the visible bug: 0.45 kg of stored difference is the right number.
+ * What was wrong was rounding it in kilograms and then converting, which put a digit on screen
+ * that neither weigh-in supports.
+ */
+describe("the change since the previous weigh-in", () => {
+  /** What the column holds for a pound reading: kilograms to two decimals. */
+  const stored = (lb: number) => Number(lbToKg(lb).toFixed(2));
+
+  function renderDelta(
+    entries: { logged_on: string; weight_kg: number }[],
+    units: "metric" | "imperial",
+  ) {
+    render(
+      <WeightEntry
+        entries={entries.map((entry) => ({ ...entry, waist_cm: null }))}
+        unitSystem={units}
+        onSave={vi.fn()}
+        saving={false}
+      />,
+    );
+  }
+
+  it("shows a pound of change as 1.0 lb, not 1.1", () => {
+    // The reported case: 167.6 lb, then 166.6 lb the next day.
+    renderDelta(
+      [
+        { logged_on: "2026-09-27", weight_kg: stored(166.6) },
+        { logged_on: "2026-09-26", weight_kg: stored(167.6) },
+      ],
+      "imperial",
+    );
+
+    expect(screen.getByText(/−1\.0 lb/)).toBeInTheDocument();
+    expect(screen.queryByText(/1\.1 lb/)).toBeNull();
+  });
+
+  it("shows half a kilogram as 0.50 kg", () => {
+    renderDelta(
+      [
+        { logged_on: "2026-09-27", weight_kg: 75.5 },
+        { logged_on: "2026-09-26", weight_kg: 76 },
+      ],
+      "metric",
+    );
+
+    expect(screen.getByText(/−0\.50 kg/)).toBeInTheDocument();
+  });
+
+  it("says nothing when the two weigh-ins are the same", () => {
+    renderDelta(
+      [
+        { logged_on: "2026-09-27", weight_kg: 76 },
+        { logged_on: "2026-09-26", weight_kg: 76 },
+      ],
+      "imperial",
+    );
+
+    expect(screen.queryByText(/since the one before/)).toBeNull();
   });
 });
