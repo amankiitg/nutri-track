@@ -281,8 +281,9 @@ describe("onboarding — review screen", () => {
 
     expect(screen.getByText("1,636")).toBeInTheDocument();
     expect(screen.getByText("112 g")).toBeInTheDocument();
-    expect(screen.getByText("196 g")).toBeInTheDocument();
-    expect(screen.getByText("45 g")).toBeInTheDocument();
+    // Onboarding starts everybody on the 30% fat default, so the split is 55/173, not 45/196.
+    expect(screen.getByText("173 g")).toBeInTheDocument();
+    expect(screen.getByText("55 g")).toBeInTheDocument();
   });
 });
 

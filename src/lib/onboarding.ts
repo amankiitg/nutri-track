@@ -8,9 +8,12 @@
 import { z } from "zod";
 import {
   ACTIVITY_MULTIPLIERS,
+  DEFAULT_FAT_CALORIE_SHARE,
   DEFAULT_FIBER_TARGET_G,
   DEFAULT_PROTEIN_G_PER_KG,
+  MAX_FAT_CALORIE_SHARE,
   MAX_FIBER_TARGET_G,
+  MIN_FAT_CALORIE_SHARE,
   MIN_FIBER_TARGET_G,
   MIN_SAFE_BMI,
   PACE_OPTIONS,
@@ -109,6 +112,8 @@ export interface OnboardingForm {
   target_weight_kg: number | null;
   pace_kg_per_week: Pace;
   protein_g_per_kg: number;
+  /** Share of calories for fat, 0.20-0.35. Carbs get whatever is left after protein and fat. */
+  fat_share: number;
   /** Grams per day. A guideline the person chooses, not a number derived from the body. */
   fiber_target_g: number;
   dietary_tags: string[];
@@ -198,6 +203,7 @@ export const DEFAULT_ONBOARDING_FORM: OnboardingForm = {
   target_weight_kg: null,
   pace_kg_per_week: 0.5,
   protein_g_per_kg: DEFAULT_PROTEIN_G_PER_KG,
+  fat_share: DEFAULT_FAT_CALORIE_SHARE,
   fiber_target_g: DEFAULT_FIBER_TARGET_G,
   dietary_tags: [],
   timezone: detectTimeZone(),
@@ -281,6 +287,16 @@ const formShape = {
     .number({ invalid_type_error: "Please add a protein target." })
     .min(1.2, "Protein must be at least 1.2 g per kg.")
     .max(2.2, "Protein must be at most 2.2 g per kg."),
+  fat_share: z
+    .number({ invalid_type_error: "Please choose a fat share." })
+    .min(
+      MIN_FAT_CALORIE_SHARE,
+      `Fat must be at least ${Math.round(MIN_FAT_CALORIE_SHARE * 100)}% of calories.`,
+    )
+    .max(
+      MAX_FAT_CALORIE_SHARE,
+      `Fat must be at most ${Math.round(MAX_FAT_CALORIE_SHARE * 100)}% of calories.`,
+    ),
   fiber_target_g: z
     .number({ invalid_type_error: "Please add a fibre target." })
     .min(MIN_FIBER_TARGET_G, `Fibre must be at least ${MIN_FIBER_TARGET_G} g.`)
@@ -585,6 +601,7 @@ export function computeTargetsFromForm(form: OnboardingForm): TargetResult | nul
     goal: form.goal,
     pace_kg_per_week: form.goal === "maintain" ? null : form.pace_kg_per_week,
     protein_g_per_kg: form.protein_g_per_kg,
+    fat_share: form.fat_share,
   });
 }
 
@@ -609,6 +626,9 @@ export function formFromProfile(profile: Profile): OnboardingForm {
       profile.pace_kg_per_week == null ? null : Number(profile.pace_kg_per_week),
     ),
     protein_g_per_kg: Number(profile.protein_g_per_kg),
+    // Same fallback as fibre: a row written before the column existed, or a fixture without it,
+    // starts on the 30% default the database uses.
+    fat_share: profile.fat_share == null ? DEFAULT_FAT_CALORIE_SHARE : Number(profile.fat_share),
     // Rows written before the column existed, and test fixtures that do not carry it, fall back
     // to the same 30 g default the database uses.
     fiber_target_g:
@@ -639,6 +659,7 @@ export function toProfileInsert(form: OnboardingForm, userId: string): ProfileIn
     target_weight_kg: goal === "maintain" ? null : form.target_weight_kg,
     pace_kg_per_week: goal === "maintain" ? null : form.pace_kg_per_week,
     protein_g_per_kg: form.protein_g_per_kg,
+    fat_share: form.fat_share,
     fiber_target_g: form.fiber_target_g,
     units: form.units,
     timezone: form.timezone,

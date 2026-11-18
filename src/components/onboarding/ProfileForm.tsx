@@ -86,7 +86,7 @@ export function ProfileForm({
         <GoalStep {...stepProps} maintain={maintain} />
       </FieldGroup>
       <FieldGroup title="Preferences">
-        <PreferencesStep {...stepProps} showFibreTarget />
+        <PreferencesStep {...stepProps} showFibreTarget showFatShare />
       </FieldGroup>
 
       {saveError && (

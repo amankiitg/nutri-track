@@ -77,6 +77,7 @@ type TargetSource = Pick<
   | "goal"
   | "pace_kg_per_week"
   | "protein_g_per_kg"
+  | "fat_share"
 >;
 
 export function targetsFromProfile(p: TargetSource): TargetResult {
@@ -89,6 +90,9 @@ export function targetsFromProfile(p: TargetSource): TargetResult {
     goal: p.goal,
     paceKgPerWeek: p.pace_kg_per_week == null ? null : Number(p.pace_kg_per_week),
     proteinGPerKg: p.protein_g_per_kg == null ? null : Number(p.protein_g_per_kg),
+    // A row that predates the column, or a fixture without it, gets the 30% default rather than a
+    // split that depends on which caller asked.
+    fatShare: p.fat_share == null ? null : Number(p.fat_share),
   });
 }
 
