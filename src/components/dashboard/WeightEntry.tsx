@@ -7,6 +7,7 @@ import {
   displayRounded,
   formatLength,
   formatMeasuredWeight,
+  formatWeightDelta,
   lbToKg,
   cmToIn,
   inToCm,
@@ -54,6 +55,9 @@ export function WeightEntry({
 }) {
   const latest = entries[0] ?? null;
   const delta = weightDelta(entries);
+  // Converted and rounded once, in the reader's unit, by the same precision the weigh-ins above
+  // use. Null when the change rounds away, which is when there is nothing worth saying.
+  const deltaText = delta === null ? null : formatWeightDelta(delta, unitSystem);
   const display =
     latest === null ? "" : String(displayRounded(latest.weight_kg, unitSystem, "mass"));
 
@@ -119,12 +123,12 @@ export function WeightEntry({
               })}
             </time>
             .
-            {delta !== null && (
+            {delta !== null && deltaText !== null && (
               <>
                 {" "}
                 <span className={delta > 0 ? "text-amber-600" : "text-emerald-600"}>
                   {delta > 0 ? "+" : "−"}
-                  {displayRounded(Math.abs(delta), unitSystem, "mass")} {unit}
+                  {deltaText} {unit}
                 </span>{" "}
                 since the one before.
               </>

@@ -442,9 +442,21 @@ describe("weightDelta", () => {
     waist_cm: null,
   });
 
-  it("reports the change since the previous weigh-in", () => {
-    expect(weightDelta([entry("2026-09-11", 71.5), entry("2026-09-10", 71.1)])).toBe(0.4);
-    expect(weightDelta([entry("2026-09-11", 70.6), entry("2026-09-10", 71.1)])).toBe(-0.5);
+  it("reports the raw change since the previous weigh-in", () => {
+    // No rounding here any more: the difference leaves this function as stored, and the
+    // conversion and the single rounding happen where it is printed.
+    expect(weightDelta([entry("2026-09-11", 71.5), entry("2026-09-10", 71.1)])).toBeCloseTo(0.4, 6);
+    expect(weightDelta([entry("2026-09-11", 70.6), entry("2026-09-10", 71.1)])).toBeCloseTo(
+      -0.5,
+      6,
+    );
+  });
+
+  it("compares with the weigh-in before, never with an average", () => {
+    // A third, much older entry is there to be ignored: the change is latest minus previous,
+    // and an average over the history would land somewhere between the two.
+    const entries = [entry("2026-09-11", 71.5), entry("2026-09-10", 71.1), entry("2026-08-01", 60)];
+    expect(weightDelta(entries)).toBeCloseTo(0.4, 6);
   });
 
   it("says nothing when there is only one weigh-in", () => {
@@ -452,8 +464,13 @@ describe("weightDelta", () => {
     expect(weightDelta([])).toBeNull();
   });
 
-  it("says nothing when the change rounds away", () => {
-    expect(weightDelta([entry("2026-09-11", 71.52), entry("2026-09-10", 71.5)])).toBeNull();
+  it("keeps a change smaller than a tenth of a kilogram", () => {
+    // It used to be swallowed here. Whether it is worth showing is now the formatter's
+    // question, in the reader's unit: see formatWeightDelta in units.test.ts.
+    expect(weightDelta([entry("2026-09-11", 71.52), entry("2026-09-10", 71.5)])).toBeCloseTo(
+      0.02,
+      6,
+    );
   });
 });
 
