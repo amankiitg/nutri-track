@@ -86,34 +86,72 @@ export function AboutStep({ form, errors, setField }: StepProps) {
   );
 }
 
+export function UnitsFields({ form, setField }: StepProps) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm font-medium">Units</legend>
+      {(["metric", "imperial"] as const).map((option) => (
+        <ChoiceCard
+          key={option}
+          name="units"
+          value={option}
+          checked={form.units === option}
+          onSelect={() => setField("units", option)}
+          title={option === "metric" ? "Metric" : "Imperial"}
+          description={option === "metric" ? "cm and kg" : "ft/in and lb"}
+        />
+      ))}
+    </fieldset>
+  );
+}
+
+/**
+ * Height, apart from weight so Settings can put it with the other body details.
+ */
+export function HeightFields({ form, errors, setField }: StepProps) {
+  return (
+    <HeightField
+      valueCm={form.height_cm}
+      units={form.units}
+      onChange={(value) => setField("height_cm", value)}
+      error={errors.height_cm}
+    />
+  );
+}
+
 export function BodyStep({ form, errors, setField }: StepProps) {
   return (
     <>
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">Units</legend>
-        {(["metric", "imperial"] as const).map((option) => (
-          <ChoiceCard
-            key={option}
-            name="units"
-            value={option}
-            checked={form.units === option}
-            onSelect={() => setField("units", option)}
-            title={option === "metric" ? "Metric" : "Imperial"}
-            description={option === "metric" ? "cm and kg" : "ft/in and lb"}
-          />
-        ))}
-      </fieldset>
-      <HeightField
-        valueCm={form.height_cm}
-        units={form.units}
-        onChange={(value) => setField("height_cm", value)}
-        error={errors.height_cm}
-      />
+      <UnitsFields form={form} errors={errors} setField={setField} />
+      <HeightFields form={form} errors={errors} setField={setField} />
       <WeightField
         valueKg={form.weight_kg}
         units={form.units}
         onChange={(value) => setField("weight_kg", value)}
         error={errors.weight_kg}
+      />
+    </>
+  );
+}
+
+/**
+ * Everything that describes the body or the account rather than the goal: the name, the date of
+ * birth, sex, units, height and the time zone.
+ *
+ * Settings folds this into one collapsible at the bottom of the page. It sits with the goal fields
+ * on the same screen today, so it is composed here from the same pieces rather than written out a
+ * second time — a second copy is how the two screens start disagreeing about validation.
+ */
+export function ProfileDetailsFields({ form, errors, setField }: StepProps) {
+  return (
+    <>
+      <AboutStep form={form} errors={errors} setField={setField} />
+      <UnitsFields form={form} errors={errors} setField={setField} />
+      <HeightFields form={form} errors={errors} setField={setField} />
+      <TimeZoneSelect
+        value={form.timezone}
+        onChange={(value) => setField("timezone", value)}
+        error={errors.timezone}
       />
     </>
   );
@@ -139,7 +177,44 @@ export function ActivityStep({ form, setField }: StepProps) {
   );
 }
 
-export function GoalStep({
+/**
+ * The goal choice on its own.
+ *
+ * Split out so Settings can put the current weight between this and the rest of the goal fields —
+ * the order somebody reads their own numbers in — without a second copy of the choice cards.
+ */
+export function GoalChoiceFields({ form, errors, setField }: StepProps) {
+  return (
+    <>
+      <fieldset className="space-y-3">
+        <legend className="sr-only">Goal</legend>
+        {GOAL_OPTIONS.map((option) => (
+          <ChoiceCard
+            key={option}
+            name="goal"
+            value={option}
+            checked={form.goal === option}
+            onSelect={() => setField("goal", option)}
+            title={GOAL_COPY[option].title}
+            description={GOAL_COPY[option].description}
+          />
+        ))}
+      </fieldset>
+
+      {errors.goal && (
+        <p role="alert" className="text-sm text-destructive">
+          {errors.goal}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Target weight, pace, and what follows from them: the date to arrive, or the notice that the
+ * target has been reached. Nothing to show for a goal with no destination, so it renders nothing.
+ */
+export function TargetFields({
   form,
   errors,
   setField,
@@ -165,80 +240,78 @@ export function GoalStep({
           paceKgPerWeek: form.pace_kg_per_week,
         });
 
+  if (form.goal === null || form.goal === "maintain") return null;
+
   return (
     <>
-      <fieldset className="space-y-3">
-        <legend className="sr-only">Goal</legend>
-        {GOAL_OPTIONS.map((option) => (
-          <ChoiceCard
-            key={option}
-            name="goal"
-            value={option}
-            checked={form.goal === option}
-            onSelect={() => setField("goal", option)}
-            title={GOAL_COPY[option].title}
-            description={GOAL_COPY[option].description}
-          />
-        ))}
+      <WeightField
+        id="target-weight"
+        label="Target weight"
+        valueKg={form.target_weight_kg}
+        units={form.units}
+        onChange={(value) => setField("target_weight_kg", value)}
+        error={errors.target_weight_kg}
+      />
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Pace</legend>
+        <div className="grid grid-cols-2 gap-3">
+          {PACE_OPTIONS.map((pace) => (
+            <ChoiceCard
+              key={pace}
+              name="pace_kg_per_week"
+              value={String(pace)}
+              checked={form.pace_kg_per_week === pace}
+              onSelect={() => setField("pace_kg_per_week", pace)}
+              title={formatPace(pace, form.units)}
+            />
+          ))}
+        </div>
       </fieldset>
 
-      {errors.goal && (
-        <p role="alert" className="text-sm text-destructive">
-          {errors.goal}
-        </p>
+      {maintain !== null && (
+        <TargetReachedNotice
+          averageKg={maintain.averageKg}
+          crossed={maintain.crossed}
+          units={form.units}
+          onSwitch={() => setField("goal", "maintain")}
+        />
       )}
 
-      {form.goal !== null && form.goal !== "maintain" && (
-        <>
-          <WeightField
-            id="target-weight"
-            label="Target weight"
-            valueKg={form.target_weight_kg}
-            units={form.units}
-            onChange={(value) => setField("target_weight_kg", value)}
-            error={errors.target_weight_kg}
-          />
-
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Pace</legend>
-            <div className="grid grid-cols-2 gap-3">
-              {PACE_OPTIONS.map((pace) => (
-                <ChoiceCard
-                  key={pace}
-                  name="pace_kg_per_week"
-                  value={String(pace)}
-                  checked={form.pace_kg_per_week === pace}
-                  onSelect={() => setField("pace_kg_per_week", pace)}
-                  title={formatPace(pace, form.units)}
-                />
-              ))}
-            </div>
-          </fieldset>
-
-          {maintain !== null && (
-            <TargetReachedNotice
-              averageKg={maintain.averageKg}
-              crossed={maintain.crossed}
-              units={form.units}
-              onSwitch={() => setField("goal", "maintain")}
-            />
-          )}
-
-          {/* Not beside the notice: a date to arrive at the target contradicts "you're at it". */}
-          {projectedOn && maintain === null && (
-            <p className="text-sm text-muted-foreground">
-              At {formatPace(form.pace_kg_per_week, form.units)} you'd reach{" "}
-              {formatWeight(form.target_weight_kg ?? 0, form.units)} around{" "}
-              <strong>{toLocaleDate(projectedOn)}</strong>.
-            </p>
-          )}
-        </>
+      {/* Not beside the notice: a date to arrive at the target contradicts "you're at it". */}
+      {projectedOn && maintain === null && (
+        <p className="text-sm text-muted-foreground">
+          At {formatPace(form.pace_kg_per_week, form.units)} you'd reach{" "}
+          {formatWeight(form.target_weight_kg ?? 0, form.units)} around{" "}
+          <strong>{toLocaleDate(projectedOn)}</strong>.
+        </p>
       )}
     </>
   );
 }
 
-export function PreferencesStep({
+/** The goal step, as onboarding shows it: the choice, then whatever follows from it. */
+export function GoalStep({
+  maintain = null,
+  ...stepProps
+}: StepProps & {
+  maintain?: MaintainSuggestion | null;
+}) {
+  return (
+    <>
+      <GoalChoiceFields {...stepProps} />
+      <TargetFields {...stepProps} maintain={maintain} />
+    </>
+  );
+}
+
+/**
+ * Protein, fat and fibre — the three numbers that decide the macro split.
+ *
+ * Settings puts them behind one collapsible; onboarding shows the protein target on its own, which
+ * is what the two flags are for.
+ */
+export function MacroFields({
   form,
   errors,
   setField,
@@ -342,6 +415,36 @@ export function PreferencesStep({
           )}
         </fieldset>
       )}
+    </>
+  );
+}
+
+/**
+ * The Preferences screen: the macros, the dietary tags and the time zone.
+ *
+ * Onboarding's last step. Settings no longer uses this: it draws `MacroFields` in one collapsible
+ * and `ProfileDetailsFields` in another, and shows no dietary tags at all — nothing reads them, and
+ * a control that stores a value nothing uses costs a belief that it is doing something.
+ */
+export function PreferencesStep({
+  form,
+  errors,
+  setField,
+  showFibreTarget = false,
+  showFatShare = false,
+}: StepProps & {
+  showFibreTarget?: boolean;
+  showFatShare?: boolean;
+}) {
+  return (
+    <>
+      <MacroFields
+        form={form}
+        errors={errors}
+        setField={setField}
+        showFibreTarget={showFibreTarget}
+        showFatShare={showFatShare}
+      />
 
       <ChipGroup
         legend="Dietary tags"
