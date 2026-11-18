@@ -30,7 +30,21 @@ export type Pace = (typeof PACE_OPTIONS)[number];
 export const KCAL_PER_KG = 7700;
 export const CALORIE_FLOOR: Record<Sex, number> = { male: 1500, female: 1200 };
 export const DEFAULT_PROTEIN_G_PER_KG = 1.6;
-export const FAT_CALORIE_SHARE = 0.25;
+
+/**
+ * The share of the calorie target that fat takes, and the range Settings offers.
+ *
+ * A share of calories rather than a dose per kilogram, because that is how a macro split is
+ * written: protein is the dose (it is the one with a body-weight floor), fat takes a slice of what
+ * the day allows, and carbohydrate is the remainder. 30% replaces a hard-coded 25%, and 30% is
+ * both the default and middle of the range. 20% is about the lowest share a dietitian would set,
+ * and above 35% the carbohydrate left over stops leaving room for a normal plate.
+ */
+export const DEFAULT_FAT_CALORIE_SHARE = 0.3;
+export const MIN_FAT_CALORIE_SHARE = 0.2;
+export const MAX_FAT_CALORIE_SHARE = 0.35;
+/** Five percentage points, so the slider offers 20/25/30/35 and nothing between. */
+export const FAT_CALORIE_SHARE_STEP = 0.05;
 
 /**
  * The daily fibre target, in grams.
@@ -80,6 +94,11 @@ export interface TargetInput {
   /** kg per week; ignored when goal is maintain */
   paceKgPerWeek?: number | null;
   proteinGPerKg?: number | null;
+  /**
+   * Share of the calorie target for fat, 0.20-0.35. Absent means the 30% default, which is what
+   * every caller that has no stored preference gets.
+   */
+  fatShare?: number | null;
 }
 
 export interface TargetResult {
@@ -96,6 +115,33 @@ export interface TargetResult {
   proteinG: number;
   fatG: number;
   carbsG: number;
+}
+
+export interface MacroSplit {
+  /** Passed in, because it is dosed per kilogram of body weight rather than taken as a share. */
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+}
+
+/**
+ * Splits a calorie target into the three macros.
+ *
+ * Fat takes its share of the calories; carbohydrate is the remainder after protein and fat, and it
+ * is the only one that can run out. A calorie floor plus a high protein dose can claim more than
+ * the target, and a negative carbohydrate figure reads as a number to beat rather than the floor
+ * it is, so the remainder is clamped at zero. Calories are not adjusted to match: the target is
+ * the target, and the macros are how it is spent.
+ */
+export function macroSplit(input: {
+  calories: number;
+  proteinG: number;
+  fatShare?: number | null;
+}): MacroSplit {
+  const fatShare = input.fatShare ?? DEFAULT_FAT_CALORIE_SHARE;
+  const fatG = Math.round((fatShare * input.calories) / 9);
+  const carbsG = Math.max(0, Math.round((input.calories - input.proteinG * 4 - fatG * 9) / 4));
+  return { proteinG: input.proteinG, fatG, carbsG };
 }
 
 export function computeTargets(input: TargetInput): TargetResult {
@@ -122,8 +168,13 @@ export function computeTargets(input: TargetInput): TargetResult {
 
   const proteinPerKg = input.proteinGPerKg ?? DEFAULT_PROTEIN_G_PER_KG;
   const proteinG = Math.round(proteinPerKg * input.weightKg);
-  const fatG = Math.round((FAT_CALORIE_SHARE * calories) / 9);
-  const carbsG = Math.max(0, Math.round((calories - proteinG * 4 - fatG * 9) / 4));
+  const { fatG, carbsG } = macroSplit({
+    calories,
+    proteinG,
+    // Null rather than the raw optional: an absent share means the default, and
+    // exactOptionalPropertyTypes will not take an explicit undefined.
+    fatShare: input.fatShare ?? null,
+  });
 
   return {
     bmr: basal,

@@ -100,5 +100,17 @@ fibre_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns w
 [ "${fibre_col}" = "1" ] || { echo "FAIL: fiber_target_g missing after the fibre migration reapplied" >&2; exit 1; }
 echo "ok - the fibre migration rolls back and applies again"
 
+# The fat share is one column and one constraint; the round trip is here because a column with a
+# default is the kind of change that looks reversible and is not if the constraint is left behind.
+apply "${ROOT}/supabase/rollback/20261118120000_fat_share.sql"
+fat_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='fat_share'")
+[ "${fat_col}" = "0" ] || { echo "FAIL: fat_share survived its rollback" >&2; exit 1; }
+fat_con=$("${PSQL[@]}" -Atc "select count(*) from pg_constraint where conname='profiles_fat_share_range'")
+[ "${fat_con}" = "0" ] || { echo "FAIL: profiles_fat_share_range survived its rollback" >&2; exit 1; }
+apply "${MIGRATIONS}/20261118120000_fat_share.sql"
+fat_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='fat_share'")
+[ "${fat_col}" = "1" ] || { echo "FAIL: fat_share missing after the fat share migration reapplied" >&2; exit 1; }
+echo "ok - the fat share migration rolls back and applies again"
+
 echo ""
-echo "PASS: all migrations apply in order over their predecessors, and the trial and fibre rollbacks round-trip"
+echo "PASS: all migrations apply in order over their predecessors, and the trial, fibre and fat share rollbacks round-trip"

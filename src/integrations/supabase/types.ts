@@ -297,6 +297,7 @@ export type Database = {
           dietary_tags: string[];
           display_name: string;
           dob: string;
+          fat_share: number;
           fiber_target_g: number;
           goal: Database["public"]["Enums"]["goal_type"];
           height_cm: number;
@@ -317,6 +318,7 @@ export type Database = {
           dietary_tags?: string[];
           display_name: string;
           dob: string;
+          fat_share?: number;
           fiber_target_g?: number;
           goal: Database["public"]["Enums"]["goal_type"];
           height_cm: number;
@@ -337,6 +339,7 @@ export type Database = {
           dietary_tags?: string[];
           display_name?: string;
           dob?: string;
+          fat_share?: number;
           fiber_target_g?: number;
           goal?: Database["public"]["Enums"]["goal_type"];
           height_cm?: number;

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_FAT_CALORIE_SHARE,
+  MIN_FAT_CALORIE_SHARE,
   ageFromDob,
   bmi,
   bmr,
   calorieExplanation,
   computeTargets,
+  macroSplit,
   minSafeWeightKg,
   projectionFor,
   projectedTargetDate,
@@ -45,11 +48,73 @@ describe("computeTargets — worked example", () => {
   it("adjustment = -550 kcal/day", () => expect(result.adjustment).toBeCloseTo(-550, 5));
   it("target = 1636 kcal", () => expect(result.calories).toBe(1636));
   it("protein = 112 g", () => expect(result.proteinG).toBe(112));
-  it("fat = 45 g", () => expect(result.fatG).toBe(45));
-  it("carbs = 196 g", () => expect(result.carbsG).toBe(196));
+  // 30% of 1,636 kcal is 54.5 g of fat, rounded to 55; carbohydrate takes the remainder.
+  it("fat = 55 g", () => expect(result.fatG).toBe(55));
+  it("carbs = 173 g", () => expect(result.carbsG).toBe(173));
   it("floor not applied", () => {
     expect(result.floorApplied).toBe(false);
     expect(result.effectivePace).toBe(0.5);
+  });
+});
+
+/**
+ * The split, on the numbers from the brief: 1,699 kcal a day and 121 g protein. The arithmetic is
+ * fat = round(kcal x share / 9) and carbs = round(remainder / 4), so 30% of 1,699 is 56.6 g -> 57 g
+ * fat, leaving 1,699 - 484 - 513 = 702 kcal -> 175.5 g -> 176 g carbohydrate.
+ */
+describe("the fat share", () => {
+  const split = (fatShare: number | null) =>
+    macroSplit({ calories: 1699, proteinG: 121, fatShare });
+
+  it("takes 30% by default: 57 g fat, 176 g carbs", () => {
+    expect(split(null)).toEqual({ proteinG: 121, fatG: 57, carbsG: 176 });
+    // An absent share and an explicit null are the same request; there is one default, not two.
+    expect(macroSplit({ calories: 1699, proteinG: 121 })).toEqual(split(null));
+  });
+
+  it("takes 25% when asked: 47 g fat, and carbs absorb the difference", () => {
+    expect(split(0.25).fatG).toBe(47);
+    expect(split(0.25).carbsG).toBe(198);
+  });
+
+  it("reads both ends of the slider", () => {
+    expect(split(MIN_FAT_CALORIE_SHARE).fatG).toBe(38);
+    expect(split(MAX_FAT_CALORIE_SHARE).fatG).toBe(66);
+    // More fat, less carbohydrate: the calories are the same either way.
+    expect(split(MIN_FAT_CALORIE_SHARE).carbsG).toBe(218);
+    expect(split(MAX_FAT_CALORIE_SHARE).carbsG).toBe(155);
+    expect(split(MIN_FAT_CALORIE_SHARE).proteinG).toBe(split(MAX_FAT_CALORIE_SHARE).proteinG);
+  });
+
+  it("never gives carbohydrate a negative target", () => {
+    // 220 g protein is 880 kcal and 35% fat is another 423; a 1,200 kcal target has 103 kcal left
+    // over, which is not a -26 g carbohydrate target.
+    expect(macroSplit({ calories: 1200, proteinG: 220, fatShare: 0.35 })).toEqual({
+      proteinG: 220,
+      fatG: 47,
+      carbsG: 0,
+    });
+  });
+
+  it("changes the macro split and nothing else on a computed target", () => {
+    const base = {
+      sex: "female" as const,
+      age: 32,
+      heightCm: 165,
+      weightKg: 70,
+      activityLevel: "moderately_active" as const,
+      goal: "lose" as const,
+      paceKgPerWeek: 0.5,
+      proteinGPerKg: 1.6,
+    };
+    const quarter = computeTargets({ ...base, fatShare: 0.25 });
+    const third = computeTargets({ ...base, fatShare: 0.3 });
+
+    expect(quarter.calories).toBe(third.calories);
+    expect(quarter.proteinG).toBe(third.proteinG);
+    expect(quarter.fatG).toBe(45);
+    expect(third.fatG).toBe(55);
+    expect(third.carbsG).toBeLessThan(quarter.carbsG);
   });
 });
 

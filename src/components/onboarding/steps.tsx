@@ -9,7 +9,10 @@ import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
 import {
   ACTIVITY_LABELS,
   ACTIVITY_MULTIPLIERS,
+  FAT_CALORIE_SHARE_STEP,
+  MAX_FAT_CALORIE_SHARE,
   MAX_FIBER_TARGET_G,
+  MIN_FAT_CALORIE_SHARE,
   MIN_FIBER_TARGET_G,
   PACE_OPTIONS,
   projectionFor,
@@ -240,6 +243,7 @@ export function PreferencesStep({
   errors,
   setField,
   showFibreTarget = false,
+  showFatShare = false,
 }: StepProps & {
   /**
    * Settings only. Onboarding leaves the database default in place; this is the screen somebody
@@ -247,6 +251,12 @@ export function PreferencesStep({
    * time. The form still carries the value either way, so both paths write the same column.
    */
   showFibreTarget?: boolean;
+  /**
+   * Settings only too, and for a stronger reason: the split is arithmetic on the target, so
+   * changing it is a change to a number already being eaten against. Onboarding starts everybody on
+   * the 30% default, which is also what the migration writes for existing rows.
+   */
+  showFatShare?: boolean;
 }) {
   return (
     <>
@@ -272,6 +282,36 @@ export function PreferencesStep({
           1.6 g/kg suits most people. More protein helps keep muscle while losing.
         </p>
       </fieldset>
+
+      {showFatShare && (
+        <fieldset className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <legend className="text-sm font-medium">Fat share</legend>
+            <span className="text-sm tabular-nums text-muted-foreground">
+              {Math.round(form.fat_share * 100)}% of calories
+            </span>
+          </div>
+          <Slider
+            value={[form.fat_share]}
+            min={MIN_FAT_CALORIE_SHARE}
+            max={MAX_FAT_CALORIE_SHARE}
+            step={FAT_CALORIE_SHARE_STEP}
+            aria-label="Share of calories from fat"
+            onValueChange={(values) => {
+              const value = values[0];
+              if (typeof value === "number") setField("fat_share", value);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Carbs fill whatever is left after protein and fat.
+          </p>
+          {errors.fat_share && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.fat_share}
+            </p>
+          )}
+        </fieldset>
+      )}
 
       {showFibreTarget && (
         <fieldset className="space-y-3">
