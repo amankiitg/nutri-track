@@ -18,7 +18,6 @@ import {
   projectionFor,
 } from "@/lib/targets";
 import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
-import { DIETARY_TAG_OPTIONS } from "@/lib/profile";
 import { formatPace, formatWeight } from "@/lib/units";
 import {
   ACTIVITY_LEVELS,
@@ -31,7 +30,7 @@ import {
   type FieldErrors,
   type OnboardingForm,
 } from "@/lib/onboarding";
-import { ChoiceCard, ChipGroup, HeightField, TextField, WeightField } from "./fields";
+import { ChoiceCard, HeightField, TextField, WeightField } from "./fields";
 import { TimeZoneSelect } from "./TimeZoneSelect";
 
 export interface StepProps {
@@ -444,20 +443,6 @@ export function PreferencesStep({
         setField={setField}
         showFibreTarget={showFibreTarget}
         showFatShare={showFatShare}
-      />
-
-      <ChipGroup
-        legend="Dietary tags"
-        options={DIETARY_TAG_OPTIONS}
-        selected={form.dietary_tags}
-        onToggle={(tag) =>
-          setField(
-            "dietary_tags",
-            form.dietary_tags.includes(tag)
-              ? form.dietary_tags.filter((value) => value !== tag)
-              : [...form.dietary_tags, tag],
-          )
-        }
       />
 
       <TimeZoneSelect
