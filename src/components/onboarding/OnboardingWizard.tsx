@@ -9,7 +9,7 @@ import {
   ageFromDob,
   calorieExplanation,
 } from "@/lib/targets";
-import type { ProfileInsert } from "@/lib/profile";
+import { saveFailureDetail, type ProfileInsert } from "@/lib/profile";
 import { formatHeight, formatPace, formatWeight } from "@/lib/units";
 import {
   DEFAULT_ONBOARDING_FORM,
@@ -143,8 +143,12 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
       clearOnboardingDraft();
       onSaved();
     } catch (error) {
+      console.error(error);
+      const detail = saveFailureDetail(error);
       setSaveError(
-        error instanceof Error ? error.message : "Could not save your profile. Please try again.",
+        detail === null
+          ? "Could not save your profile. Please try again."
+          : "Could not save your profile. " + detail,
       );
     } finally {
       setSaving(false);

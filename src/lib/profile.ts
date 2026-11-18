@@ -106,6 +106,44 @@ async function fetchStoredWeightKg(userId: string): Promise<number | null> {
   return data ? Number(data.weight_kg) : null;
 }
 
+/**
+ * The database's own words for a failed save, for the sentence under the form.
+ *
+ * The form used to print `error.message` when the thrown value was an `Error` and a generic
+ * sentence otherwise, and a PostgREST failure is not an `Error` here: measured against this
+ * project's API with the publishable key, a refused read comes back as a plain object with `code`,
+ * `message`, `details` and `hint`, and `instanceof Error` is false. So the field worth reading —
+ * the code — was the one thrown away, and a save the database had refused read on screen as a
+ * dropped connection: "Could not save. Please try again." while the real answer was PGRST204,
+ * "Could not find the 'fat_share' column of 'profiles' in the schema cache".
+ *
+ * Returns null when the value carries nothing to say, so the caller keeps its own fallback.
+ */
+export function saveFailureDetail(error: unknown): string | null {
+  if (typeof error === "string") {
+    const text = error.trim();
+    return text === "" ? null : text;
+  }
+  const failure = error as {
+    code?: unknown;
+    message?: unknown;
+    hint?: unknown;
+    details?: unknown;
+  } | null;
+  const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+  const message = text(failure?.message);
+  const code = text(failure?.code);
+  // `details` repeats the message most of the time, so it is only used when there is no message.
+  const details = message === "" ? text(failure?.details) : "";
+  const hint = text(failure?.hint);
+
+  const headline = message !== "" ? message : details;
+  if (headline === "" && code === "") return null;
+  const named = code === "" ? headline : headline === "" ? code : headline + " (" + code + ")";
+  return hint === "" ? named : named + " " + hint;
+}
+
 export interface SaveProfileOptions {
   /**
    * Onboarding seeds the starting weight even when the stored value happens to

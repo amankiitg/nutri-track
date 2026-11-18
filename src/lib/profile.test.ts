@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchCurrentTarget,
   localDateString,
+  saveFailureDetail,
   saveProfileWithTargets,
   type Profile,
   type ProfileInsert,
@@ -217,5 +218,58 @@ describe("saveProfileWithTargets — weight history", () => {
     await expect(saveProfileWithTargets(profileInsert({ weight_kg: 71 }))).rejects.toThrow(
       "weight_log down",
     );
+  });
+});
+
+/**
+ * The sentence under a failed save.
+ *
+ * The first case is the shape measured against this project's API with the publishable key: a
+ * refused request comes back as a plain object, `instanceof Error` is false, and the form's old
+ * check printed its generic sentence instead of the code. The second is the failure that cost a
+ * production save during the fat_share deploy.
+ */
+describe("saveFailureDetail", () => {
+  it("reads a PostgREST failure object, code and hint included", () => {
+    const refusal = {
+      code: "42501",
+      message: "permission denied for table profiles",
+      details: null,
+      hint: "Grant the required privileges to the current role with: GRANT SELECT ON public.profiles TO anon;",
+    };
+    expect(refusal instanceof Error).toBe(false);
+    expect(saveFailureDetail(refusal)).toBe(
+      "permission denied for table profiles (42501) Grant the required privileges to the current role with: GRANT SELECT ON public.profiles TO anon;",
+    );
+  });
+
+  it("names the schema-cache miss the fat share deploy produced", () => {
+    expect(
+      saveFailureDetail({
+        code: "PGRST204",
+        message: "Could not find the 'fat_share' column of 'profiles' in the schema cache",
+        details: null,
+        hint: null,
+      }),
+    ).toBe("Could not find the 'fat_share' column of 'profiles' in the schema cache (PGRST204)");
+  });
+
+  it("still reads a real Error, which carries a message but no code", () => {
+    expect(saveFailureDetail(new TypeError("Failed to fetch"))).toBe("Failed to fetch");
+    expect(saveFailureDetail("connection lost")).toBe("connection lost");
+  });
+
+  it("falls back to the details when there is no message, and to the code when neither", () => {
+    expect(saveFailureDetail({ code: "23514", details: "violates check constraint" })).toBe(
+      "violates check constraint (23514)",
+    );
+    expect(saveFailureDetail({ code: "PGRST000" })).toBe("PGRST000");
+  });
+
+  it("returns null when the value says nothing, so the caller keeps its own sentence", () => {
+    expect(saveFailureDetail({})).toBeNull();
+    expect(saveFailureDetail(null)).toBeNull();
+    expect(saveFailureDetail(undefined)).toBeNull();
+    expect(saveFailureDetail({ message: "   " })).toBeNull();
   });
 });
