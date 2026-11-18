@@ -337,8 +337,10 @@ describe("the fields are labelled, and their ids are unique", () => {
     // is the test that would have caught it.
     render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} />);
 
+    // `hidden: true` because two of the groups are shut by default now: an input inside a
+    // collapsed panel is still an input with an id, and a duplicate there is just as invalid.
     const ids = screen
-      .getAllByRole("textbox")
+      .getAllByRole("textbox", { hidden: true })
       .map((input) => input.id)
       .filter((id) => id !== "");
     expect(ids.length).toBeGreaterThan(3);
@@ -348,7 +350,8 @@ describe("the fields are labelled, and their ids are unique", () => {
   it("gives the target weight label its own box on the Settings form", () => {
     render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} />);
 
-    expect(screen.getByLabelText("Weight")).toHaveValue("70");
+    // Named for what it is: the expanded weight is the one being lived in.
+    expect(screen.getByLabelText("Current weight")).toHaveValue("70");
     expect(screen.getByLabelText("Target weight")).toHaveValue("65");
   });
 });
