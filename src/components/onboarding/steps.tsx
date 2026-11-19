@@ -15,10 +15,10 @@ import {
   MIN_FAT_CALORIE_SHARE,
   MIN_FIBER_TARGET_G,
   PACE_OPTIONS,
-  projectionFor,
 } from "@/lib/targets";
 import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
-import { formatPace, formatWeight } from "@/lib/units";
+import { formatPace } from "@/lib/units";
+import { reachTargetSentence } from "@/lib/target-date";
 import {
   ACTIVITY_LEVELS,
   GOAL_COPY,
@@ -26,7 +26,6 @@ import {
   MAX_AGE,
   MIN_AGE,
   SEX_OPTIONS,
-  toLocaleDate,
   type FieldErrors,
   type OnboardingForm,
 } from "@/lib/onboarding";
@@ -218,6 +217,8 @@ export function TargetFields({
   errors,
   setField,
   maintain = null,
+  averageKg = null,
+  today = "",
 }: StepProps & {
   /**
    * The reached-target decision Settings made from the 7-day window, or null.
@@ -227,17 +228,26 @@ export function TargetFields({
    * so the form's own weight and target can never produce a notice of their own.
    */
   maintain?: MaintainSuggestion | null;
+  /**
+   * The trailing 7-day average the arrival date is projected from, and the profile's day.
+   *
+   * Both come from Settings, which reads them from the same query Today uses. Onboarding has
+   * no history to average, so it passes neither and the line is simply not there.
+   */
+  averageKg?: number | null;
+  today?: string;
 }) {
-  // Null whenever there is nothing honest to print, including a target already passed.
-  const projectedOn =
-    form.goal === null
-      ? null
-      : projectionFor({
-          goal: form.goal,
-          currentKg: form.weight_kg,
-          targetKg: form.target_weight_kg,
-          paceKgPerWeek: form.pace_kg_per_week,
-        });
+  // Recomputed on every render, so the line follows a change of pace or target before saving.
+  // It reads the average rather than the weight typed above it: one reading is noise, and the
+  // sentence has to agree with the reached-target notice, which uses the same average.
+  const reachLine = reachTargetSentence({
+    goal: form.goal,
+    averageKg,
+    targetKg: form.target_weight_kg,
+    paceKgPerWeek: form.pace_kg_per_week,
+    today,
+    units: form.units,
+  });
 
   if (form.goal === null || form.goal === "maintain") return null;
 
@@ -268,6 +278,14 @@ export function TargetFields({
         </div>
       </fieldset>
 
+      {/*
+        Directly under the pace it depends on, and not beside the notice below: a date to
+        arrive at a target contradicts "you're at it", so the notice wins when it is shown.
+      */}
+      {reachLine !== null && maintain === null && (
+        <p className="text-sm text-muted-foreground">{reachLine}</p>
+      )}
+
       {maintain !== null && (
         <TargetReachedNotice
           averageKg={maintain.averageKg}
@@ -275,15 +293,6 @@ export function TargetFields({
           units={form.units}
           onSwitch={() => setField("goal", "maintain")}
         />
-      )}
-
-      {/* Not beside the notice: a date to arrive at the target contradicts "you're at it". */}
-      {projectedOn && maintain === null && (
-        <p className="text-sm text-muted-foreground">
-          At {formatPace(form.pace_kg_per_week, form.units)} you'd reach{" "}
-          {formatWeight(form.target_weight_kg ?? 0, form.units)} around{" "}
-          <strong>{toLocaleDate(projectedOn)}</strong>.
-        </p>
       )}
     </>
   );

@@ -21,6 +21,31 @@ import {
 import { fetchWeightWindow } from "@/lib/profile";
 import type { Goal } from "@/lib/targets";
 
+export interface WeightWindow {
+  /** The trailing 7-day average in kilograms, or null when nothing was weighed. */
+  averageKg: number | null;
+  /** How many weigh-ins that average is over. Fewer than three is not a trend. */
+  readings: number;
+}
+
+/**
+ * The trailing 7-day average, fetched once for every reader of it.
+ *
+ * The reached-target notice and the arrival date are two answers about the same average, and a
+ * screen that showed both would have fetched it twice if they each held their own query. The
+ * key shares the `weights` prefix, so logging a weigh-in refetches this without a second
+ * invalidation to remember.
+ */
+export function useWeightWindow(input: { userId: string; today: string }): WeightWindow {
+  const { userId, today } = input;
+  const window = useQuery({
+    queryKey: ["weights", userId, today, "7d"],
+    queryFn: () => fetchWeightWindow(today),
+    enabled: userId !== "",
+  });
+  return { averageKg: window.data?.averageKg ?? null, readings: window.data?.readings ?? 0 };
+}
+
 export function useMaintainSuggestion(input: {
   userId: string;
   today: string;
@@ -29,21 +54,12 @@ export function useMaintainSuggestion(input: {
   dismissed: MaintainDismissal | null;
 }): MaintainSuggestion | null {
   const { userId, today, goal, targetKg, dismissed } = input;
-
-  /**
-   * The trailing 7-day average. The key shares the `weights` prefix, so logging a weigh-in
-   * refetches this without a second invalidation to remember.
-   */
-  const window = useQuery({
-    queryKey: ["weights", userId, today, "7d"],
-    queryFn: () => fetchWeightWindow(today),
-    enabled: userId !== "",
-  });
+  const window = useWeightWindow({ userId, today });
 
   return maintainSuggestion({
     goal,
-    averageKg: window.data?.averageKg ?? null,
-    readings: window.data?.readings ?? 0,
+    averageKg: window.averageKg,
+    readings: window.readings,
     targetKg,
     dismissed,
     today,
