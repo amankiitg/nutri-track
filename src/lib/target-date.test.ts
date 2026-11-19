@@ -6,7 +6,13 @@
  * the functions here so they cannot print different days for the same target.
  */
 import { describe, expect, it } from "vitest";
-import { formatReachDate, reachTarget, reachTargetLabel, reachTargetSentence } from "./target-date";
+import {
+  formatReachDate,
+  goalSummary,
+  reachTarget,
+  reachTargetLabel,
+  reachTargetSentence,
+} from "./target-date";
 import { lbToKg } from "./units";
 
 /** Settings and Trends, given the same week and the same target. */
@@ -119,5 +125,57 @@ describe("the two sentences", () => {
   it("has no sentence at all when there is nothing to say", () => {
     expect(reachTargetSentence({ ...METRIC, goal: "maintain" })).toBeNull();
     expect(reachTargetSentence({ ...METRIC, basisKg: null })).toBeNull();
+  });
+});
+
+describe("the goal panel summary", () => {
+  const WEEK = {
+    goal: "lose" as const,
+    basisKg: 71,
+    targetKg: 70,
+    paceKgPerWeek: 0.5,
+    today: "2026-11-19",
+    units: "metric" as const,
+  };
+
+  it("says the goal, the two weights, the pace and the day", () => {
+    expect(goalSummary({ ...WEEK, currentKg: 72 })).toBe(
+      "Lose · 72 → 70 kg · 0.5 kg/week · reach ~3 Dec",
+    );
+  });
+
+  it("prints pounds for an imperial profile", () => {
+    const summary = goalSummary({
+      ...WEEK,
+      currentKg: Number(lbToKg(160).toFixed(2)),
+      targetKg: Number(lbToKg(155).toFixed(2)),
+      basisKg: Number(lbToKg(157).toFixed(2)),
+      units: "imperial",
+    });
+    expect(summary).toBe("Lose · 160 → 155 lb · 1.1 lb/week · reach ~2 Dec");
+  });
+
+  it("leaves the date off on maintain, where there is nowhere to arrive", () => {
+    expect(
+      goalSummary({
+        ...WEEK,
+        goal: "maintain",
+        currentKg: 72,
+        targetKg: null,
+        paceKgPerWeek: null,
+      }),
+    ).toBe("Maintain");
+  });
+
+  it("leaves the date off once the week has arrived", () => {
+    expect(goalSummary({ ...WEEK, currentKg: 72, basisKg: 70.2 })).toBe(
+      "Lose · 72 → 70 kg · 0.5 kg/week",
+    );
+  });
+
+  it("says so when no goal has been chosen yet", () => {
+    expect(goalSummary({ ...WEEK, goal: null, currentKg: null, targetKg: null })).toBe(
+      "No goal yet",
+    );
   });
 });

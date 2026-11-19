@@ -254,3 +254,25 @@ describe("the two screens agree about the same week of weigh-ins", () => {
     expect((await readScreen(SettingsPage)).notice).toBe("past");
   });
 });
+
+describe("Settings is a summary, not a copy of Today", () => {
+  it("no longer repeats the current targets", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SettingsPage />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument(),
+    );
+
+    // Today owns the targets; a second copy here went stale between visits.
+    expect(screen.queryByText(/current targets/i)).toBeNull();
+    expect(screen.queryByText(/effective from/i)).toBeNull();
+
+    // What it does carry is the quiet line about the day's analyses, in Account.
+    expect(await screen.findByText(/photo analyses left today/)).toBeInTheDocument();
+  });
+});

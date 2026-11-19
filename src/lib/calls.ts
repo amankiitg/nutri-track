@@ -146,6 +146,21 @@ export function presentBudget(budget: CallBudget, timeZone: string): BudgetPrese
   };
 }
 
+/**
+ * The one-line version, for Settings -> Account: "14 of 20 photo analyses left today".
+ *
+ * Null when there is nothing honest to print: a budget that could not be read (the caller passes
+ * null), or a limit of zero, which would read "0 of 0" and mean nothing. The card on the same
+ * page carries the rest, when it resets and what to do when it is gone; this is the number on
+ * its own, in one quiet line.
+ */
+export function remainingAnalysesLine(budget: CallBudget | null): string | null {
+  if (budget === null) return null;
+  if (!Number.isFinite(budget.limit) || budget.limit <= 0) return null;
+  const remaining = Math.max(0, Math.min(budget.remaining, budget.limit));
+  return `${remaining} of ${budget.limit} photo analyses left today`;
+}
+
 /** Why the number is not simply "meals logged". Shown under the count. */
 export const countsNote =
   "A meal that the reader has to try twice costs two, so this can run down faster than meals pile up.";

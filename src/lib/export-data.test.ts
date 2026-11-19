@@ -1,5 +1,5 @@
 /**
- * The export, where the mistakes live: quoting, day boundaries, sums, and the zip bytes.
+ * The export, where the mistakes live: quoting, day boundaries, sums, and which file is which.
  *
  * The queries are exercised against a fake client that records what was asked for, because "only
  * my rows" is a property of the request as well as of the policy: the user id is in the filter,
@@ -41,12 +41,12 @@ import {
   buildExportRows,
   dailyTotals,
   escapeCsv,
+  exportFileContent,
   exportRangeStart,
   fetchExportData,
   mealsCsv,
   totalsCsv,
   weightsCsv,
-  zipStore,
   type ExportedItem,
   type ExportedMeal,
   type ExportedWeight,
@@ -208,37 +208,6 @@ describe("the CSV files", () => {
   });
 });
 
-describe("the zip", () => {
-  const bytes = zipStore([
-    { name: "meals.csv", text: "date,time\n2026-11-18,23:30\n" },
-    { name: "daily-totals.csv", text: "date,kcal\n2026-11-18,210.5\n" },
-  ]);
-
-  it("is a zip: local header, end of central directory, both names", () => {
-    const start = String.fromCharCode(...bytes.slice(0, 4));
-    expect(start).toBe("PK" + String.fromCharCode(3, 4));
-    const text = new TextDecoder().decode(bytes);
-    expect(text).toContain("meals.csv");
-    expect(text).toContain("daily-totals.csv");
-    expect(text).toContain("2026-11-18,23:30");
-    // 0x06054b50 at the end, with two entries recorded (offset 10 is the entry count).
-    const eocd = bytes.length - 22;
-    expect(bytes[eocd]).toBe(0x50);
-    expect(bytes[eocd + 1]).toBe(0x4b);
-    expect(bytes[eocd + 2]).toBe(0x05);
-    expect(bytes[eocd + 3]).toBe(0x06);
-    expect(bytes[eocd + 10]! | (bytes[eocd + 11]! << 8)).toBe(2);
-  });
-
-  it("is byte-identical for the same input", () => {
-    const again = zipStore([
-      { name: "meals.csv", text: "date,time\n2026-11-18,23:30\n" },
-      { name: "daily-totals.csv", text: "date,kcal\n2026-11-18,210.5\n" },
-    ]);
-    expect(Array.from(again)).toEqual(Array.from(bytes));
-  });
-});
-
 describe("fetchExportData", () => {
   it("asks for this user's meals in the range, and nothing else", async () => {
     calls.length = 0;
@@ -339,5 +308,44 @@ describe("the weigh-ins query", () => {
 
     const weights = calls.find((call) => call.table === "weight_log");
     expect(weights?.filters.some(([name]) => name === "gte")).toBe(false);
+  });
+});
+
+describe("exportFileContent", () => {
+  const data = {
+    meals: [MEAL],
+    items: [ITEM],
+    weights: [{ logged_on: "2026-11-18", weight_kg: 79.2, waist_cm: null }],
+  };
+  const shared = { data, units: "metric" as const, timeZone: "UTC" };
+
+  it("gives the chosen file, named as the picker offers it", () => {
+    expect(exportFileContent({ ...shared, content: "meals" })?.name).toBe("meals.csv");
+    expect(exportFileContent({ ...shared, content: "totals" })?.name).toBe("daily-totals.csv");
+    expect(exportFileContent({ ...shared, content: "weights" })?.name).toBe("weights.csv");
+  });
+
+  it("writes the rows that belong to that file", () => {
+    expect(exportFileContent({ ...shared, content: "meals" })?.text).toContain(
+      "2026-11-18,23:30,dinner,Porridge,2 tbsp",
+    );
+    expect(exportFileContent({ ...shared, content: "totals" })?.text).toBe(
+      "date,kcal,protein,carbs,fat,fibre\n2026-11-18,210.5,8,30,5.5,4\n",
+    );
+    expect(exportFileContent({ ...shared, content: "weights" })?.text).toBe(
+      "date,weight_kg,waist_cm\n2026-11-18,79.2,\n",
+    );
+  });
+
+  it("says nothing when the chosen file would be empty, even when another would not", () => {
+    const weighInsOnly = { meals: [], items: [], weights: data.weights };
+    expect(exportFileContent({ ...shared, content: "meals", data: weighInsOnly })).toBeNull();
+    expect(exportFileContent({ ...shared, content: "totals", data: weighInsOnly })).toBeNull();
+    expect(exportFileContent({ ...shared, content: "weights", data: weighInsOnly })?.name).toBe(
+      "weights.csv",
+    );
+
+    const mealsOnly = { meals: [MEAL], items: [ITEM], weights: [] };
+    expect(exportFileContent({ ...shared, content: "weights", data: mealsOnly })).toBeNull();
   });
 });

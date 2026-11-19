@@ -21,6 +21,32 @@ export type ExportRangeId = (typeof EXPORT_RANGES)[number]["id"];
 
 export const DEFAULT_EXPORT_RANGE: ExportRangeId = "30";
 
+/** What the picker offers to write. One file at a time, named as the brief names them. */
+export const EXPORT_CONTENTS = [
+  {
+    id: "meals",
+    label: "Meals",
+    fileName: "meals.csv",
+    empty: "No meals are logged in that range.",
+  },
+  {
+    id: "totals",
+    label: "Daily totals",
+    fileName: "daily-totals.csv",
+    empty: "No meals are logged in that range.",
+  },
+  {
+    id: "weights",
+    label: "Weights",
+    fileName: "weights.csv",
+    empty: "No weigh-ins are logged in that range.",
+  },
+] as const;
+
+export type ExportContentId = (typeof EXPORT_CONTENTS)[number]["id"];
+
+export const DEFAULT_EXPORT_CONTENT: ExportContentId = "meals";
+
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
@@ -252,156 +278,6 @@ export function totalsCsv(totals: readonly DailyTotal[]): string {
     totals.map((day) => [day.date, day.kcal, day.protein, day.carbs, day.fat, day.fibre]),
   );
 }
-/* -------------------------------------------------------------------------- */
-/* The zip: two text files, stored rather than deflated.                       */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A store-only zip.
- *
- * Two CSVs of text compress to a fraction of their size with deflate, but deflate is ~20kb of
- * code for a file that is already small: a year of meals is a few hundred kilobytes, which the
- * share sheet and a download both handle without noticing. Storing them keeps this to the 60
- * lines below instead of a dependency, which is the trade the brief asked for.
- *
- * The timestamp is fixed rather than `new Date()`: the same data exports to the same bytes, so a
- * test can assert the archive instead of describing it.
- */
-export interface ZipEntry {
-  name: string;
-  text: string;
-}
-
-// 19 November 2026, 00:00, in the FAT epoch encoding.
-const DOS_DATE = ((2026 - 1980) << 9) | (11 << 5) | 19;
-const DOS_TIME = 0;
-
-let crcTable: Uint32Array | null = null;
-
-function crc32(bytes: Uint8Array): number {
-  if (crcTable === null) {
-    crcTable = new Uint32Array(256);
-    for (let i = 0; i < 256; i += 1) {
-      let value = i;
-      for (let bit = 0; bit < 8; bit += 1) {
-        value = (value & 1) === 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-      }
-      crcTable[i] = value >>> 0;
-    }
-  }
-  const table = crcTable;
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc = table[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function utf8(text: string): Uint8Array {
-  return new TextEncoder().encode(text);
-}
-
-class ByteWriter {
-  private readonly chunks: Uint8Array[] = [];
-  private length = 0;
-
-  push(bytes: Uint8Array): void {
-    this.chunks.push(bytes);
-    this.length += bytes.length;
-  }
-
-  u16(value: number): void {
-    this.push(Uint8Array.of(value & 0xff, (value >>> 8) & 0xff));
-  }
-
-  u32(value: number): void {
-    this.push(
-      Uint8Array.of(
-        value & 0xff,
-        (value >>> 8) & 0xff,
-        (value >>> 16) & 0xff,
-        (value >>> 24) & 0xff,
-      ),
-    );
-  }
-
-  get size(): number {
-    return this.length;
-  }
-
-  finish(): Uint8Array<ArrayBuffer> {
-    const out = new Uint8Array(this.length);
-    let at = 0;
-    for (const chunk of this.chunks) {
-      out.set(chunk, at);
-      at += chunk.length;
-    }
-    return out;
-  }
-}
-
-export function zipStore(entries: readonly ZipEntry[]): Uint8Array<ArrayBuffer> {
-  const writer = new ByteWriter();
-  const directory: { name: Uint8Array; crc: number; size: number; offset: number }[] = [];
-
-  for (const entry of entries) {
-    const name = utf8(entry.name);
-    const data = utf8(entry.text);
-    const crc = crc32(data);
-    const offset = writer.size;
-
-    writer.u32(0x04034b50);
-    writer.u16(20);
-    // 0x0800: the name is UTF-8, so a non-ASCII filename is not mojibake in the archive.
-    writer.u16(0x0800);
-    writer.u16(0);
-    writer.u16(DOS_TIME);
-    writer.u16(DOS_DATE);
-    writer.u32(crc);
-    writer.u32(data.length);
-    writer.u32(data.length);
-    writer.u16(name.length);
-    writer.u16(0);
-    writer.push(name);
-    writer.push(data);
-
-    directory.push({ name, crc, size: data.length, offset });
-  }
-
-  const directoryStart = writer.size;
-  for (const entry of directory) {
-    writer.u32(0x02014b50);
-    writer.u16(20);
-    writer.u16(20);
-    writer.u16(0x0800);
-    writer.u16(0);
-    writer.u16(DOS_TIME);
-    writer.u16(DOS_DATE);
-    writer.u32(entry.crc);
-    writer.u32(entry.size);
-    writer.u32(entry.size);
-    writer.u16(entry.name.length);
-    writer.u16(0);
-    writer.u16(0);
-    writer.u16(0);
-    writer.u16(0);
-    writer.u32(0);
-    writer.u32(entry.offset);
-    writer.push(entry.name);
-  }
-  const directorySize = writer.size - directoryStart;
-
-  writer.u32(0x06054b50);
-  writer.u16(0);
-  writer.u16(0);
-  writer.u16(entries.length);
-  writer.u16(entries.length);
-  writer.u32(directorySize);
-  writer.u32(directoryStart);
-  writer.u16(0);
-
-  return writer.finish();
-}
 
 /* -------------------------------------------------------------------------- */
 /* Reading it back, with the caller's own session.                            */
@@ -546,15 +422,27 @@ export function weightsCsv(weights: readonly ExportedWeight[], units: UnitSystem
 }
 
 /**
- * True when the range holds nothing at all.
+ * The chosen file's name and text, or null when that file would hold nothing but a header.
  *
- * Checked on meals and weigh-ins rather than on the CSV text: a file with only a header is not a
- * result, and "Nothing to export" has to mean every file is empty, not just the one that happened
- * to be built first.
+ * "Nothing to export" is per choice: a range of weigh-ins and no meals still exports the
+ * weights, and says so rather than handing over an empty file. The decision lives here rather
+ * than in the control because it is the same decision for every caller, and it is the one a
+ * test can pin.
  */
-export function exportIsEmpty(data: {
-  meals: readonly unknown[];
-  weights: readonly unknown[];
-}): boolean {
-  return data.meals.length === 0 && data.weights.length === 0;
+export function exportFileContent(input: {
+  content: ExportContentId;
+  data: ExportData;
+  units: UnitSystem;
+  timeZone: string;
+}): { name: string; text: string } | null {
+  if (input.content === "weights") {
+    if (input.data.weights.length === 0) return null;
+    return { name: "weights.csv", text: weightsCsv(input.data.weights, input.units) };
+  }
+  const rows = buildExportRows(input.data.meals, input.data.items, input.timeZone);
+  if (rows.length === 0) return null;
+  if (input.content === "totals") {
+    return { name: "daily-totals.csv", text: totalsCsv(dailyTotals(rows)) };
+  }
+  return { name: "meals.csv", text: mealsCsv(rows) };
 }

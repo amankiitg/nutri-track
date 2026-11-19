@@ -72,8 +72,14 @@ const IMPERIAL_GOAL_PROFILE = {
   target_weight_kg: Number(lbToKg(165).toFixed(2)),
 } as unknown as Profile;
 
+const GOAL_BUTTON = /^Goal /;
 const MACRO_BUTTON = /macro preferences/i;
 const DETAILS_BUTTON = /profile details/i;
+
+/** Opens the goal fold, which every form starts with shut. */
+async function openGoal(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: GOAL_BUTTON }));
+}
 
 beforeEach(() => {
   saved.mockClear();
@@ -85,9 +91,13 @@ afterEach(() => {
 });
 
 describe("the Settings form is collapsed where it should be", () => {
-  it("shuts both panels by default", () => {
+  it("shuts every panel by default", () => {
     render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
 
+    expect(screen.getByRole("button", { name: GOAL_BUTTON })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
     expect(screen.getByRole("button", { name: MACRO_BUTTON })).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -104,8 +114,10 @@ describe("the Settings form is collapsed where it should be", () => {
     expect(screen.queryByRole("spinbutton", { name: /height/i })).toBeNull();
   });
 
-  it("keeps the goal and the weights open, in the order they are read", () => {
+  it("holds the goal, the weights, the pace and the activity in that one fold", async () => {
+    const user = userEvent.setup();
     render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
+    await openGoal(user);
 
     expect(screen.getByRole("radio", { name: /lose weight/i })).toBeChecked();
     expect(screen.getByLabelText("Current weight")).toHaveValue("70");
@@ -113,11 +125,60 @@ describe("the Settings form is collapsed where it should be", () => {
     expect(screen.getByRole("radio", { name: /moderately active/i })).toBeChecked();
   });
 
+  it("summarises the goal in kilograms while it is shut", () => {
+    // 70 kg to 65 kg at 0.5 kg/week, with the week's 66 kg average: one kg away is two weeks.
+    render(<ProfileForm profile={PROFILE} averageKg={66} onSaved={vi.fn()} today="2026-11-19" />);
+
+    expect(screen.getByText("Lose · 70 → 65 kg · 0.5 kg/week · reach ~3 Dec")).toBeInTheDocument();
+  });
+
+  it("summarises it in pounds for an imperial profile", () => {
+    render(
+      <ProfileForm
+        profile={IMPERIAL_GOAL_PROFILE}
+        averageKg={Number(lbToKg(170).toFixed(2))}
+        today="2026-11-19"
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/^Lose · [\d.]+ → 165 lb · 1\.1 lb\/week · reach ~21 Dec$/),
+    ).toBeInTheDocument();
+  });
+
   it("says what is inside each fold without opening it", () => {
     render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
 
     expect(screen.getByText("Protein 1.6 g/kg · Fat 30% · Fibre 30 g")).toBeInTheDocument();
     expect(screen.getByText("Female · 165 cm · America/New_York")).toBeInTheDocument();
+  });
+
+  it("remembers the goal fold like the other two", async () => {
+    const user = userEvent.setup();
+    const first = render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
+
+    await openGoal(user);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: GOAL_BUTTON })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      ),
+    );
+    expect(
+      JSON.parse(window.localStorage.getItem("nutritrack.admin.sections") ?? "{}"),
+    ).toMatchObject({
+      "settings-goal": true,
+    });
+    first.unmount();
+
+    render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: GOAL_BUTTON })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      ),
+    );
   });
 
   it("uses feet and inches for an imperial profile, in the height field’s own format", () => {
@@ -158,6 +219,22 @@ describe("a value edited inside a fold is still saved", () => {
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
     const payload = saved.mock.calls[0]?.[0] as { display_name: string };
     expect(payload.display_name).toBe("Aman K");
+  });
+
+  it("keeps a current weight typed in the goal panel after it is shut again", async () => {
+    const user = userEvent.setup();
+    render(<ProfileForm profile={PROFILE} onSaved={vi.fn()} today="2026-11-19" />);
+    await openGoal(user);
+
+    const weight = screen.getByLabelText("Current weight");
+    await user.clear(weight);
+    await user.type(weight, "68");
+    await user.tab();
+    await openGoal(user);
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+    expect((saved.mock.calls[0]?.[0] as { weight_kg: number }).weight_kg).toBe(68);
   });
 
   it("keeps a protein target changed in the macro panel, and says so in the summary", async () => {
@@ -244,6 +321,7 @@ describe("the arrival date under the pace options", () => {
   it("moves when the pace changes, before anything is saved", async () => {
     const user = userEvent.setup();
     render(<ProfileForm profile={PROFILE} averageKg={66} today={today} onSaved={vi.fn()} />);
+    await openGoal(user);
 
     await user.click(screen.getByRole("radio", { name: /0\.25 kg\/week/i }));
 

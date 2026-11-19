@@ -1,13 +1,9 @@
 /**
- * Handing the export to the person.
+ * Handing one exported file to the person.
  *
  * On a phone the right destination is the share sheet: it puts the file in Mail, Messages, Drive or
  * Files without this app needing any of them. Desktop browsers mostly cannot share files at all,
  * so the same call falls back to an ordinary download.
- *
- * The zip is preferred because it is one tap rather than two, but a browser that refuses to share
- * a zip (Safari on iOS historically had an allow-list of types) is offered the two CSVs instead.
- * Whatever is offered, the fallback is always a download rather than an error.
  */
 export interface ExportFile {
   name: string;
@@ -48,38 +44,34 @@ function download(file: ExportFile): void {
 }
 
 export async function deliverExport(
-  files: readonly ExportFile[],
+  file: ExportFile,
   deps: DeliveryDeps = {},
 ): Promise<DeliveryOutcome> {
-  if (files.length === 0) return "cancelled";
   const nav = deps.nav ?? (typeof navigator === "undefined" ? undefined : navigator);
   const save = deps.save ?? download;
   const toFile = deps.toFile ?? fileFrom;
 
-  const canShare = (candidate: readonly ExportFile[]): boolean => {
-    if (nav?.canShare === undefined || nav.share === undefined || candidate.length === 0)
-      return false;
+  const canShare = ((): boolean => {
+    if (nav?.canShare === undefined || nav.share === undefined) return false;
     try {
-      return nav.canShare({ files: candidate.map(toFile) });
+      return nav.canShare({ files: [toFile(file)] });
     } catch {
       // canShare throws on a malformed File in some browsers instead of answering false.
       return false;
     }
-  };
+  })();
 
-  const [zip, ...separate] = files;
-  for (const candidate of [zip === undefined ? [] : [zip], separate]) {
-    if (!canShare(candidate) || nav?.share === undefined) continue;
+  if (canShare && nav?.share !== undefined) {
     try {
-      await nav.share({ files: candidate.map(toFile), title: "NutriTrack export" });
+      await nav.share({ files: [toFile(file)], title: "NutriTrack export" });
       return "shared";
     } catch (error) {
       // The person closed the sheet: that is a decision, not a failure to recover from.
       if ((error as { name?: string } | null)?.name === "AbortError") return "cancelled";
-      // Anything else: try the next option, and download if none is left.
+      // Anything else: fall through to the download rather than leaving them with nothing.
     }
   }
 
-  save(files[0]!);
+  save(file);
   return "downloaded";
 }

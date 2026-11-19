@@ -1,9 +1,9 @@
 /**
- * The control in Settings, driven through its states.
+ * The control in Settings, driven through its choices.
  *
- * What matters on screen is what happens at the edges: an empty range says so instead of handing
- * over an empty file, a refused query says why (the lesson from the fat-share save), and the range
- * picker changes the dates the query asks for.
+ * What matters on screen is the edges: an empty range for the chosen file says so instead of
+ * handing over a header-only file, a refused query says why (the lesson from the fat-share save),
+ * and each choice writes its own file.
  */
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -11,7 +11,7 @@ import userEvent from "@testing-library/user-event";
 
 const { fetchMock, deliverMock, toastMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
-  deliverMock: vi.fn(async (_files: unknown) => "downloaded" as const),
+  deliverMock: vi.fn(async (_file: unknown) => "downloaded" as const),
   toastMock: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
@@ -45,12 +45,22 @@ const ITEM = {
   fat_g: 5.5,
   fiber_g: 4,
 };
+const WEIGH_IN = { logged_on: "2026-11-18", weight_kg: 79.2, waist_cm: null };
 
 function renderControl() {
   render(
     <ExportData userId="user-1" timeZone="America/New_York" units="metric" today="2026-11-19" />,
   );
   return userEvent.setup();
+}
+
+async function exportWith(user: ReturnType<typeof userEvent.setup>, what: string) {
+  await user.selectOptions(screen.getByLabelText("What to export"), what);
+  await user.click(screen.getByRole("button", { name: /export my data/i }));
+}
+
+function delivered() {
+  return deliverMock.mock.calls.at(-1)?.[0] as { name: string; bytes: Uint8Array };
 }
 
 describe("Export my data", () => {
@@ -67,24 +77,60 @@ describe("Export my data", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("offers a zip holding both CSVs when there is something to export", async () => {
+  it("writes meals.csv by default", async () => {
     fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
     const user = renderControl();
 
     await user.click(screen.getByRole("button", { name: /export my data/i }));
 
     await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
-    const files = deliverMock.mock.calls[0]?.[0] as { name: string; bytes: Uint8Array }[];
-    expect(files.map((file) => file.name)).toEqual([
-      "nutritrack-2026-11-19.zip",
-      "nutritrack-2026-11-19-meals.csv",
-      "nutritrack-2026-11-19-daily-totals.csv",
-      "nutritrack-2026-11-19-weights.csv",
-    ]);
-    // The zip is first because that is what the share sheet is offered first.
-    expect(new TextDecoder().decode(files[1]?.bytes)).toContain(
+    expect(delivered().name).toBe("meals.csv");
+    expect(new TextDecoder().decode(delivered().bytes)).toContain(
       "2026-11-18,18:30,dinner,Porridge,2 tbsp",
     );
+  });
+
+  it("writes daily-totals.csv when that is chosen", async () => {
+    fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
+    const user = renderControl();
+
+    await exportWith(user, "totals");
+
+    await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
+    expect(delivered().name).toBe("daily-totals.csv");
+    expect(new TextDecoder().decode(delivered().bytes)).toBe(
+      "date,kcal,protein,carbs,fat,fibre\n2026-11-18,210.5,8,30,5.5,4\n",
+    );
+  });
+
+  it("writes weights.csv when that is chosen", async () => {
+    fetchMock.mockResolvedValueOnce({ meals: [], items: [], weights: [WEIGH_IN] });
+    const user = renderControl();
+
+    await exportWith(user, "weights");
+
+    await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
+    expect(delivered().name).toBe("weights.csv");
+    expect(new TextDecoder().decode(delivered().bytes)).toBe(
+      "date,weight_kg,waist_cm\n2026-11-18,79.2,\n",
+    );
+    expect(toastMock).not.toHaveBeenCalledWith("Nothing to export", expect.anything());
+  });
+
+  it("says nothing to export when only the chosen file is empty", async () => {
+    // Meals for the range, but no weigh-ins: Weights is the empty choice.
+    fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
+    const user = renderControl();
+
+    await exportWith(user, "weights");
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith("Nothing to export", expect.anything()),
+    );
+    expect(toastMock).toHaveBeenCalledWith("Nothing to export", {
+      description: "No weigh-ins are logged in that range.",
+    });
+    expect(deliverMock).not.toHaveBeenCalled();
   });
 
   it("shows the database's own reason when the query is refused", async () => {
@@ -128,23 +174,5 @@ describe("Export my data", () => {
     await user.click(screen.getByRole("button", { name: /export my data/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(fetchMock).toHaveBeenLastCalledWith({ userId: "user-1", from: null, to: "2026-11-19" });
-  });
-
-  it("still exports a range that has weigh-ins and no meals", async () => {
-    fetchMock.mockResolvedValueOnce({
-      meals: [],
-      items: [],
-      weights: [{ logged_on: "2026-11-18", weight_kg: 79.2, waist_cm: null }],
-    });
-    const user = renderControl();
-
-    await user.click(screen.getByRole("button", { name: /export my data/i }));
-
-    await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
-    const files = deliverMock.mock.calls[0]?.[0] as { name: string; bytes: Uint8Array }[];
-    expect(new TextDecoder().decode(files[3]?.bytes)).toBe(
-      "date,weight_kg,waist_cm\n2026-11-18,79.2,\n",
-    );
-    expect(toastMock).not.toHaveBeenCalledWith("Nothing to export", expect.anything());
   });
 });

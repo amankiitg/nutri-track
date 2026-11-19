@@ -5,6 +5,8 @@ import { Section } from "@/components/admin/Section";
 import { saveFailureDetail, saveProfileWithTargets, type Profile } from "@/lib/profile";
 import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import { formatHeight } from "@/lib/units";
+import { TargetReachedNotice } from "@/components/goal/TargetReachedNotice";
+import { goalSummary } from "@/lib/target-date";
 import {
   formFromProfile,
   toProfileInsert,
@@ -105,6 +107,20 @@ export function ProfileForm({
 
   const stepProps = { form, errors, setField };
 
+  /**
+   * The goal panel's one line while it is shut, in the units on screen. The reach date comes from
+   * the same `reachTarget` the sentence inside the panel uses, so the two cannot disagree.
+   */
+  const goalLine = goalSummary({
+    goal: form.goal,
+    currentKg: form.weight_kg,
+    targetKg: form.target_weight_kg,
+    paceKgPerWeek: form.pace_kg_per_week,
+    basisKg: averageKg,
+    today,
+    units: form.units,
+  });
+
   /** What the macro panel says while it is shut, in the units the sliders are read in. */
   const macroSummary = [
     `Protein ${form.protein_g_per_kg.toFixed(1)} g/kg`,
@@ -121,21 +137,49 @@ export function ProfileForm({
 
   return (
     <form className="space-y-8" onSubmit={save} noValidate>
-      <FieldGroup title="Your goal">
-        <GoalChoiceFields {...stepProps} />
-        <WeightField
-          id="current-weight"
-          label="Current weight"
-          valueKg={form.weight_kg}
+      {/*
+        The reached-target notice stays outside the panel. It is a question for the person, and
+        a question inside a shut panel is one nobody is asked.
+      */}
+      {maintain !== null && (
+        <TargetReachedNotice
+          averageKg={maintain.averageKg}
+          crossed={maintain.crossed}
           units={form.units}
-          onChange={(value) => setField("weight_kg", value)}
-          error={errors.weight_kg}
+          onSwitch={() => setField("goal", "maintain")}
         />
-        <TargetFields {...stepProps} maintain={maintain} basisKg={averageKg} today={today} />
-      </FieldGroup>
-      <FieldGroup title="Activity level">
-        <ActivityStep {...stepProps} />
-      </FieldGroup>
+      )}
+
+      {/*
+        The goal, the weights it is between, the pace and the activity that sets the burn: the
+        settings somebody changes when their goal changes, and not on the way to anything else.
+        Shut by default, and its fields stay mounted while shut, so a save still sends them.
+      */}
+      <Section id="settings-goal" title="Goal" summary={goalLine}>
+        <div className="space-y-5 px-6 py-4">
+          <div className="space-y-5">
+            <GoalChoiceFields {...stepProps} />
+            <WeightField
+              id="current-weight"
+              label="Current weight"
+              valueKg={form.weight_kg}
+              units={form.units}
+              onChange={(value) => setField("weight_kg", value)}
+              error={errors.weight_kg}
+            />
+            <TargetFields
+              {...stepProps}
+              maintain={maintain}
+              basisKg={averageKg}
+              today={today}
+              showNotice={false}
+            />
+          </div>
+          <FieldGroup title="Activity level">
+            <ActivityStep {...stepProps} />
+          </FieldGroup>
+        </div>
+      </Section>
 
       {
         // Both panels stay mounted while shut. That is what keeps a value typed in one of them
