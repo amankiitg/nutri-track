@@ -25,11 +25,19 @@ import { PasswordInput } from "@/components/auth/PasswordInput";
 import { supabase } from "@/integrations/supabase/client";
 import { providerSummary } from "@/lib/account";
 import { friendlyAuthError } from "@/lib/auth-errors";
+import { ExportData } from "./ExportData";
 
 /** The same minimum the other password fields use. */
 const MIN_PASSWORD = 8;
 
-export function AccountSection() {
+export function AccountSection({
+  timeZone,
+  today,
+}: {
+  /** The profile's zone and day, so the export's files and its range end are the reader's. */
+  timeZone: string;
+  today: string;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
@@ -187,6 +195,8 @@ export function AccountSection() {
             {error}
           </p>
         )}
+
+        <ExportData userId={user?.id ?? ""} timeZone={timeZone} today={today} />
       </CardContent>
     </Card>
   );
