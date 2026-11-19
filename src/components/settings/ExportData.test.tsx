@@ -77,40 +77,41 @@ describe("Export my data", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("writes meals.csv by default", async () => {
+  it("writes the meals file by default, named for the range", async () => {
     fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
     const user = renderControl();
 
     await user.click(screen.getByRole("button", { name: /export my data/i }));
 
     await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
-    expect(delivered().name).toBe("meals.csv");
+    // The default range is the last 30 days, and the name says which days the file covers.
+    expect(delivered().name).toBe("meals_2026-10-21_to_2026-11-19.csv");
     expect(new TextDecoder().decode(delivered().bytes)).toContain(
       "2026-11-18,18:30,dinner,Porridge,2 tbsp",
     );
   });
 
-  it("writes daily-totals.csv when that is chosen", async () => {
+  it("writes the daily totals when that is chosen", async () => {
     fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
     const user = renderControl();
 
     await exportWith(user, "totals");
 
     await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
-    expect(delivered().name).toBe("daily-totals.csv");
+    expect(delivered().name).toBe("daily-totals_2026-10-21_to_2026-11-19.csv");
     expect(new TextDecoder().decode(delivered().bytes)).toBe(
       "date,kcal,protein,carbs,fat,fibre\n2026-11-18,210.5,8,30,5.5,4\n",
     );
   });
 
-  it("writes weights.csv when that is chosen", async () => {
+  it("writes the weigh-ins when that is chosen", async () => {
     fetchMock.mockResolvedValueOnce({ meals: [], items: [], weights: [WEIGH_IN] });
     const user = renderControl();
 
     await exportWith(user, "weights");
 
     await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
-    expect(delivered().name).toBe("weights.csv");
+    expect(delivered().name).toBe("weights_2026-10-21_to_2026-11-19.csv");
     expect(new TextDecoder().decode(delivered().bytes)).toBe(
       "date,weight_kg,waist_cm\n2026-11-18,79.2,\n",
     );

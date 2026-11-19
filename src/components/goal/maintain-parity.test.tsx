@@ -108,7 +108,6 @@ vi.mock("@/lib/calls", async (importOriginal) => ({
     remaining: 60,
     resetsAt: new Date().toISOString(),
   }),
-  presentBudget: () => null,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({

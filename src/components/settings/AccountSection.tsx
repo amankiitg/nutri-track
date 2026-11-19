@@ -25,6 +25,7 @@ import { PasswordInput } from "@/components/auth/PasswordInput";
 import { supabase } from "@/integrations/supabase/client";
 import { providerSummary } from "@/lib/account";
 import { friendlyAuthError } from "@/lib/auth-errors";
+import type { AnalysesLine } from "@/lib/calls";
 import type { UnitSystem } from "@/lib/units";
 import { ExportData } from "./ExportData";
 
@@ -43,10 +44,11 @@ export function AccountSection({
   units: UnitSystem;
   today: string;
   /**
-   * "14 of 20 photo analyses left today", or null when the budget could not be read. Null hides
-   * the line: a number that might be wrong is worse than no number on a settings page.
+   * "14 of 20 photo analyses left today · resets at midnight", or null when the budget could not
+   * be read. Null hides the line: a number that might be wrong is worse than no number on a
+   * settings page.
    */
-  remainingAnalyses?: string | null;
+  remainingAnalyses?: AnalysesLine | null;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -125,7 +127,12 @@ export function AccountSection({
             Signing in with {providerSummary(providers)}
           </p>
           {remainingAnalyses !== null && (
-            <p className="mt-1 text-xs text-muted-foreground">{remainingAnalyses}</p>
+            <>
+              <p className="mt-1 text-xs text-muted-foreground">{remainingAnalyses.line}</p>
+              {remainingAnalyses.note !== null && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{remainingAnalyses.note}</p>
+              )}
+            </>
           )}
         </div>
 

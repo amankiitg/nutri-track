@@ -129,7 +129,22 @@ describe("the Settings form is collapsed where it should be", () => {
     // 70 kg to 65 kg at 0.5 kg/week, with the week's 66 kg average: one kg away is two weeks.
     render(<ProfileForm profile={PROFILE} averageKg={66} onSaved={vi.fn()} today="2026-11-19" />);
 
-    expect(screen.getByText("Lose · 70 → 65 kg · 0.5 kg/week · reach ~3 Dec")).toBeInTheDocument();
+    expect(screen.getByText("Lose · 70 → 65 kg by ~3 Dec · 0.5 kg/wk")).toBeInTheDocument();
+  });
+
+  it("lets a summary wrap instead of cutting it off on a narrow phone", () => {
+    // The iPhone case: the goal line was ellipsised to "reach ~3 D…" at 375px. Nothing in the
+    // Section clips its summary now, so a line that does not fit takes a second line instead.
+    render(<ProfileForm profile={PROFILE} averageKg={66} onSaved={vi.fn()} today="2026-11-19" />);
+
+    for (const summary of [
+      screen.getByText("Lose · 70 → 65 kg by ~3 Dec · 0.5 kg/wk"),
+      screen.getByText("Protein 1.6 g/kg · Fat 30% · Fibre 30 g"),
+      screen.getByText("Female · 165 cm · America/New_York"),
+    ]) {
+      expect(summary.className).not.toContain("truncate");
+      expect(summary.className).not.toContain("nowrap");
+    }
   });
 
   it("summarises it in pounds for an imperial profile", () => {
@@ -143,7 +158,7 @@ describe("the Settings form is collapsed where it should be", () => {
     );
 
     expect(
-      screen.getByText(/^Lose · [\d.]+ → 165 lb · 1\.1 lb\/week · reach ~21 Dec$/),
+      screen.getByText(/^Lose · [\d.]+ → 165 lb by ~21 Dec · 1\.1 lb\/wk$/),
     ).toBeInTheDocument();
   });
 

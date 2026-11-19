@@ -47,7 +47,11 @@ function account(providers: readonly string[]): unknown {
   };
 }
 
-function renderAccount({ remainingAnalyses = null }: { remainingAnalyses?: string | null } = {}) {
+function renderAccount({
+  remainingAnalyses = null,
+}: {
+  remainingAnalyses?: { line: string; note: string | null } | null;
+} = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -170,10 +174,29 @@ describe("signing out", () => {
 });
 
 describe("the day's analyses, in one line", () => {
-  it("shows the count it was given", () => {
-    renderAccount({ remainingAnalyses: "14 of 20 photo analyses left today" });
+  it("shows the line it was given, reset and all", () => {
+    renderAccount({
+      remainingAnalyses: {
+        line: "14 of 20 photo analyses left today · resets at midnight",
+        note: null,
+      },
+    });
 
-    expect(screen.getByText("14 of 20 photo analyses left today")).toBeInTheDocument();
+    expect(
+      screen.getByText("14 of 20 photo analyses left today · resets at midnight"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the way through when the day is used up", () => {
+    renderAccount({
+      remainingAnalyses: {
+        line: "0 of 20 photo analyses left today · resets at midnight",
+        note: "You can still add meals by typing the numbers yourself.",
+      },
+    });
+
+    expect(screen.getByText(/0 of 20 photo analyses left today/)).toBeInTheDocument();
+    expect(screen.getByText(/typing the numbers yourself/)).toBeInTheDocument();
   });
 
   it("shows nothing when the count could not be read", () => {

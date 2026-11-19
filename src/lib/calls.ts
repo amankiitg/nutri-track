@@ -112,55 +112,35 @@ export function resetClock(resetsAt: string, timeZone: string): string {
   }).format(new Date(resetsAt));
 }
 
-export interface BudgetPresentation {
-  /** The number to show large: what is left. */
-  remaining: number;
-  /** What that number is out of. */
-  scale: string;
-  /** When it comes back. */
-  reset: string;
-  /**
-   * Set only when there is none left. The point of the screen is to answer "can I log
-   * this now", and when the answer is no it has to come with the way around it.
-   */
-  exhausted: string | null;
+export interface AnalysesLine {
+  /** "55 of 60 photo analyses left today · resets at midnight" */
+  line: string;
+  /** The way around it when there is none left; null while there are some. */
+  note: string | null;
 }
 
 /**
- * The whole card, as words.
- *
- * "Analyses" rather than "calls" throughout, because a call is not a thing the user
- * made. The one place the two diverge is stated in `countsNote` rather than hidden:
- * the service counts model calls, so a meal the reader had to re-read costs two, and
- * someone who has logged forty meals and sees fifty used deserves to know why.
- */
-export function presentBudget(budget: CallBudget, timeZone: string): BudgetPresentation {
-  return {
-    remaining: budget.remaining,
-    scale: `of ${budget.limit} left today`,
-    reset: `Resets at midnight, ${resetClock(budget.resetsAt, timeZone)} in ${timeZone}.`,
-    exhausted:
-      budget.remaining === 0
-        ? `You've used today's ${budget.limit} analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.`
-        : null,
-  };
-}
-
-/**
- * The one-line version, for Settings -> Account: "14 of 20 photo analyses left today".
+ * The day's analyses in one quiet line, for Settings -> Account.
  *
  * Null when there is nothing honest to print: a budget that could not be read (the caller passes
- * null), or a limit of zero, which would read "0 of 0" and mean nothing. The card on the same
- * page carries the rest, when it resets and what to do when it is gone; this is the number on
- * its own, in one quiet line.
+ * null), or a limit of zero, which would read "0 of 0" and mean nothing.
+ *
+ * The reset is folded in and said truthfully: the budget resets at local midnight, so the usual
+ * reading is "resets at midnight"; if that instant is not 00:00 in the profile zone the line
+ * says the clock time and the zone instead of claiming midnight.
+ *
+ * At zero the line still reads, and `note` carries the part of the old card's message that
+ * mattered: there is still a way to log a meal. The "a retry costs two" explanation went with
+ * the card, which is where it belonged.
  */
-export function remainingAnalysesLine(budget: CallBudget | null): string | null {
+export function analysesLine(budget: CallBudget | null, timeZone: string): AnalysesLine | null {
   if (budget === null) return null;
   if (!Number.isFinite(budget.limit) || budget.limit <= 0) return null;
   const remaining = Math.max(0, Math.min(budget.remaining, budget.limit));
-  return `${remaining} of ${budget.limit} photo analyses left today`;
+  const clock = resetClock(budget.resetsAt, timeZone);
+  const reset = clock === "00:00" ? "resets at midnight" : `resets at ${clock} in ${timeZone}`;
+  return {
+    line: `${remaining} of ${budget.limit} photo analyses left today · ${reset}`,
+    note: remaining === 0 ? "You can still add meals by typing the numbers yourself." : null,
+  };
 }
-
-/** Why the number is not simply "meals logged". Shown under the count. */
-export const countsNote =
-  "A meal that the reader has to try twice costs two, so this can run down faster than meals pile up.";

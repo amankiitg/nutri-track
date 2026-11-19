@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
-import { budgetFrom, countsNote, presentBudget, remainingAnalysesLine, resetClock } from "./calls";
+import { analysesLine, budgetFrom, resetClock } from "./calls";
 
 describe("budgetFrom", () => {
   it("reads the limit from the shared contract, not from a second copy", () => {
@@ -58,69 +58,44 @@ describe("resetClock", () => {
   });
 });
 
-describe("presentBudget", () => {
+describe("analysesLine", () => {
   const NEW_YORK = "America/New_York";
 
-  it("shows what is left out of the limit, and when it comes back", () => {
-    const shown = presentBudget(budgetFrom(17, "2026-09-12T04:00:00.000Z"), NEW_YORK);
-    expect(shown.remaining).toBe(DAILY_ANALYSIS_LIMIT - 17);
-    expect(shown.scale).toBe(`of ${DAILY_ANALYSIS_LIMIT} left today`);
-    // Twenty is the number a normal account sees on this line.
-    expect(shown.scale).toBe("of 20 left today");
-    expect(shown.reset).toContain("Resets at midnight, 00:00");
-    expect(shown.reset).toContain(NEW_YORK);
-  });
+  it("says what is left, and folds the reset into the same line", () => {
+    const shown = analysesLine(budgetFrom(17, "2026-09-12T04:00:00.000Z"), NEW_YORK);
 
-  it("says nothing about being out when there is plenty left", () => {
-    expect(presentBudget(budgetFrom(1, "2026-09-12T04:00:00.000Z"), NEW_YORK).exhausted).toBeNull();
-  });
-
-  it("gives the way around it when there is nothing left", () => {
-    // The whole reason to show the number is to answer "can I log this now". When the
-    // answer is no, that is only useful with the escape route attached.
-    const shown = presentBudget(
-      budgetFrom(DAILY_ANALYSIS_LIMIT, "2026-09-12T04:00:00.000Z"),
-      NEW_YORK,
+    expect(shown?.line).toBe(
+      `3 of ${DAILY_ANALYSIS_LIMIT} photo analyses left today · resets at midnight`,
     );
-    expect(shown.remaining).toBe(0);
-    // The sentence the spec asks for, whole: the number, the way through, and the reset.
-    expect(shown.exhausted).toBe(
-      "You've used today's 20 analyses. You can still add meals by typing the numbers yourself, and the count resets at midnight in your time zone.",
-    );
+    expect(shown?.note).toBeNull();
   });
 
   it("names the limit it was given, so an admin reads sixty", () => {
-    const shown = presentBudget(budgetFrom(60, "2026-09-12T04:00:00.000Z", 60), NEW_YORK);
-    expect(shown.scale).toBe("of 60 left today");
-    expect(shown.exhausted).toContain("today's 60 analyses");
-  });
-});
-
-describe("remainingAnalysesLine", () => {
-  it("says what is left out of the day's limit", () => {
-    expect(remainingAnalysesLine(budgetFrom(6, "2026-11-19T05:00:00.000Z", 20))).toBe(
-      "14 of 20 photo analyses left today",
+    expect(analysesLine(budgetFrom(10, "2026-09-12T04:00:00.000Z", 60), NEW_YORK)?.line).toBe(
+      "50 of 60 photo analyses left today · resets at midnight",
     );
   });
 
-  it("counts an admin's own limit, whatever it is", () => {
-    expect(remainingAnalysesLine(budgetFrom(10, "2026-11-19T05:00:00.000Z", 60))).toBe(
-      "50 of 60 photo analyses left today",
+  it("says the clock time when the reset is not midnight in the profile zone", () => {
+    // 04:00Z is midnight in New York but 05:00 in London, where the line must not claim midnight.
+    expect(analysesLine(budgetFrom(1, "2026-09-12T04:00:00.000Z"), "Europe/London")?.line).toBe(
+      "19 of 20 photo analyses left today · resets at 05:00 in Europe/London",
     );
+  });
+
+  it("keeps the way through when there is nothing left", () => {
+    const shown = analysesLine(
+      budgetFrom(DAILY_ANALYSIS_LIMIT, "2026-09-12T04:00:00.000Z"),
+      NEW_YORK,
+    );
+
+    expect(shown?.line).toBe("0 of 20 photo analyses left today · resets at midnight");
+    expect(shown?.note).toBe("You can still add meals by typing the numbers yourself.");
   });
 
   it("says nothing when the limit could not be read", () => {
-    expect(remainingAnalysesLine(null)).toBeNull();
+    expect(analysesLine(null, NEW_YORK)).toBeNull();
     // A zero limit would read "0 of 0", which means nothing.
-    expect(remainingAnalysesLine(budgetFrom(0, "2026-11-19T05:00:00.000Z", 0))).toBeNull();
-  });
-});
-
-describe("countsNote", () => {
-  it("explains the unit, because it is not the same as meals", () => {
-    // Someone who has logged forty meals and sees fifty used should not have to guess
-    // why. The service counts model calls and a retry costs two.
-    expect(countsNote).toContain("twice");
-    expect(countsNote).toContain("two");
+    expect(analysesLine(budgetFrom(0, "2026-09-12T04:00:00.000Z", 0), NEW_YORK)).toBeNull();
   });
 });

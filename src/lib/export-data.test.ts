@@ -317,12 +317,39 @@ describe("exportFileContent", () => {
     items: [ITEM],
     weights: [{ logged_on: "2026-11-18", weight_kg: 79.2, waist_cm: null }],
   };
-  const shared = { data, units: "metric" as const, timeZone: "UTC" };
+  const shared = {
+    data,
+    units: "metric" as const,
+    timeZone: "UTC",
+    from: "2026-11-13",
+    to: "2026-11-19",
+  };
 
-  it("gives the chosen file, named as the picker offers it", () => {
-    expect(exportFileContent({ ...shared, content: "meals" })?.name).toBe("meals.csv");
-    expect(exportFileContent({ ...shared, content: "totals" })?.name).toBe("daily-totals.csv");
-    expect(exportFileContent({ ...shared, content: "weights" })?.name).toBe("weights.csv");
+  it("names each file for the range it covers", () => {
+    expect(exportFileContent({ ...shared, content: "meals" })?.name).toBe(
+      "meals_2026-11-13_to_2026-11-19.csv",
+    );
+    expect(exportFileContent({ ...shared, content: "totals" })?.name).toBe(
+      "daily-totals_2026-11-13_to_2026-11-19.csv",
+    );
+    expect(exportFileContent({ ...shared, content: "weights" })?.name).toBe(
+      "weights_2026-11-13_to_2026-11-19.csv",
+    );
+  });
+
+  it("names an all-time export for the dates it actually holds", () => {
+    const older = {
+      ...data,
+      weights: [{ logged_on: "2026-11-02", weight_kg: 80, waist_cm: null }, ...data.weights],
+    };
+
+    // Asked for all time, so the name cannot claim today: it says what is inside.
+    expect(
+      exportFileContent({ ...shared, content: "weights", from: null, data: older })?.name,
+    ).toBe("weights_2026-11-02_to_2026-11-18.csv");
+    expect(exportFileContent({ ...shared, content: "meals", from: null })?.name).toBe(
+      "meals_2026-11-18_to_2026-11-18.csv",
+    );
   });
 
   it("writes the rows that belong to that file", () => {
@@ -342,7 +369,7 @@ describe("exportFileContent", () => {
     expect(exportFileContent({ ...shared, content: "meals", data: weighInsOnly })).toBeNull();
     expect(exportFileContent({ ...shared, content: "totals", data: weighInsOnly })).toBeNull();
     expect(exportFileContent({ ...shared, content: "weights", data: weighInsOnly })?.name).toBe(
-      "weights.csv",
+      "weights_2026-11-13_to_2026-11-19.csv",
     );
 
     const mealsOnly = { meals: [MEAL], items: [ITEM], weights: [] };
