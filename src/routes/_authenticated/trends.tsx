@@ -9,6 +9,7 @@ import { PeriodPicker } from "@/components/trends/PeriodPicker";
 import { ChartCard, StatTiles } from "@/components/trends/StatTiles";
 import { WeightChart } from "@/components/trends/WeightChart";
 import { localDateString } from "@/lib/profile";
+import { useWeightWindow } from "@/hooks/use-maintain-suggestion";
 import {
   bucketFor,
   clampEnd,
@@ -38,6 +39,9 @@ function TrendsPage() {
   // granularity changes, the anchor is what the new period gets built around; keeping the
   // old period would make Month open on whatever month the week happened to start in.
   const today = localDateString(timeZone);
+  // The same 7-day window Settings reads, for the date on the target line: one average, one
+  // date, whichever screen asks.
+  const weightWindow = useWeightWindow({ userId, today });
   const [granularity, setGranularity] = useState<Granularity>("week");
   const [anchor, setAnchor] = useState(today);
 
@@ -161,7 +165,19 @@ function TrendsPage() {
         </>
       )}
 
-      {weights.isSuccess && <WeightChart points={weights.data} unitSystem={unitSystem} />}
+      {weights.isSuccess && (
+        <WeightChart
+          points={weights.data}
+          unitSystem={unitSystem}
+          targetKg={profile?.target_weight_kg == null ? null : Number(profile.target_weight_kg)}
+          goal={profile?.goal ?? null}
+          averageKg={weightWindow.averageKg}
+          paceKgPerWeek={
+            profile?.pace_kg_per_week == null ? null : Number(profile.pace_kg_per_week)
+          }
+          today={today}
+        />
+      )}
     </div>
   );
 }

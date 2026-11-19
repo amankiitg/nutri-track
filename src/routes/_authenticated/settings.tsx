@@ -6,7 +6,7 @@ import { countsNote, fetchCallBudget, presentBudget } from "@/lib/calls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm } from "@/components/onboarding/ProfileForm";
 import { AccountSection } from "@/components/settings/AccountSection";
-import { useMaintainSuggestion } from "@/hooks/use-maintain-suggestion";
+import { useMaintainSuggestion, useWeightWindow } from "@/hooks/use-maintain-suggestion";
 import { useToday } from "@/hooks/use-today";
 
 const parentApi = getRouteApi("/_authenticated");
@@ -34,6 +34,12 @@ function SettingsPage() {
     targetKg: profile?.target_weight_kg ?? null,
     dismissed: null,
   });
+
+  /**
+   * The same 7-day average the notice above reads, for the arrival date under the pace options.
+   * One query, one window: the date and the notice are two answers about one number.
+   */
+  const weightWindow = useWeightWindow({ userId, today });
 
   const target = useQuery<Target | null>({
     queryKey: ["current-target", userId, timeZone],
@@ -141,6 +147,8 @@ function SettingsPage() {
       <ProfileForm
         profile={profile}
         maintain={maintain}
+        averageKg={weightWindow.averageKg}
+        today={today}
         onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: ["current-target"] });
           toast.success("Profile saved. Your new targets start today.");

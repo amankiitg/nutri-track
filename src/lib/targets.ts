@@ -300,34 +300,6 @@ export function targetProximity(
 }
 
 /**
- * The date to show for a goal, or null when there is nothing honest to show.
- *
- * This is the one place that decides, so no screen can print a date for a target that is already
- * behind the person, or for one they have arrived at within the tolerance. `projectedTargetDate`
- * on its own cannot know: it is handed a distance, and a distance has no direction.
- */
-export function projectionFor(input: {
-  goal: Goal;
-  currentKg: number | null;
-  targetKg: number | null;
-  paceKgPerWeek: number | null;
-  from?: Date;
-}): Date | null {
-  const proximity = targetProximity(input.goal, input.currentKg, input.targetKg);
-  // Only a target that is ahead and worth walking to gets a date.
-  if (proximity !== "away") return null;
-  if (input.currentKg === null || input.targetKg === null || input.paceKgPerWeek === null) {
-    return null;
-  }
-  return projectedTargetDate(
-    input.currentKg,
-    input.targetKg,
-    input.paceKgPerWeek,
-    input.from ?? new Date(),
-  );
-}
-
-/**
  * One line under the calorie number, saying where the number came from.
  *
  * The whole sum, in the units the person chose: "Maintenance ≈ 2,398 kcal − 550 kcal for 0.5

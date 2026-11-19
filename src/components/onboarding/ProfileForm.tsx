@@ -39,6 +39,8 @@ import { WeightField } from "./fields";
 export function ProfileForm({
   profile,
   maintain = null,
+  averageKg = null,
+  today,
   onSaved,
 }: {
   profile: Profile;
@@ -47,6 +49,14 @@ export function ProfileForm({
    * Null means Today would not show it either.
    */
   maintain?: MaintainSuggestion | null;
+  /**
+   * The trailing 7-day average the arrival date is projected from, and the profile's own day.
+   *
+   * Both come from the route, which reads them from the same query Today uses. Null average
+   * means no weigh-in in the last seven days, and the date line is simply not shown.
+   */
+  averageKg?: number | null;
+  today: string;
   onSaved?: (() => void) | undefined;
 }) {
   const [form, setForm] = useState<OnboardingForm>(() => formFromProfile(profile));
@@ -121,7 +131,7 @@ export function ProfileForm({
           onChange={(value) => setField("weight_kg", value)}
           error={errors.weight_kg}
         />
-        <TargetFields {...stepProps} maintain={maintain} />
+        <TargetFields {...stepProps} maintain={maintain} averageKg={averageKg} today={today} />
       </FieldGroup>
       <FieldGroup title="Activity level">
         <ActivityStep {...stepProps} />

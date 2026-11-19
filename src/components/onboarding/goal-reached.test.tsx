@@ -66,7 +66,7 @@ describe("onboarding: the notice is never shown", () => {
 
     expect(screen.queryByText(NOTICE)).toBeNull();
     // And no date either: there is nothing left to wait for.
-    expect(screen.queryByText(/you'd reach/i)).toBeNull();
+    expect(screen.queryByText(/you'll reach/i)).toBeNull();
   });
 
   it("says nothing when the target has just been passed", () => {
@@ -75,10 +75,13 @@ describe("onboarding: the notice is never shown", () => {
     expect(screen.queryByText(NOTICE)).toBeNull();
   });
 
-  it("keeps the projection for a target that is still ahead", () => {
-    render(<Harness initial={base({})} />);
+  it("shows no arrival date either: there is no week of weigh-ins to average", () => {
+    // The date is projected from the trailing 7-day average now, not from the weight typed
+    // above it. A new user has no history, so onboarding has no date to give them, and
+    // inventing one from the number they typed is the thing the average rule exists to stop.
+    render(<Harness initial={base({ weight_kg: 80, target_weight_kg: 70 })} />);
 
-    expect(screen.getByText(/you'd reach/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you'll reach/i)).toBeNull();
     expect(screen.queryByText(NOTICE)).toBeNull();
   });
 });
@@ -95,7 +98,7 @@ describe("settings: it shows Today's decision, not its own", () => {
     expect(screen.getByText(/switch to maintain to stop the deficit/i)).toBeInTheDocument();
     expect(screen.getByText(/your 7-day average is 69\.5 kg/i)).toBeInTheDocument();
     // The date is the other thing that must not be there: the average has arrived.
-    expect(screen.queryByText(/you'd reach/i)).toBeNull();
+    expect(screen.queryByText(/you'll reach/i)).toBeNull();
   });
 
   it("says nothing when the route passed nothing, even with the form weight on the target", () => {
@@ -159,7 +162,8 @@ describe("settings: it shows Today's decision, not its own", () => {
 
     render(<Harness initial={base({ goal: "gain", weight_kg: 65 })} />);
     expect(screen.queryByText(NOTICE)).toBeNull();
-    expect(screen.getByText(/you'd reach/i)).toBeInTheDocument();
+    // No date on onboarding, for the reason above: nothing has been weighed yet.
+    expect(screen.queryByText(/you'll reach/i)).toBeNull();
   });
 });
 
@@ -197,6 +201,7 @@ describe("settings, driven through the form", () => {
       <ProfileForm
         profile={profile({})}
         maintain={{ averageKg: lbToKg(166.4), crossed: false }}
+        today="2026-11-19"
         onSaved={vi.fn()}
       />,
     );
@@ -212,6 +217,7 @@ describe("settings, driven through the form", () => {
     render(
       <ProfileForm
         profile={profile({ weight_kg: lbToKg(167.2), target_weight_kg: lbToKg(165) })}
+        today="2026-11-19"
         onSaved={vi.fn()}
       />,
     );
@@ -225,6 +231,7 @@ describe("settings, driven through the form", () => {
     render(
       <ProfileForm
         profile={profile({ units: "metric", weight_kg: 77, target_weight_kg: 85 })}
+        today="2026-11-19"
         onSaved={vi.fn()}
       />,
     );

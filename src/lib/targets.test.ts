@@ -9,7 +9,6 @@ import {
   computeTargets,
   macroSplit,
   minSafeWeightKg,
-  projectionFor,
   projectedTargetDate,
   targetProximity,
   tdee,
@@ -254,53 +253,6 @@ describe("targetProximity", () => {
     expect(targetProximity(null, 70, 72)).toBeNull();
     expect(targetProximity("lose", null, 72)).toBeNull();
     expect(targetProximity("lose", 70, null)).toBeNull();
-  });
-});
-
-describe("projectionFor", () => {
-  const from = new Date("2026-11-06T00:00:00Z");
-
-  it("gives a future date for a target still ahead", () => {
-    const date = projectionFor({
-      goal: "lose",
-      currentKg: 80,
-      targetKg: 70,
-      paceKgPerWeek: 0.5,
-      from,
-    });
-
-    expect(date).not.toBeNull();
-    expect(date?.getTime()).toBeGreaterThan(from.getTime());
-  });
-
-  it("gives no date for a target already passed, in either direction", () => {
-    expect(
-      projectionFor({ goal: "lose", currentKg: 69, targetKg: 70, paceKgPerWeek: 0.5, from }),
-    ).toBeNull();
-    expect(
-      projectionFor({ goal: "gain", currentKg: 71, targetKg: 70, paceKgPerWeek: 0.5, from }),
-    ).toBeNull();
-  });
-
-  it("gives no date when there is nothing to project", () => {
-    expect(
-      projectionFor({ goal: "maintain", currentKg: 80, targetKg: 70, paceKgPerWeek: 0.5, from }),
-    ).toBeNull();
-    expect(
-      projectionFor({ goal: "lose", currentKg: 80, targetKg: 70, paceKgPerWeek: null, from }),
-    ).toBeNull();
-    expect(
-      projectionFor({ goal: "lose", currentKg: null, targetKg: 70, paceKgPerWeek: 0.5, from }),
-    ).toBeNull();
-  });
-
-  it("never dates a target the weight has overshot, which is the bug this replaced", () => {
-    // `projectedTargetDate` alone would happily return a future date here, because it is handed a
-    // distance and a distance has no direction.
-    expect(projectedTargetDate(65, 70, 0.5, from)).not.toBeNull();
-    expect(
-      projectionFor({ goal: "lose", currentKg: 65, targetKg: 70, paceKgPerWeek: 0.5, from }),
-    ).toBeNull();
   });
 });
 

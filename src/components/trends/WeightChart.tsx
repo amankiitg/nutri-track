@@ -3,6 +3,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,6 +13,8 @@ import { ChartCard } from "@/components/trends/StatTiles";
 import { cmToIn, kgToLb, type UnitSystem } from "@/lib/units";
 import type { WeightPoint } from "@/lib/trends";
 import { axisWidth } from "@/lib/trends";
+import { reachTargetLabel } from "@/lib/target-date";
+import type { Goal } from "@/lib/targets";
 
 const TOOLTIP_STYLE = {
   background: "var(--card)",
@@ -39,9 +42,20 @@ const TOOLTIP_STYLE = {
 export function WeightChart({
   points,
   unitSystem,
+  targetKg = null,
+  goal = null,
+  averageKg = null,
+  paceKgPerWeek = null,
+  today = "",
 }: {
   points: WeightPoint[];
   unitSystem: UnitSystem;
+  /** The target to draw a dotted line at, and the numbers the label's date comes from. */
+  targetKg?: number | null;
+  goal?: Goal | null;
+  averageKg?: number | null;
+  paceKgPerWeek?: number | null;
+  today?: string;
 }) {
   const imperial = unitSystem === "imperial";
   const weightUnit = imperial ? "lb" : "kg";
@@ -63,12 +77,39 @@ export function WeightChart({
 
   const hasWaist = data.some((point) => point.waist !== null);
 
+  /**
+   * The target line, and the date on it.
+   *
+   * The date comes from `reachTargetLabel`, the same function the Settings sentence uses, so the
+   * two screens cannot print different days for the same target. It is computed from the 7-day
+   * average rather than the last point on this chart, which is a single reading.
+   */
+  const targetLine =
+    targetKg === null ? null : Number((imperial ? kgToLb(targetKg) : targetKg).toFixed(1));
+  const targetLabel =
+    targetKg === null
+      ? null
+      : reachTargetLabel({
+          goal,
+          averageKg,
+          targetKg,
+          paceKgPerWeek,
+          today,
+          units: unitSystem,
+        });
+
   // Weight is a small number but not a short one: a decimal such as "87.2" is four
   // characters, and the same axis reads "119.5" for someone heavier. Waist is narrower by a
   // hair, and being on the right it sits inside the SVG already — it gets the same treatment
   // so that neither side depends on a number that happened to fit.
   const weightAxisWidth = axisWidth(data.flatMap((point) => [point.weight, point.average ?? 0]));
   const waistAxisWidth = axisWidth(data.map((point) => point.waist ?? 0));
+
+  // The axis has to contain the target, or the line drawn at it falls outside the plot and
+  // disappears: a target two kilos below the lowest weigh-in would otherwise be invisible.
+  const plotted = data.flatMap((point) => [point.weight, point.average ?? point.weight]);
+  const yMin = Math.floor(Math.min(...plotted, targetLine ?? Infinity) - 1);
+  const yMax = Math.ceil(Math.max(...plotted, targetLine ?? -Infinity) + 1);
 
   if (data.length === 0) {
     return (
@@ -102,7 +143,7 @@ export function WeightChart({
             />
             <YAxis
               yAxisId="weight"
-              domain={["dataMin - 1", "dataMax + 1"]}
+              domain={[yMin, yMax]}
               tickLine={false}
               axisLine={false}
               width={weightAxisWidth}
@@ -134,6 +175,21 @@ export function WeightChart({
               iconSize={8}
               wrapperStyle={{ fontSize: "0.7rem" }}
             />
+            {targetLine !== null && targetLabel !== null && (
+              <ReferenceLine
+                yAxisId="weight"
+                y={targetLine}
+                stroke="var(--muted-foreground)"
+                strokeDasharray="2 4"
+                strokeWidth={1.5}
+                label={{
+                  value: targetLabel,
+                  position: "insideTopRight",
+                  fill: "var(--muted-foreground)",
+                  fontSize: 10,
+                }}
+              />
+            )}
             <Line
               yAxisId="weight"
               type="monotone"
