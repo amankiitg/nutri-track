@@ -53,7 +53,14 @@ export function ExportData({
         from: exportRangeStart(range, today),
         to: today,
       });
-      const file = exportFileContent({ content, data, units, timeZone });
+      const file = exportFileContent({
+        content,
+        data,
+        units,
+        timeZone,
+        from: exportRangeStart(range, today),
+        to: today,
+      });
 
       if (file === null) {
         const chosen = EXPORT_CONTENTS.find((option) => option.id === content);

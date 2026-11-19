@@ -21,24 +21,27 @@ export type ExportRangeId = (typeof EXPORT_RANGES)[number]["id"];
 
 export const DEFAULT_EXPORT_RANGE: ExportRangeId = "30";
 
-/** What the picker offers to write. One file at a time, named as the brief names them. */
+/**
+ * What the picker offers to write. One file at a time; the name is this base plus the dates the
+ * file covers, so two exports of different weeks do not arrive as the same filename.
+ */
 export const EXPORT_CONTENTS = [
   {
     id: "meals",
     label: "Meals",
-    fileName: "meals.csv",
+    base: "meals",
     empty: "No meals are logged in that range.",
   },
   {
     id: "totals",
     label: "Daily totals",
-    fileName: "daily-totals.csv",
+    base: "daily-totals",
     empty: "No meals are logged in that range.",
   },
   {
     id: "weights",
     label: "Weights",
-    fileName: "weights.csv",
+    base: "weights",
     empty: "No weigh-ins are logged in that range.",
   },
 ] as const;
@@ -422,6 +425,19 @@ export function weightsCsv(weights: readonly ExportedWeight[], units: UnitSystem
 }
 
 /**
+ * The dates a file's name carries.
+ *
+ * A chosen range is what the person asked for, so the name states it. All time has no asked-for
+ * start, so the name uses the first and last dates actually in the file: a name that claimed
+ * today would claim a day the file may not contain.
+ */
+function fileDates(dates: readonly string[], from: string | null, to: string): string {
+  if (from !== null) return `${from}_to_${to}`;
+  const sorted = [...dates].sort();
+  return `${sorted[0] ?? to}_to_${sorted[sorted.length - 1] ?? to}`;
+}
+
+/**
  * The chosen file's name and text, or null when that file would hold nothing but a header.
  *
  * "Nothing to export" is per choice: a range of weigh-ins and no meals still exports the
@@ -434,15 +450,25 @@ export function exportFileContent(input: {
   data: ExportData;
   units: UnitSystem;
   timeZone: string;
+  /** The range that was asked for: null means all time. */
+  from: string | null;
+  to: string;
 }): { name: string; text: string } | null {
   if (input.content === "weights") {
     if (input.data.weights.length === 0) return null;
-    return { name: "weights.csv", text: weightsCsv(input.data.weights, input.units) };
+    const dates = input.data.weights.map((entry) => entry.logged_on);
+    const span = fileDates(dates, input.from, input.to);
+    return { name: `weights_${span}.csv`, text: weightsCsv(input.data.weights, input.units) };
   }
   const rows = buildExportRows(input.data.meals, input.data.items, input.timeZone);
   if (rows.length === 0) return null;
+  const span = fileDates(
+    rows.map((row) => row.date),
+    input.from,
+    input.to,
+  );
   if (input.content === "totals") {
-    return { name: "daily-totals.csv", text: totalsCsv(dailyTotals(rows)) };
+    return { name: `daily-totals_${span}.csv`, text: totalsCsv(dailyTotals(rows)) };
   }
-  return { name: "meals.csv", text: mealsCsv(rows) };
+  return { name: `meals_${span}.csv`, text: mealsCsv(rows) };
 }

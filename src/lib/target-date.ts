@@ -110,7 +110,7 @@ export interface GoalSummaryInput extends ReachInput {
 
 /**
  * The goal section's one line while it is shut:
- * "Lose · 166.4 → 165 lb · 1.1 lb/week · reach ~29 Nov".
+ * "Lose · 166.4 → 165 lb by ~3 Dec · 1.1 lb/wk".
  *
  * The same formatters the panel uses, so the summary cannot describe numbers the panel would
  * print differently. The reach part is left off on maintain, where there is nowhere to arrive,
@@ -129,15 +129,16 @@ export function goalSummary(input: GoalSummaryInput): string {
   const parts = [label];
   if (goal !== null && goal !== "maintain" && currentKg !== null && targetKg !== null) {
     const unit = units === "imperial" ? "lb" : "kg";
-    parts.push(
-      `${displayRounded(currentKg, units, "mass")} → ${displayRounded(targetKg, units, "mass")} ${unit}`,
-    );
+    let segment = `${displayRounded(currentKg, units, "mass")} → ${displayRounded(targetKg, units, "mass")} ${unit}`;
+    // The date belongs to the target, not to the line: "165 lb by ~3 Dec", one segment.
+    const reach = reachTarget(input);
+    if (reach !== null && reach.date !== null) segment += ` by ~${formatReachDate(reach.date)}`;
+    parts.push(segment);
   }
   if (goal !== null && goal !== "maintain" && paceKgPerWeek !== null) {
-    parts.push(formatPace(paceKgPerWeek, units));
+    // "/week" shortened to "/wk": this line has to survive a 375px phone without ellipsis.
+    parts.push(formatPace(paceKgPerWeek, units).replace("/week", "/wk"));
   }
-  const reach = reachTarget(input);
-  if (reach !== null && reach.date !== null) parts.push(`reach ~${formatReachDate(reach.date)}`);
   return parts.join(" · ");
 }
 

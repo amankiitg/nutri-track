@@ -88,7 +88,11 @@ export function Section({
             <span className="block text-base font-semibold">{title}</span>
             {/* A real space between the two, so the button's accessible name is "Goal Lose · ..."
                 rather than "GoalLose · ...": two block spans are announced with no separator. */}{" "}
-            <span className="mt-0.5 block truncate text-base text-muted-foreground">{summary}</span>
+            {/*
+              No truncate: a summary that does not fit wraps onto a second line. Cutting it to
+              "reach ~3 D…" on a phone hides the number the line exists to show.
+            */}
+            <span className="mt-0.5 block text-base text-muted-foreground">{summary}</span>
           </span>
           <ChevronDown
             className={`mt-0.5 size-5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
