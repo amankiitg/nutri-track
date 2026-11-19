@@ -91,7 +91,7 @@ export function WeightChart({
       ? null
       : reachTargetLabel({
           goal,
-          averageKg,
+          basisKg: averageKg,
           targetKg,
           paceKgPerWeek,
           today,

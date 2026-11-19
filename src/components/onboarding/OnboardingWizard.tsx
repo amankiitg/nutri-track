@@ -9,7 +9,7 @@ import {
   ageFromDob,
   calorieExplanation,
 } from "@/lib/targets";
-import { saveFailureDetail, type ProfileInsert } from "@/lib/profile";
+import { localDateString, saveFailureDetail, type ProfileInsert } from "@/lib/profile";
 import { formatHeight, formatPace, formatWeight } from "@/lib/units";
 import {
   DEFAULT_ONBOARDING_FORM,
@@ -188,7 +188,17 @@ export function OnboardingWizard({ userId, onConfirm, onSaved }: OnboardingWizar
 
         {step === "activity" && <ActivityStep form={form} errors={errors} setField={setField} />}
 
-        {step === "goal" && <GoalStep form={form} errors={errors} setField={setField} />}
+        {step === "goal" && (
+          <GoalStep
+            form={form}
+            errors={errors}
+            setField={setField}
+            // The profile's day, so the arrival date is the reader's day and not the device's.
+            // The zone was detected when the form was created and can be changed on the
+            // Preferences step; this reads whatever the form holds at the moment it renders.
+            today={localDateString(form.timezone)}
+          />
+        )}
 
         {step === "preferences" && (
           <PreferencesStep form={form} errors={errors} setField={setField} />

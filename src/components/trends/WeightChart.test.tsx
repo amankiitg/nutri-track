@@ -57,7 +57,8 @@ describe("the target line", () => {
     render(<WeightChart points={[POINT]} unitSystem="metric" {...WEEK} />);
 
     const label = screen.getByTestId("target-line").getAttribute("data-label") ?? "";
-    const sentence = reachTargetSentence({ ...WEEK, units: "metric" }) ?? "";
+    const sentence =
+      reachTargetSentence({ ...WEEK, basisKg: WEEK.averageKg, units: "metric" }) ?? "";
     const day = /\d{1,2} [A-Z][a-z]{2}/;
     expect(sentence).toContain("3 Dec");
     expect(label.match(day)?.[0]).toBe(sentence.match(day)?.[0]);
@@ -89,10 +90,14 @@ describe("the target line", () => {
     );
   });
 
-  it("still draws the target with no week to project from", () => {
+  it("still draws the target with no week to project from, and dates nothing", () => {
     render(<WeightChart points={[POINT]} unitSystem="metric" {...WEEK} averageKg={null} />);
 
-    expect(screen.getByTestId("target-line")).toHaveAttribute("data-label", "Target 70.0 kg");
+    const line = screen.getByTestId("target-line");
+    expect(line).toHaveAttribute("data-label", "Target 70.0 kg");
+    // The line stays because a target is still a target; only the date needs an average, and
+    // with no weigh-in in the last seven days there is nothing to project from.
+    expect(line.getAttribute("data-label")).not.toMatch(/\d{1,2} [A-Z][a-z]{2}/);
   });
 
   it("draws nothing when there is no target", () => {
