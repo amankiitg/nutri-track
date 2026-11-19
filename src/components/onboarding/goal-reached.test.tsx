@@ -36,9 +36,11 @@ const NOTICE = /you're at your target weight/i;
 function Harness({
   initial,
   maintain = null,
+  today = "2026-11-19",
 }: {
   initial: OnboardingForm;
   maintain?: MaintainSuggestion | null;
+  today?: string;
 }) {
   const [form, setForm] = useState(initial);
   return (
@@ -47,6 +49,7 @@ function Harness({
       errors={{}}
       setField={(key, value) => setForm((previous) => ({ ...previous, [key]: value }))}
       maintain={maintain}
+      today={today}
     />
   );
 }
@@ -75,14 +78,75 @@ describe("onboarding: the notice is never shown", () => {
     expect(screen.queryByText(NOTICE)).toBeNull();
   });
 
-  it("shows no arrival date either: there is no week of weigh-ins to average", () => {
-    // The date is projected from the trailing 7-day average now, not from the weight typed
-    // above it. A new user has no history, so onboarding has no date to give them, and
-    // inventing one from the number they typed is the thing the average rule exists to stop.
-    render(<Harness initial={base({ weight_kg: 80, target_weight_kg: 70 })} />);
+  it("projects from the weight typed on the body step", () => {
+    // A new user has no week of weigh-ins, so the typed weight is the basis here. 72 kg to
+    // 70 kg at 0.5 kg/week is four weeks, and 19 Nov plus 28 days is 17 Dec.
+    render(<Harness initial={base({ weight_kg: 72, target_weight_kg: 70 })} />);
+
+    expect(
+      screen.getByText("You'll reach 70.0 kg around 17 Dec at 0.5 kg/week."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NOTICE)).toBeNull();
+  });
+
+  it("does the same in pounds", () => {
+    // 170 lb to 165 lb is 2.27 kg, which at 0.5 kg/week is 32 days from 19 Nov: 21 Dec.
+    render(
+      <Harness
+        initial={base({
+          units: "imperial",
+          weight_kg: Number(lbToKg(170).toFixed(2)),
+          target_weight_kg: Number(lbToKg(165).toFixed(2)),
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText(/You'll reach 165\.0 lb around 21 Dec at 1\.1 lb\/week\./),
+    ).toBeInTheDocument();
+  });
+
+  it("moves when the pace or the target changes, before anything is saved", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={base({ weight_kg: 72, target_weight_kg: 70 })} />);
+    expect(screen.getByText(/around 17 Dec/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /0\.25 kg\/week/i }));
+    // 2 kg at 0.25 kg/week is eight weeks: 19 Nov plus 56 days is 14 Jan.
+    expect(screen.getByText(/around 14 Jan/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /0\.5 kg\/week/i }));
+    const target = screen.getByLabelText("Target weight");
+    await user.clear(target);
+    await user.type(target, "68");
+    await user.tab();
+    // 4 kg at 0.5 kg/week is eight weeks again, so the same day.
+    expect(screen.getByText(/around 14 Jan/)).toBeInTheDocument();
+  });
+
+  it("is hidden on maintain, where there is nowhere to arrive", () => {
+    render(<Harness initial={base({ goal: "maintain", weight_kg: 72 })} />);
 
     expect(screen.queryByText(/you'll reach/i)).toBeNull();
-    expect(screen.queryByText(NOTICE)).toBeNull();
+  });
+
+  it("is hidden once the typed weight is already at the target", () => {
+    // Settings says "you're at your target" here; onboarding does not, because this step is
+    // asking where they want to go and the answer is the maintain choice.
+    render(<Harness initial={base({ weight_kg: 70, target_weight_kg: 70 })} />);
+
+    expect(screen.queryByText(/you'll reach/i)).toBeNull();
+    expect(screen.queryByText(/at your target/i)).toBeNull();
+  });
+
+  it("follows the weight the form holds when the wizard renders it again", () => {
+    const first = render(<Harness initial={base({ weight_kg: 72 })} />);
+    expect(screen.getByText(/around 17 Dec/)).toBeInTheDocument();
+    first.unmount();
+
+    // 71 kg to 70 kg at 0.5 kg/week is two weeks: 3 Dec.
+    render(<Harness initial={base({ weight_kg: 71 })} />);
+    expect(screen.getByText(/around 3 Dec/)).toBeInTheDocument();
   });
 });
 
@@ -160,10 +224,11 @@ describe("settings: it shows Today's decision, not its own", () => {
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
     unmount();
 
-    render(<Harness initial={base({ goal: "gain", weight_kg: 65 })} />);
+    render(<Harness initial={base({ goal: "gain", weight_kg: 65, target_weight_kg: 70 })} />);
     expect(screen.queryByText(NOTICE)).toBeNull();
-    // No date on onboarding, for the reason above: nothing has been weighed yet.
-    expect(screen.queryByText(/you'll reach/i)).toBeNull();
+    // Gaining projects the same way: 5 kg at 0.5 kg/week is ten weeks, and 19 Nov plus 70
+    // days is 28 Jan.
+    expect(screen.getByText(/around 28 Jan/)).toBeInTheDocument();
   });
 });
 

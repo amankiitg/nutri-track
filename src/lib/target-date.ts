@@ -6,10 +6,11 @@
  * computed in two places they disagreed, and a date is exactly the kind of number a reader checks
  * against the other screen.
  *
- * The weight it projects from is the trailing 7-day average, not the latest weigh-in: one low
- * morning after a salty dinner is a reading, not a position. That is the same average the
- * reached-target notice uses, and the same tolerance decides when the target counts as met, so
- * the notice and this line cannot contradict each other.
+ * What it projects from is the caller's decision, and the only thing the two screens differ on:
+ * Settings passes the trailing 7-day average (one low morning after a salty dinner is a reading,
+ * not a position), while onboarding passes the weight the person typed, because a new user has
+ * no week to average. Everything after that — the arithmetic, the tolerance, the wording, the
+ * date format — is the same code, so the two sentences cannot drift apart.
  */
 import { MAINTAIN_TOLERANCE_KG } from "./maintain-suggestion";
 import { projectedTargetDate, type Goal } from "./targets";
@@ -24,8 +25,14 @@ export interface ReachTarget {
 
 export interface ReachInput {
   goal: Goal | null;
-  /** The trailing 7-day average, in kilograms. Null when there is no weigh-in to average. */
-  averageKg: number | null;
+  /**
+   * The weight to project from, in kilograms.
+   *
+   * Settings passes the trailing 7-day average, because one reading is noise. Onboarding passes
+   * the weight the person just typed: a new user has no week to average, and the number they
+   * gave is the only position there is. Null means neither, and the line is not shown.
+   */
+  basisKg: number | null;
   targetKg: number | null;
   paceKgPerWeek: number | null;
   /** The profile's own day, as YYYY-MM-DD. Never the device's. */
@@ -55,21 +62,21 @@ function noonOf(day: string): Date | null {
  * as having nothing to say.
  */
 export function reachTarget(input: ReachInput): ReachTarget | null {
-  const { goal, averageKg, targetKg, paceKgPerWeek, today } = input;
+  const { goal, basisKg, targetKg, paceKgPerWeek, today } = input;
   if (goal !== "lose" && goal !== "gain") return null;
-  if (averageKg === null || targetKg === null) return null;
-  if (!Number.isFinite(averageKg) || !Number.isFinite(targetKg)) return null;
+  if (basisKg === null || targetKg === null) return null;
+  if (!Number.isFinite(basisKg) || !Number.isFinite(targetKg)) return null;
   if (paceKgPerWeek === null || !Number.isFinite(paceKgPerWeek) || paceKgPerWeek <= 0) return null;
 
   // The same rule, and the same tolerance, as `maintainSuggestion`: the two say different things
   // about one moment, so they have to agree about when that moment is.
-  const passed = goal === "lose" ? averageKg <= targetKg : averageKg >= targetKg;
-  const gap = Math.abs(Math.round((averageKg - targetKg) * 100) / 100);
+  const passed = goal === "lose" ? basisKg <= targetKg : basisKg >= targetKg;
+  const gap = Math.abs(Math.round((basisKg - targetKg) * 100) / 100);
   if (passed || gap <= MAINTAIN_TOLERANCE_KG) return { date: null, atTarget: true };
 
   const from = noonOf(today);
   if (from === null) return null;
-  const date = projectedTargetDate(averageKg, targetKg, paceKgPerWeek, from);
+  const date = projectedTargetDate(basisKg, targetKg, paceKgPerWeek, from);
   return date === null ? null : { date, atTarget: false };
 }
 

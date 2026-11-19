@@ -18,7 +18,7 @@ import {
 } from "@/lib/targets";
 import type { MaintainSuggestion } from "@/lib/maintain-suggestion";
 import { formatPace } from "@/lib/units";
-import { reachTargetSentence } from "@/lib/target-date";
+import { reachTarget, reachTargetSentence } from "@/lib/target-date";
 import {
   ACTIVITY_LEVELS,
   GOAL_COPY,
@@ -217,8 +217,9 @@ export function TargetFields({
   errors,
   setField,
   maintain = null,
-  averageKg = null,
+  basisKg = null,
   today = "",
+  hideAtTarget = false,
 }: StepProps & {
   /**
    * The reached-target decision Settings made from the 7-day window, or null.
@@ -229,25 +230,42 @@ export function TargetFields({
    */
   maintain?: MaintainSuggestion | null;
   /**
-   * The trailing 7-day average the arrival date is projected from, and the profile's day.
+   * The weight the arrival date is projected from, and the profile's day.
    *
-   * Both come from Settings, which reads them from the same query Today uses. Onboarding has
-   * no history to average, so it passes neither and the line is simply not there.
+   * Settings passes the trailing 7-day average it read from the same query Today uses, because
+   * one reading is noise. Onboarding passes the weight typed on the Body step: a new user has
+   * no week to average, and the number they gave is the only position there is.
    */
-  averageKg?: number | null;
+  basisKg?: number | null;
   today?: string;
+  /**
+   * Onboarding says nothing once the target is already met: that step is asking where the
+   * person wants to go, and a sentence about having arrived is the maintain choice's job.
+   * Settings keeps the line, because there it answers "what happens if I save this".
+   */
+  hideAtTarget?: boolean;
 }) {
-  // Recomputed on every render, so the line follows a change of pace or target before saving.
-  // It reads the average rather than the weight typed above it: one reading is noise, and the
-  // sentence has to agree with the reached-target notice, which uses the same average.
-  const reachLine = reachTargetSentence({
+  // Recomputed on every render, so the line follows a change of pace, target or basis weight
+  // before anything is saved. `basisKg` is the caller's decision: Settings hands it the 7-day
+  // average (one reading is noise), onboarding the weight typed two steps earlier.
+  const reach = reachTarget({
     goal: form.goal,
-    averageKg,
+    basisKg,
     targetKg: form.target_weight_kg,
     paceKgPerWeek: form.pace_kg_per_week,
     today,
-    units: form.units,
   });
+  const reachLine =
+    reach === null || (reach.atTarget && hideAtTarget)
+      ? null
+      : reachTargetSentence({
+          goal: form.goal,
+          basisKg,
+          targetKg: form.target_weight_kg,
+          paceKgPerWeek: form.pace_kg_per_week,
+          today,
+          units: form.units,
+        });
 
   if (form.goal === null || form.goal === "maintain") return null;
 
@@ -298,17 +316,32 @@ export function TargetFields({
   );
 }
 
-/** The goal step, as onboarding shows it: the choice, then whatever follows from it. */
+/**
+ * The goal step, as onboarding shows it: the choice, then whatever follows from it.
+ *
+ * The arrival date is projected from the weight typed on the Body step, because that is the
+ * only position a new user has: there is no week of weigh-ins to average yet. Settings uses
+ * the average instead, and the shared sentence means the two screens still read the same.
+ */
 export function GoalStep({
   maintain = null,
+  today = "",
   ...stepProps
 }: StepProps & {
   maintain?: MaintainSuggestion | null;
+  /** The profile's own day, for the date on the arrival line. */
+  today?: string;
 }) {
   return (
     <>
       <GoalChoiceFields {...stepProps} />
-      <TargetFields {...stepProps} maintain={maintain} />
+      <TargetFields
+        {...stepProps}
+        maintain={maintain}
+        basisKg={stepProps.form.weight_kg}
+        today={today}
+        hideAtTarget
+      />
     </>
   );
 }

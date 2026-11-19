@@ -131,7 +131,7 @@ export function ProfileForm({
           onChange={(value) => setField("weight_kg", value)}
           error={errors.weight_kg}
         />
-        <TargetFields {...stepProps} maintain={maintain} averageKg={averageKg} today={today} />
+        <TargetFields {...stepProps} maintain={maintain} basisKg={averageKg} today={today} />
       </FieldGroup>
       <FieldGroup title="Activity level">
         <ActivityStep {...stepProps} />
