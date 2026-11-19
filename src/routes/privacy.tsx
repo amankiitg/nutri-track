@@ -40,7 +40,7 @@ function PrivacyPage() {
     <main className="app-shell space-y-8 py-10 text-sm leading-relaxed">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Privacy</h1>
-        <p className="text-muted-foreground">Last updated 14 November 2026.</p>
+        <p className="text-muted-foreground">Last updated 19 November 2026.</p>
       </header>
 
       <p>
@@ -127,6 +127,26 @@ function PrivacyPage() {
         <p>
           If you use the microphone, your browser transcribes the recording using its own speech
           service, which in most browsers means Google. That audio never reaches this app's servers.
+        </p>
+      </Section>
+
+      <Section title="Visit counts">
+        <p>
+          The site counts visits with Cloudflare Web Analytics, which is the web host's own counter.
+          It answers one question: is anybody reading this, and roughly where did they come from.
+          That is all it is for.
+        </p>
+        <p>
+          It is cookieless and it does not identify you. Nothing is stored on your device, no
+          fingerprint is taken, and a reader who comes back is not recognised as the same person:
+          the figures are totals across everyone, not a row per visitor. What it records is which
+          page was opened, which site sent you here, and the coarse details any web request carries,
+          such as the country and the browser's broad family.
+        </p>
+        <p>
+          It does not see what you log. Your meals, photos, weights, targets and profile are behind
+          a sign-in and are never part of the count. If you would rather not be counted at all, a
+          content blocker stops the script and the app works exactly the same.
         </p>
       </Section>
 
