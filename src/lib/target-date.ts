@@ -14,7 +14,7 @@
  */
 import { MAINTAIN_TOLERANCE_KG } from "./maintain-suggestion";
 import { projectedTargetDate, type Goal } from "./targets";
-import { formatPace, formatWeight, type UnitSystem } from "./units";
+import { displayRounded, formatPace, formatWeight, type UnitSystem } from "./units";
 
 export interface ReachTarget {
   /** The day the average is projected to meet the target. Null when it is already there. */
@@ -100,6 +100,45 @@ export function reachTargetSentence(input: ReachInput & { units: UnitSystem }): 
   const target = formatWeight(input.targetKg, input.units);
   const pace = formatPace(input.paceKgPerWeek, input.units);
   return `You'll reach ${target} around ${formatReachDate(reach.date)} at ${pace}.`;
+}
+
+export interface GoalSummaryInput extends ReachInput {
+  units: UnitSystem;
+  /** The weight the section starts from: the form's current weight. */
+  currentKg: number | null;
+}
+
+/**
+ * The goal section's one line while it is shut:
+ * "Lose · 166.4 → 165 lb · 1.1 lb/week · reach ~29 Nov".
+ *
+ * The same formatters the panel uses, so the summary cannot describe numbers the panel would
+ * print differently. The reach part is left off on maintain, where there is nowhere to arrive,
+ * and once the average is at the target, which is the rule the sentence inside the panel follows.
+ */
+export function goalSummary(input: GoalSummaryInput): string {
+  const { goal, currentKg, targetKg, paceKgPerWeek, units } = input;
+  const label =
+    goal === null
+      ? "No goal yet"
+      : goal === "lose"
+        ? "Lose"
+        : goal === "gain"
+          ? "Gain"
+          : "Maintain";
+  const parts = [label];
+  if (goal !== null && goal !== "maintain" && currentKg !== null && targetKg !== null) {
+    const unit = units === "imperial" ? "lb" : "kg";
+    parts.push(
+      `${displayRounded(currentKg, units, "mass")} → ${displayRounded(targetKg, units, "mass")} ${unit}`,
+    );
+  }
+  if (goal !== null && goal !== "maintain" && paceKgPerWeek !== null) {
+    parts.push(formatPace(paceKgPerWeek, units));
+  }
+  const reach = reachTarget(input);
+  if (reach !== null && reach.date !== null) parts.push(`reach ~${formatReachDate(reach.date)}`);
+  return parts.join(" · ");
 }
 
 /**

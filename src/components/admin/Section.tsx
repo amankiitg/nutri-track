@@ -86,6 +86,8 @@ export function Section({
         >
           <span className="min-w-0">
             <span className="block text-base font-semibold">{title}</span>
+            {/* A real space between the two, so the button's accessible name is "Goal Lose · ..."
+                rather than "GoalLose · ...": two block spans are announced with no separator. */}{" "}
             <span className="mt-0.5 block truncate text-base text-muted-foreground">{summary}</span>
           </span>
           <ChevronDown

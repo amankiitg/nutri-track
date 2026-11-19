@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  fetchCurrentTarget,
   localDateString,
   saveFailureDetail,
   saveProfileWithTargets,
@@ -150,25 +149,6 @@ describe("localDateString", () => {
     expect(localDateString("America/New_York", new Date("2026-11-07T15:00:00Z"))).toBe(
       "2026-11-07",
     );
-  });
-});
-
-describe("fetchCurrentTarget", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(LATE_EVENING_INSTANT);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("resolves the day boundary in the profile zone, not the device zone", async () => {
-    await fetchCurrentTarget("user-1", "Pacific/Auckland");
-
-    // The device zone would have said 2026-03-01; the profile zone is a day ahead.
-    expect(tableFor("targets").calls["eq"]).toEqual(["user_id", "user-1"]);
-    expect(tableFor("targets").calls["lte"]).toEqual(["effective_from", "2026-03-02"]);
   });
 });
 

@@ -35,12 +35,18 @@ export function AccountSection({
   timeZone,
   units,
   today,
+  remainingAnalyses = null,
 }: {
   /** The profile's zone and day, so the export's files and its range end are the reader's. */
   timeZone: string;
   /** The unit preference the export writes weights in. */
   units: UnitSystem;
   today: string;
+  /**
+   * "14 of 20 photo analyses left today", or null when the budget could not be read. Null hides
+   * the line: a number that might be wrong is worse than no number on a settings page.
+   */
+  remainingAnalyses?: string | null;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -118,6 +124,9 @@ export function AccountSection({
           <p className="mt-1 text-xs text-muted-foreground">
             Signing in with {providerSummary(providers)}
           </p>
+          {remainingAnalyses !== null && (
+            <p className="mt-1 text-xs text-muted-foreground">{remainingAnalyses}</p>
+          )}
         </div>
 
         {open ? (

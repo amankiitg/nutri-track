@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
-import { budgetFrom, countsNote, presentBudget, resetClock } from "./calls";
+import { budgetFrom, countsNote, presentBudget, remainingAnalysesLine, resetClock } from "./calls";
 
 describe("budgetFrom", () => {
   it("reads the limit from the shared contract, not from a second copy", () => {
@@ -93,6 +93,26 @@ describe("presentBudget", () => {
     const shown = presentBudget(budgetFrom(60, "2026-09-12T04:00:00.000Z", 60), NEW_YORK);
     expect(shown.scale).toBe("of 60 left today");
     expect(shown.exhausted).toContain("today's 60 analyses");
+  });
+});
+
+describe("remainingAnalysesLine", () => {
+  it("says what is left out of the day's limit", () => {
+    expect(remainingAnalysesLine(budgetFrom(6, "2026-11-19T05:00:00.000Z", 20))).toBe(
+      "14 of 20 photo analyses left today",
+    );
+  });
+
+  it("counts an admin's own limit, whatever it is", () => {
+    expect(remainingAnalysesLine(budgetFrom(10, "2026-11-19T05:00:00.000Z", 60))).toBe(
+      "50 of 60 photo analyses left today",
+    );
+  });
+
+  it("says nothing when the limit could not be read", () => {
+    expect(remainingAnalysesLine(null)).toBeNull();
+    // A zero limit would read "0 of 0", which means nothing.
+    expect(remainingAnalysesLine(budgetFrom(0, "2026-11-19T05:00:00.000Z", 0))).toBeNull();
   });
 });
 

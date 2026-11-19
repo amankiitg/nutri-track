@@ -220,6 +220,7 @@ export function TargetFields({
   basisKg = null,
   today = "",
   hideAtTarget = false,
+  showNotice = true,
 }: StepProps & {
   /**
    * The reached-target decision Settings made from the 7-day window, or null.
@@ -244,6 +245,12 @@ export function TargetFields({
    * Settings keeps the line, because there it answers "what happens if I save this".
    */
   hideAtTarget?: boolean;
+  /**
+   * False when the caller draws the notice itself, outside a collapsible. Settings does: a
+   * notice that says the target has been reached is a question for the person, and one inside
+   * a shut panel is a question nobody is asked.
+   */
+  showNotice?: boolean;
 }) {
   // Recomputed on every render, so the line follows a change of pace, target or basis weight
   // before anything is saved. `basisKg` is the caller's decision: Settings hands it the 7-day
@@ -304,7 +311,7 @@ export function TargetFields({
         <p className="text-sm text-muted-foreground">{reachLine}</p>
       )}
 
-      {maintain !== null && (
+      {showNotice && maintain !== null && (
         <TargetReachedNotice
           averageKg={maintain.averageKg}
           crossed={maintain.crossed}

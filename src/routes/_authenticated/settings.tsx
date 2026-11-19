@@ -1,8 +1,7 @@
 import { createFileRoute, getRouteApi } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { fetchCurrentTarget, type Target } from "@/lib/profile";
-import { countsNote, fetchCallBudget, presentBudget } from "@/lib/calls";
+import { countsNote, fetchCallBudget, presentBudget, remainingAnalysesLine } from "@/lib/calls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm } from "@/components/onboarding/ProfileForm";
 import { AccountSection } from "@/components/settings/AccountSection";
@@ -17,7 +16,6 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 function SettingsPage() {
   const { profile } = parentApi.useRouteContext();
-  const queryClient = useQueryClient();
   const userId = profile?.user_id ?? "";
   const timeZone = profile?.timezone ?? "UTC";
   const today = useToday(timeZone);
@@ -41,12 +39,6 @@ function SettingsPage() {
    */
   const weightWindow = useWeightWindow({ userId, today });
 
-  const target = useQuery<Target | null>({
-    queryKey: ["current-target", userId, timeZone],
-    queryFn: () => fetchCurrentTarget(userId, timeZone),
-    enabled: userId !== "",
-  });
-
   /**
    * The analysis budget. Refreshed whenever anything is logged, because the sheet
    * invalidates every query on save and this is one of them — a count that only moved
@@ -61,6 +53,9 @@ function SettingsPage() {
   if (!profile) return null;
 
   const shown = budget.isSuccess ? presentBudget(budget.data, timeZone) : null;
+  // One quiet line in Account. Null when the budget could not be read, which hides it rather
+  // than printing a number that may be wrong.
+  const analysesLeft = budget.isSuccess ? remainingAnalysesLine(budget.data) : null;
 
   return (
     <div className="app-shell space-y-6 py-8">
@@ -106,57 +101,23 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card className="card-soft">
-        <CardHeader>
-          <CardTitle className="text-base">Current targets</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {target.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
-          {target.isError && (
-            <p role="alert" className="text-sm text-destructive">
-              Could not load your targets.
-            </p>
-          )}
-          {target.isSuccess && !target.data && (
-            <p className="text-sm text-muted-foreground">No target yet.</p>
-          )}
-          {target.isSuccess && target.data && (
-            <>
-              <p className="text-3xl font-semibold tabular-nums">
-                {Math.round(target.data.calories).toLocaleString("en-US")}
-                <span className="ml-2 text-base font-normal text-muted-foreground">kcal</span>
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Protein {Math.round(Number(target.data.protein_g))} g · Carbs{" "}
-                {Math.round(Number(target.data.carbs_g))} g · Fat{" "}
-                {Math.round(Number(target.data.fat_g))} g · Fibre{" "}
-                {Math.round(Number(profile.fiber_target_g ?? 30))} g
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Effective from{" "}
-                <time dateTime={target.data.effective_from}>
-                  {new Date(`${target.data.effective_from}T00:00:00`).toLocaleDateString("en-US")}
-                </time>
-                .
-              </p>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
       <ProfileForm
         profile={profile}
         maintain={maintain}
         averageKg={weightWindow.averageKg}
         today={today}
         onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: ["current-target"] });
           toast.success("Profile saved. Your new targets start today.");
         }}
       />
 
       {/* Last, because it is the thing you reach for once, not every visit. */}
-      <AccountSection timeZone={timeZone} units={profile.units} today={today} />
+      <AccountSection
+        timeZone={timeZone}
+        units={profile.units}
+        today={today}
+        remainingAnalyses={analysesLeft}
+      />
     </div>
   );
 }

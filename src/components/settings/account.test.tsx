@@ -47,11 +47,16 @@ function account(providers: readonly string[]): unknown {
   };
 }
 
-function renderAccount() {
+function renderAccount({ remainingAnalyses = null }: { remainingAnalyses?: string | null } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <AccountSection timeZone="America/New_York" units="metric" today="2026-11-19" />
+      <AccountSection
+        timeZone="America/New_York"
+        units="metric"
+        today="2026-11-19"
+        remainingAnalyses={remainingAnalyses}
+      />
     </QueryClientProvider>,
   );
   return client;
@@ -161,5 +166,20 @@ describe("signing out", () => {
     // Nothing was cleared and nothing navigated: they are still signed in.
     expect(client.getQueryCache().getAll()).toHaveLength(1);
     expect(h.navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe("the day's analyses, in one line", () => {
+  it("shows the count it was given", () => {
+    renderAccount({ remainingAnalyses: "14 of 20 photo analyses left today" });
+
+    expect(screen.getByText("14 of 20 photo analyses left today")).toBeInTheDocument();
+  });
+
+  it("shows nothing when the count could not be read", () => {
+    renderAccount({ remainingAnalyses: null });
+
+    // A number that might be wrong is worse than no number on a settings page.
+    expect(screen.queryByText(/photo analyses left today/)).toBeNull();
   });
 });
