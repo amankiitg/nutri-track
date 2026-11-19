@@ -51,7 +51,7 @@ function renderAccount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <AccountSection timeZone="America/New_York" today="2026-11-19" />
+      <AccountSection timeZone="America/New_York" units="metric" today="2026-11-19" />
     </QueryClientProvider>,
   );
   return client;

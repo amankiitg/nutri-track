@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { displayRounded, type UnitSystem } from "@/lib/units";
 
 /** The three ranges the picker offers. `days` is null for everything there is. */
 export const EXPORT_RANGES = [
@@ -70,7 +71,8 @@ export interface ExportRow {
   protein: number;
   carbs: number;
   fat: number;
-  fibre: number;
+  /** Null when the analyser gave no fibre for this item. Blank in the CSV, not zero. */
+  fibre: number | null;
 }
 
 export interface DailyTotal {
@@ -79,7 +81,8 @@ export interface DailyTotal {
   protein: number;
   carbs: number;
   fat: number;
-  fibre: number;
+  /** Null when no item that day had a fibre figure: unknown, which is not the same as zero. */
+  fibre: number | null;
 }
 
 const timeFormat = new Map<string, Intl.DateTimeFormat>();
@@ -112,8 +115,10 @@ export function portionLabel(item: Pick<ExportedItem, "quantity" | "unit" | "gra
 /**
  * One row per item, in the order the day happened.
  *
- * An item with no fibre is zero rather than blank: the column is a number everywhere else in the
- * app, and a blank cell in a spreadsheet column of numbers is a gap somebody has to explain.
+ * An item with no fibre figure is blank, not zero. The case the old coalesce hid: a food the
+ * analyser could not put a fibre number on was exported as 0 g, which reads as "no fibre" and is a
+ * different claim from "not known". Blank is the honest cell, and a day with no known figures is
+ * blank too (see `dailyTotals`).
  */
 export function buildExportRows(
   meals: readonly ExportedMeal[],
@@ -137,7 +142,7 @@ export function buildExportRows(
       protein: item.protein_g,
       carbs: item.carbs_g,
       fat: item.fat_g,
-      fibre: item.fiber_g ?? 0,
+      fibre: item.fiber_g,
     });
   }
   return rows.sort((a, b) =>
@@ -145,7 +150,14 @@ export function buildExportRows(
   );
 }
 
-/** The per-day line, summed from the item rows so the two files cannot disagree. */
+/**
+ * The per-day line, summed from the item rows so the two files cannot disagree.
+ *
+ * Fibre is added up only where it is known: an item with no figure is not a zero, so a day whose
+ * items all lack fibre comes out blank rather than as 0 g, and a day with one known 4 g and one
+ * unknown is 4 g. Calories and the other macros are always present (their columns are not null),
+ * so they stay plain numbers.
+ */
 export function dailyTotals(rows: readonly ExportRow[]): DailyTotal[] {
   const byDay = new Map<string, DailyTotal>();
   for (const row of rows) {
@@ -155,21 +167,27 @@ export function dailyTotals(rows: readonly ExportRow[]): DailyTotal[] {
       protein: 0,
       carbs: 0,
       fat: 0,
-      fibre: 0,
+      fibre: null as number | null,
     };
     day.kcal += row.kcal;
     day.protein += row.protein;
     day.carbs += row.carbs;
     day.fat += row.fat;
-    day.fibre += row.fibre;
+    if (row.fibre !== null) day.fibre = (day.fibre ?? 0) + row.fibre;
     byDay.set(row.date, day);
   }
   return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** One decimal, without a trailing .0 — a spreadsheet reads both as numbers. */
+/**
+ * A number as a cell a spreadsheet reads as a number.
+ *
+ * Two decimals at most, and no trailing zero: one is what kcal and the macros carry, two is what a
+ * kilogram weighs to (the column is numeric(5,2)), and rounding here also clears the 0.30000000004
+ * that adding floats leaves behind.
+ */
 function numberText(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
+  const rounded = Math.round(value * 100) / 100;
   return Number.isFinite(rounded) ? String(rounded) : "0";
 }
 
@@ -181,7 +199,9 @@ function numberText(value: number): string {
  * which is how a spreadsheet is told to treat the cell as text: an item called `=HYPERLINK(...)`
  * is a food, not a formula.
  */
-export function escapeCsv(value: string | number): string {
+export function escapeCsv(value: string | number | null): string {
+  // Null is a cell with nothing in it: not zero, and not the word "null".
+  if (value === null) return "";
   if (typeof value === "number") return numberText(value);
   const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
@@ -201,7 +221,7 @@ const MEALS_HEADER = [
 ];
 const TOTALS_HEADER = ["date", "kcal", "protein", "carbs", "fat", "fibre"];
 
-function csvLines(header: readonly string[], rows: readonly (string | number)[][]): string {
+function csvLines(header: readonly string[], rows: readonly (string | number | null)[][]): string {
   const lines = [header.join(","), ...rows.map((row) => row.map(escapeCsv).join(","))];
   // A trailing newline: some tools treat a final line without one as truncated.
   return `${lines.join("\n")}\n`;
@@ -418,6 +438,7 @@ const ID_CHUNK = 100;
 export interface ExportData {
   meals: ExportedMeal[];
   items: ExportedItem[];
+  weights: ExportedWeight[];
 }
 
 /**
@@ -460,5 +481,80 @@ export async function fetchExportData(input: {
     items.push(...z.array(itemRow).parse(itemResult.data ?? []));
   }
 
-  return { meals, items };
+  // Weigh-ins are their own table and their own range: a day with a weigh-in and no meals is
+  // still part of the record, which is why the empty check looks at both.
+  let weightQuery = supabase
+    .from("weight_log")
+    .select("logged_on, weight_kg, waist_cm")
+    .eq("user_id", input.userId)
+    .lte("logged_on", input.to);
+  if (input.from !== null) weightQuery = weightQuery.gte("logged_on", input.from);
+  const weightResult = await weightQuery.order("logged_on");
+  if (weightResult.error) throw weightResult.error;
+  const weights = z.array(weightRow).parse(weightResult.data ?? []);
+
+  return { meals, items, weights };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Weights                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface ExportedWeight {
+  logged_on: string;
+  weight_kg: number;
+  waist_cm: number | null;
+}
+
+const weightRow = z.object({
+  logged_on: z.string(),
+  weight_kg: numberish,
+  waist_cm: numberishOrNull,
+});
+
+/**
+ * The header names the unit the numbers are in.
+ *
+ * A column of 174.6 lb written as text cannot be added up, so the unit goes in the header once
+ * rather than in every cell.
+ */
+export function weightHeader(units: UnitSystem): readonly string[] {
+  return [
+    "date",
+    units === "imperial" ? "weight_lb" : "weight_kg",
+    units === "imperial" ? "waist_in" : "waist_cm",
+  ];
+}
+
+/**
+ * One row per weigh-in, at the weight card's own precision.
+ *
+ * `displayRounded` is the card's formatter: it converts once and rounds once, to one decimal of
+ * pounds and two of kilograms, which is what the stored column supports. Reusing it rather than a
+ * formatter of this file's own means a weigh-in reads the same in the export as on the screen. A
+ * waist that was not measured is blank, not zero.
+ */
+export function weightsCsv(weights: readonly ExportedWeight[], units: UnitSystem): string {
+  return csvLines(
+    weightHeader(units),
+    weights.map((entry) => [
+      entry.logged_on,
+      displayRounded(entry.weight_kg, units, "mass"),
+      entry.waist_cm === null ? null : displayRounded(entry.waist_cm, units, "length"),
+    ]),
+  );
+}
+
+/**
+ * True when the range holds nothing at all.
+ *
+ * Checked on meals and weigh-ins rather than on the CSV text: a file with only a header is not a
+ * result, and "Nothing to export" has to mean every file is empty, not just the one that happened
+ * to be built first.
+ */
+export function exportIsEmpty(data: {
+  meals: readonly unknown[];
+  weights: readonly unknown[];
+}): boolean {
+  return data.meals.length === 0 && data.weights.length === 0;
 }

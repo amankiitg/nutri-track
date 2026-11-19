@@ -156,7 +156,7 @@ function SettingsPage() {
       />
 
       {/* Last, because it is the thing you reach for once, not every visit. */}
-      <AccountSection timeZone={timeZone} today={today} />
+      <AccountSection timeZone={timeZone} units={profile.units} today={today} />
     </div>
   );
 }

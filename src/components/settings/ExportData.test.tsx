@@ -47,13 +47,15 @@ const ITEM = {
 };
 
 function renderControl() {
-  render(<ExportData userId="user-1" timeZone="America/New_York" today="2026-11-19" />);
+  render(
+    <ExportData userId="user-1" timeZone="America/New_York" units="metric" today="2026-11-19" />,
+  );
   return userEvent.setup();
 }
 
 describe("Export my data", () => {
   it("says there is nothing to export rather than handing over a header-only file", async () => {
-    fetchMock.mockResolvedValueOnce({ meals: [], items: [] });
+    fetchMock.mockResolvedValueOnce({ meals: [], items: [], weights: [] });
     const user = renderControl();
 
     await user.click(screen.getByRole("button", { name: /export my data/i }));
@@ -66,7 +68,7 @@ describe("Export my data", () => {
   });
 
   it("offers a zip holding both CSVs when there is something to export", async () => {
-    fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM] });
+    fetchMock.mockResolvedValueOnce({ meals: [MEAL], items: [ITEM], weights: [] });
     const user = renderControl();
 
     await user.click(screen.getByRole("button", { name: /export my data/i }));
@@ -77,6 +79,7 @@ describe("Export my data", () => {
       "nutritrack-2026-11-19.zip",
       "nutritrack-2026-11-19-meals.csv",
       "nutritrack-2026-11-19-daily-totals.csv",
+      "nutritrack-2026-11-19-weights.csv",
     ]);
     // The zip is first because that is what the share sheet is offered first.
     expect(new TextDecoder().decode(files[1]?.bytes)).toContain(
@@ -100,7 +103,7 @@ describe("Export my data", () => {
   });
 
   it("asks for the range the picker shows", async () => {
-    fetchMock.mockResolvedValue({ meals: [], items: [] });
+    fetchMock.mockResolvedValue({ meals: [], items: [], weights: [] });
     const user = renderControl();
 
     await user.click(screen.getByRole("button", { name: /export my data/i }));
@@ -125,5 +128,23 @@ describe("Export my data", () => {
     await user.click(screen.getByRole("button", { name: /export my data/i }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(fetchMock).toHaveBeenLastCalledWith({ userId: "user-1", from: null, to: "2026-11-19" });
+  });
+
+  it("still exports a range that has weigh-ins and no meals", async () => {
+    fetchMock.mockResolvedValueOnce({
+      meals: [],
+      items: [],
+      weights: [{ logged_on: "2026-11-18", weight_kg: 79.2, waist_cm: null }],
+    });
+    const user = renderControl();
+
+    await user.click(screen.getByRole("button", { name: /export my data/i }));
+
+    await waitFor(() => expect(deliverMock).toHaveBeenCalledTimes(1));
+    const files = deliverMock.mock.calls[0]?.[0] as { name: string; bytes: Uint8Array }[];
+    expect(new TextDecoder().decode(files[3]?.bytes)).toBe(
+      "date,weight_kg,waist_cm\n2026-11-18,79.2,\n",
+    );
+    expect(toastMock).not.toHaveBeenCalledWith("Nothing to export", expect.anything());
   });
 });

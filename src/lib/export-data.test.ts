@@ -45,9 +45,11 @@ import {
   fetchExportData,
   mealsCsv,
   totalsCsv,
+  weightsCsv,
   zipStore,
   type ExportedItem,
   type ExportedMeal,
+  type ExportedWeight,
 } from "./export-data";
 
 const MEAL: ExportedMeal = {
@@ -130,14 +132,15 @@ describe("buildExportRows", () => {
     ]);
   });
 
-  it("falls back to grams when no portion was typed, and to zero when fibre is unknown", () => {
+  it("falls back to grams when no portion was typed, and leaves unknown fibre unknown", () => {
     const rows = buildExportRows(
       [MEAL],
       [{ ...ITEM, quantity: null, unit: null, grams: 150.4, fiber_g: null }],
       "UTC",
     );
     expect(rows[0]?.portion).toBe("150 g");
-    expect(rows[0]?.fibre).toBe(0);
+    // Null, not zero: the analyser did not say, which is a different claim from "no fibre".
+    expect(rows[0]?.fibre).toBeNull();
   });
 
   it("drops an item whose meal is outside the export", () => {
@@ -254,5 +257,87 @@ describe("fetchExportData", () => {
 
     const meals = calls.find((call) => call.table === "meals");
     expect(meals?.filters.some(([name]) => name === "gte")).toBe(false);
+  });
+});
+
+describe("weights.csv", () => {
+  const weighIn = (over: Partial<ExportedWeight>): ExportedWeight => ({
+    logged_on: "2026-11-18",
+    weight_kg: 79.2,
+    waist_cm: null,
+    ...over,
+  });
+
+  it("writes kilograms to two decimals, which is all the column holds", () => {
+    expect(weightsCsv([weighIn({ weight_kg: 79.25 })], "metric").split("\n")[1]).toBe(
+      "2026-11-18,79.25,",
+    );
+  });
+
+  it("writes pounds to one decimal, converted once from the stored kilograms", () => {
+    // 79.2 kg is 174.606 lb, which the weight card prints as 174.6: convert once, round once.
+    expect(weightsCsv([weighIn({})], "imperial").split("\n")[1]).toBe("2026-11-18,174.6,");
+  });
+
+  it("names the unit in the header rather than in every cell", () => {
+    expect(weightsCsv([], "imperial")).toBe("date,weight_lb,waist_in\n");
+    expect(weightsCsv([], "metric")).toBe("date,weight_kg,waist_cm\n");
+  });
+
+  it("carries the waist in the same system, and leaves it blank when it was not measured", () => {
+    expect(weightsCsv([weighIn({ waist_cm: 84.5 })], "metric").split("\n")[1]).toBe(
+      "2026-11-18,79.2,84.5",
+    );
+    expect(weightsCsv([weighIn({ waist_cm: 84.5 })], "imperial").split("\n")[1]).toBe(
+      "2026-11-18,174.6,33.3",
+    );
+    expect(weightsCsv([weighIn({})], "metric").split("\n")[1]).toBe("2026-11-18,79.2,");
+  });
+});
+
+describe("fibre that is not known", () => {
+  it("is blank in the meals file, and a real zero stays zero", () => {
+    const rows = buildExportRows(
+      [MEAL],
+      [
+        { ...ITEM, name: "Tea", fiber_g: 0 },
+        { ...ITEM, name: "Rice", fiber_g: null },
+      ],
+      "UTC",
+    );
+    const lines = mealsCsv(rows).split("\n");
+    expect(lines[1]).toBe("2026-11-18,23:30,dinner,Tea,2 tbsp,210.5,8,30,5.5,0");
+    expect(lines[2]).toBe("2026-11-18,23:30,dinner,Rice,2 tbsp,210.5,8,30,5.5,");
+  });
+
+  it("is added up only where it is known", () => {
+    const mixed = dailyTotals(buildExportRows([MEAL], [ITEM, { ...ITEM, fiber_g: null }], "UTC"));
+    expect(mixed[0]?.fibre).toBe(4);
+  });
+
+  it("leaves a day with no known figures blank rather than zero", () => {
+    const unknown = dailyTotals(buildExportRows([MEAL], [{ ...ITEM, fiber_g: null }], "UTC"));
+    expect(unknown[0]?.fibre).toBeNull();
+    expect(totalsCsv(unknown).split("\n")[1]).toBe("2026-11-18,210.5,8,30,5.5,");
+  });
+});
+
+describe("the weigh-ins query", () => {
+  it("asks for this user's weigh-ins in the same range, and nothing else", async () => {
+    calls.length = 0;
+    await fetchExportData({ userId: "user-1", from: "2026-11-13", to: "2026-11-19" });
+
+    const weights = calls.find((call) => call.table === "weight_log");
+    expect(weights?.filters).toContainEqual(["eq", "user-1"]);
+    expect(weights?.filters).toContainEqual(["gte", "2026-11-13"]);
+    expect(weights?.filters).toContainEqual(["lte", "2026-11-19"]);
+  });
+
+  it("drops the lower bound for all time", async () => {
+    calls.length = 0;
+    await fetchExportData({ userId: "user-1", from: null, to: "2026-11-19" });
+
+    const weights = calls.find((call) => call.table === "weight_log");
+    expect(weights?.filters.some(([name]) => name === "gte")).toBe(false);
   });
 });
