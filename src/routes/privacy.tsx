@@ -183,6 +183,13 @@ function PrivacyPage() {
           point. Deleting the meal and then deleting it again is what removes them. Photos from a
           capture you cancel before saving are deleted immediately.
         </p>
+        <p className="pt-2 font-medium">You can export your data at any time.</p>
+        <p>
+          Settings, then Account, has an Export my data button with a range: the last 7 days, the
+          last 30, or everything. It writes two CSV files, every meal and item and a total for each
+          day, into one zip. The export is built in your own browser from your own session, so no
+          copy of it passes through a server of mine, and nothing is kept after you close the page.
+        </p>
       </Section>
 
       <Section title="Deleting your account">
