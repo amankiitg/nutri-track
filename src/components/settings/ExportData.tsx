@@ -15,24 +15,30 @@ import {
   EXPORT_RANGES,
   buildExportRows,
   dailyTotals,
+  exportIsEmpty,
   exportRangeStart,
   fetchExportData,
   mealsCsv,
   totalsCsv,
+  weightsCsv,
   zipStore,
   type ExportRangeId,
 } from "@/lib/export-data";
+import type { UnitSystem } from "@/lib/units";
 import { deliverExport, type ExportFile } from "@/lib/export-delivery";
 
 export function ExportData({
   userId,
   timeZone,
+  units,
   today,
 }: {
   /** Empty until the session has been read; the control stays disabled until it is not. */
   userId: string;
   /** The profile's zone, so a meal's time is the clock it was eaten by. */
   timeZone: string;
+  /** The unit the weight column is written in: the same preference the app shows them in. */
+  units: UnitSystem;
   /** The profile's day, as YYYY-MM-DD: the end of every range. */
   today: string;
 }) {
@@ -51,14 +57,17 @@ export function ExportData({
       });
       const rows = buildExportRows(data.meals, data.items, timeZone);
 
-      if (rows.length === 0) {
-        toast("Nothing to export", { description: "No meals are logged in that range." });
+      // Every file has to be empty for there to be nothing to export: a week with weigh-ins and no
+      // meals is still a week of data.
+      if (exportIsEmpty(data)) {
+        toast("Nothing to export", { description: "Nothing is logged in that range." });
         return;
       }
 
       const totals = dailyTotals(rows);
       const meals = mealsCsv(rows);
       const daily = totalsCsv(totals);
+      const weights = weightsCsv(data.weights, units);
       const base = `nutritrack-${today}`;
       const files: ExportFile[] = [
         {
@@ -67,6 +76,7 @@ export function ExportData({
           bytes: zipStore([
             { name: "meals.csv", text: meals },
             { name: "daily-totals.csv", text: daily },
+            { name: "weights.csv", text: weights },
           ]),
         },
         { name: `${base}-meals.csv`, mimeType: "text/csv", bytes: new TextEncoder().encode(meals) },
@@ -74,6 +84,11 @@ export function ExportData({
           name: `${base}-daily-totals.csv`,
           mimeType: "text/csv",
           bytes: new TextEncoder().encode(daily),
+        },
+        {
+          name: `${base}-weights.csv`,
+          mimeType: "text/csv",
+          bytes: new TextEncoder().encode(weights),
         },
       ];
 
@@ -93,8 +108,9 @@ export function ExportData({
     <div className="space-y-2 border-t border-border pt-4">
       <p className="text-sm font-medium">Export my data</p>
       <p className="text-xs text-muted-foreground">
-        Every meal and item, with a daily total for each day, as CSV files in one zip. Built in your
-        browser from your own data. All times are in your profile time zone.
+        Every meal and item, a daily total for each day, and every weigh-in, as CSV files in one
+        zip. Built in your browser from your own data. Times are in your profile time zone, and
+        weights are in your chosen units.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <select
