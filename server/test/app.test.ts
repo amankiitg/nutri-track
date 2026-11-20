@@ -106,6 +106,8 @@ interface HarnessOptions {
   anonScanResult?: TrialScanResult;
   /** Makes the funnel store throw, to prove a lost count never fails the request. */
   funnelThrows?: boolean;
+  /** Makes the funnel store never answer, to prove no route waits for a count. */
+  funnelHangs?: boolean;
   /** The token version admin_trial_link_issue returns. */
   linkVersion?: number;
   /** Makes issuing a trial link fail, as a refused admin check would. */
@@ -267,6 +269,8 @@ function buildHarness(options: HarnessOptions = {}) {
     async logFunnel(event, ip) {
       funnelEvents.push({ event, ip });
       if (options.funnelThrows) throw new Error("funnel store exploded");
+      // A promise that never settles stands in for a counter that is slow or stuck.
+      if (options.funnelHangs) return new Promise<void>(() => {});
     },
     async getScansLimit() {
       return 10;
@@ -1543,6 +1547,23 @@ describe("the trial funnel counters", () => {
       expect(response.body.error.code).toBe("invalid_request");
     }
     expect(funnelEvents).toEqual([]);
+  });
+
+  it("answers without waiting for a count that never comes back", async () => {
+    // The counter is a measurement of the trial, so a counter that hangs must never become a
+    // trial that hangs. Both routes on the Analyse path are checked: the one that issues a token
+    // and the one that analyses the meal. If either awaited the count, this test would sit on the
+    // hanging promise until vitest gave up rather than returning a status.
+    const { app } = buildHarness({ config: ANON_CONFIG, funnelHangs: true });
+    turnstileSays(true);
+
+    const started = await request(app)
+      .post("/trial/start")
+      .send({ turnstileToken: "turnstile-token" });
+    expect(started.status).toBe(200);
+
+    const parsed = await request(app).post("/trial/parse").send(parseBody());
+    expect(parsed.status).toBe(200);
   });
 
   it("still answers 204 when the count itself fails", async () => {

@@ -59,16 +59,15 @@ export interface AppDeps {
 /**
  * Counts one funnel step, and never lets that count fail the request it is counting.
  *
- * The store already swallows a database refusal and logs it; this wrapper is here so a thrown
- * error from the client itself cannot escape into the route either. A missing data point is a
- * gap in a graph, which is a smaller problem than a broken trial.
+ * Two rules, and both matter more than the count. It is **not awaited** at any call site, so a
+ * slow counter cannot delay a tap, an analysis or a refusal; and a failure is logged and
+ * swallowed, so a broken counter cannot fail either. A missing data point is a gap in a graph,
+ * which is a smaller problem than a trial that does not work.
  */
-async function recordFunnel(deps: AppDeps, event: FunnelEvent, ip: string | null): Promise<void> {
-  try {
-    await deps.trial.logFunnel(event, ip);
-  } catch {
+function recordFunnel(deps: AppDeps, event: FunnelEvent, ip: string | null): void {
+  void deps.trial.logFunnel(event, ip).catch(() => {
     log("warn", "funnel event not recorded", { event });
-  }
+  });
 }
 
 /** Turns Zod's issues into something a client can act on. */
@@ -331,7 +330,7 @@ export function createApp(deps: AppDeps): Express {
     const ip = clientIp(req.headers, req.ip);
     const human = await verifyTurnstile(secrets.turnstile, parsed.data.turnstileToken, ip);
     if (!human) {
-      await recordFunnel(deps, "turnstile_failed", ip);
+      recordFunnel(deps, "turnstile_failed", ip);
       throw new ApiError(403, "forbidden", "Could not verify you are a person. Try again.");
     }
 
@@ -344,7 +343,7 @@ export function createApp(deps: AppDeps): Express {
       version: started.token_version ?? 0,
     });
 
-    await recordFunnel(deps, "token_issued", ip);
+    recordFunnel(deps, "token_issued", ip);
     log("info", "anonymous trial started", { scansTotal: started.scans_total ?? null });
     res.json({
       status: "ok",
@@ -367,7 +366,7 @@ export function createApp(deps: AppDeps): Express {
     const parsed = trialFunnelSchema.safeParse(req.body);
     if (!parsed.success) throw validationError(parsed.error);
 
-    await recordFunnel(deps, parsed.data.event, clientIp(req.headers, req.ip));
+    recordFunnel(deps, parsed.data.event, clientIp(req.headers, req.ip));
     res.status(204).end();
   });
 
@@ -544,14 +543,14 @@ export function createApp(deps: AppDeps): Express {
       // or rate-limited trial is capacity, which the funnel does not describe; anything else is
       // an analysis that did not come back.
       if (isApiError(error) && error.code === "trial_exhausted") {
-        await recordFunnel(deps, "limit_reached", ip);
+        recordFunnel(deps, "limit_reached", ip);
       } else if (!(isApiError(error) && error.code === "trial_busy")) {
-        await recordFunnel(deps, "analysis_error", ip);
+        recordFunnel(deps, "analysis_error", ip);
       }
       throw error;
     }
 
-    await recordFunnel(deps, "analysis_ok", ip);
+    recordFunnel(deps, "analysis_ok", ip);
     log("info", "parsed a trial meal", {
       items: outcome.items.length,
       attempts: outcome.attempts,
