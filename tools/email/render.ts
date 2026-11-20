@@ -80,9 +80,9 @@ function blackFridayBody(): EmailSection[] {
     },
     {
       type: "gif",
-      src: "https://tracknutri.app/demo/email-demo-result.gif",
+      src: "https://tracknutri.app/demo/email-result-card.png",
       href: TRY_BLACK_FRIDAY,
-      alt: "NutriTrack analysing a meal photo",
+      alt: "NutriTrack showing the calories and macros for a meal photo",
     },
     { type: "button", label: "Claim your free deal", href: TRY_BLACK_FRIDAY },
     {
