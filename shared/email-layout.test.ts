@@ -125,13 +125,20 @@ describe("every file in emails/", () => {
     }
   });
 
-  it("keeps the Black Friday copy and links", () => {
+  it("keeps the Black Friday copy, headline and links", () => {
     const html = read("emails/thanksgiving-2026.html");
     expect(html).toContain("Claim your free deal");
-    expect(html).toContain('<strong style="font-weight: 700; color: #192217">100% off</strong>');
-    expect(html).toContain("email-demo.gif");
+    // The green italic in the headline is the only emphasis now: the sentence in the body says
+    // "100% off" plainly, because bold next to the same words in the headline read as a second
+    // announcement.
+    expect(html).toContain('Black Friday deal: <em style="color: #195c2e">100% off</em>.');
+    expect(html).not.toContain("<strong");
+    // The demo starts on the result screen, so it is a new file: a cached old GIF would show the
+    // add-meal form instead.
+    expect(html).toContain("email-demo-result.gif");
+    expect(html).not.toContain("email-demo.gif");
     expect(html.match(/utm_campaign=black_friday/g) ?? []).toHaveLength(2);
-    expect(html).not.toContain("<h1");
+    expect(html).toContain('alt="NutriTrack analysing a meal photo"');
   });
 
   it("keeps the Diwali headline and its panel", () => {
