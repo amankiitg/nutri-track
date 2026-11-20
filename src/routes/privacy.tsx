@@ -186,6 +186,15 @@ function PrivacyPage() {
           checks you are a person before the trial starts.
         </p>
         <p>
+          The trial counts its own steps, anonymously, so it can be improved: that the page was
+          opened, that Analyse was tapped, that a trial started, that an analysis came back or did
+          not, that the scans ran out, and that somebody asked for an invite. Those are counts of
+          events, not a record of a visit: no address, no meal, no photo, and no row that follows
+          one person from one step to the next. The steps the page reports itself are capped at 20 a
+          day by a salted hash of the network address, never the address, so a script cannot inflate
+          them.
+        </p>
+        <p>
           The only point the trial asks for an email address is the end screen, if you want an
           invite. That address is kept to contact you about the invite; it is not part of the trial
           or its scan count.

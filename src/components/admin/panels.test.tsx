@@ -14,7 +14,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { InviteList, InviteRequestsPanel, SpendPanel, TrialCard } from "./panels";
+import { FunnelCard, InviteList, InviteRequestsPanel, SpendPanel, TrialCard } from "./panels";
 import { supabase } from "@/integrations/supabase/client";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -714,5 +714,109 @@ describe("the spend panel", () => {
     // normal account reads on this page and in Settings.
     expect(await screen.findByText("49 of 60 left today")).toBeInTheDocument();
     expect(screen.getByText("9 of 20 left today")).toBeInTheDocument();
+  });
+});
+
+describe("the funnel card", () => {
+  const funnelReply = {
+    day: "2026-11-20",
+    days: 7,
+    window_start: "2026-11-14",
+    today: {
+      try_page_view: 40,
+      analyse_tapped: 12,
+      token_issued: 10,
+      analysis_ok: 9,
+      limit_reached: 2,
+      request_invite_submitted: 1,
+      turnstile_failed: 3,
+      analysis_error: 1,
+    },
+    window: {
+      try_page_view: 200,
+      analyse_tapped: 100,
+      token_issued: 90,
+      analysis_ok: 80,
+      limit_reached: 20,
+      request_invite_submitted: 10,
+      turnstile_failed: 12,
+      analysis_error: 6,
+    },
+  };
+
+  function funnelSays(data: unknown, error: { message: string; code?: string } | null = null) {
+    client.rpc.mockImplementation((name: string) =>
+      name === "admin_trial_funnel"
+        ? Promise.resolve({ data, error })
+        : Promise.resolve({ data: null, error: null }),
+    );
+  }
+
+  it("reads the jsonb reply the function sends, as today and the week", async () => {
+    funnelSays(funnelReply);
+    const user = userEvent.setup();
+
+    renderWithQuery(<FunnelCard />);
+
+    // The closed section is the page's one line: two numbers, no scrolling.
+    expect(await screen.findByText("40 /try views, 12 analysed today.")).toBeInTheDocument();
+    await openSection(user, /^Trial funnel/);
+    const rows = await screen.findAllByRole("row");
+    // Header plus six steps, and nothing for the two events that are not steps.
+    expect(rows).toHaveLength(7);
+    expect(within(rows[1] as HTMLElement).getByText("/try views")).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText("200")).toBeInTheDocument();
+    // The percentage is what the card is for: views to Analyse lost 70% of them today.
+    expect(within(rows[2] as HTMLElement).getByText("70% lost")).toBeInTheDocument();
+    expect(within(rows[2] as HTMLElement).getByText("50% lost")).toBeInTheDocument();
+  });
+
+  it("keeps the two events that end a step beside the chain, not in it", async () => {
+    funnelSays(funnelReply);
+    const user = userEvent.setup();
+
+    renderWithQuery(<FunnelCard />);
+    await openSection(user, /^Trial funnel/);
+
+    expect(await screen.findByText("Turnstile refusals")).toBeInTheDocument();
+    expect(screen.getByText(/3 today · 12 in 7 days/)).toBeInTheDocument();
+    expect(screen.getByText(/1 today · 6 in 7 days/)).toBeInTheDocument();
+    // The chain itself holds six rows, so neither event gained one.
+    expect(screen.getAllByRole("row")).toHaveLength(7);
+  });
+
+  it("shows a rise as more, rather than clamping it to zero", async () => {
+    // A shared network: the page's own counts hit their 20-a-day cap while the service's do not,
+    // so a later step can outnumber the one above it. That is a real reading of the figures.
+    funnelSays({
+      ...funnelReply,
+      today: { ...funnelReply.today, try_page_view: 20, analyse_tapped: 20, token_issued: 25 },
+    });
+
+    renderWithQuery(<FunnelCard />);
+
+    expect(await screen.findByText("25% more")).toBeInTheDocument();
+    expect(screen.queryByText("-25% lost")).toBeNull();
+  });
+
+  it("shows a zero start as no percentage at all", async () => {
+    funnelSays({ ...funnelReply, today: { try_page_view: 0 } });
+
+    renderWithQuery(<FunnelCard />);
+
+    await screen.findByText("0 /try views, 0 analysed today.");
+    // A percentage of no visitors is a made-up number, so none is drawn.
+    expect(screen.queryByText("100% lost")).toBeNull();
+    expect(screen.queryByText("0% lost")).toBeNull();
+  });
+
+  it("shows the database's own reason when the funnel cannot be read", async () => {
+    funnelSays(null, { message: "admin only", code: "42501" });
+
+    renderWithQuery(<FunnelCard />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the funnel. admin only (42501)",
+    );
   });
 });

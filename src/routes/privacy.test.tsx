@@ -52,6 +52,20 @@ describe("the privacy page", () => {
     expect(screen.getByText(/never part of the count/)).toBeInTheDocument();
   });
 
+  it("says the trial counts its own steps, and calls them events rather than visitors", () => {
+    render(<PrivacyPage />);
+
+    // The trial funnel is a measurement of a page, and the page has to say so. What it must not
+    // do is claim something stronger than the tables hold: the rows are (day, event, count) plus a
+    // hashed address for the cap, and there is no row joining one person's steps together.
+    expect(screen.getByText(/The trial counts its own steps, anonymously/)).toBeInTheDocument();
+    expect(screen.getByText(/Those are counts of/)).toBeInTheDocument();
+    expect(screen.getByText(/no row that follows one/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/salted hash of the network address, never the address/),
+    ).toBeInTheDocument();
+  });
+
   it("claims no retention period for the counter, because none is known", () => {
     render(<PrivacyPage />);
 
