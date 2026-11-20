@@ -1,0 +1,20 @@
+Hi {{{contact.first_name|there}}},
+
+Thanksgiving: the one day a year "just one more slice" is a lifestyle.
+
+My gift to you: snap your plate in NutriTrack and see what's actually in it. Turkey, stuffing,
+that suspicious third helping of pie, and the butter hiding in all of it.
+
+See it in action: https://tracknutri.app/demo/email-demo.gif
+
+Try it free → https://tracknutri.app/try?utm_source=email&utm_campaign=thanksgiving
+
+No sign-up. No email. No judgement. (Okay, a little judgement.)
+
+Happy Thanksgiving!
+Aman
+
+P.S. Like it? Reply and I'll get you full access, right after you finish the pie.
+
+You're getting this because you joined NutriTrack or were invited to it.
+Unsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}
