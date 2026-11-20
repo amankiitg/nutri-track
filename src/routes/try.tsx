@@ -81,6 +81,8 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkExpired, setLinkExpired] = useState(false);
+  /** True when the Turnstile widget could not be created, which no tap can recover from. */
+  const [turnstileFailed, setTurnstileFailed] = useState(false);
 
   const [result, setResult] = useState<TrialParseResult | null>(null);
   /**
@@ -175,18 +177,32 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
         if (cancelled || turnstileRef.current === null) return;
         const api = turnstileApi();
         if (api === undefined) return;
-        turnstileWidgetId.current = api.render(turnstileRef.current, {
-          sitekey: siteKey,
-          size: "invisible",
-          callback: (token: string) => setTurnstileToken(token),
-          "error-callback": () => setTurnstileToken(""),
-          "expired-callback": () => setTurnstileToken(""),
-          theme: "light",
-        });
-        turnstileReady.current = true;
+        try {
+          turnstileWidgetId.current = api.render(turnstileRef.current, {
+            sitekey: siteKey,
+            // Invisible is the sitekey's mode now, not a size. Passing size: "invisible" made
+            // Cloudflare's client throw a TurnstileError, so no widget was created, the id stayed
+            // null and every Analyse tap stopped at "Complete the check to continue." — a dead
+            // button with nothing on screen to explain it.
+            //
+            // appearance keeps the widget out of sight unless a challenge is actually needed;
+            // execution puts the challenge on turnstile.execute(), which is what a tap does.
+            appearance: "interaction-only",
+            execution: "execute",
+            callback: (token: string) => setTurnstileToken(token),
+            "error-callback": () => setTurnstileToken(""),
+            "expired-callback": () => setTurnstileToken(""),
+            theme: "light",
+          });
+          turnstileReady.current = true;
+        } catch {
+          // A refused render is a page that cannot verify anybody. Remember it, so the next
+          // Analyse answers with a sentence instead of pretending a check exists.
+          setTurnstileFailed(true);
+        }
       })
       .catch(() => {
-        // The widget is optional to render; the submit still requires a token.
+        setTurnstileFailed(true);
       });
 
     return () => {
@@ -244,7 +260,9 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
       const api = turnstileApi();
       const widgetId = turnstileWidgetId.current;
       if (api === undefined || widgetId === null) {
-        setError("Complete the check to continue.");
+        setError(
+          turnstileFailed ? TURNSTILE_UNAVAILABLE_MESSAGE : "Complete the check to continue.",
+        );
         return;
       }
       setPendingSubmit(true);
@@ -337,7 +355,10 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
       const api = turnstileApi();
       const widgetId = turnstileWidgetId.current;
       if (api === undefined || widgetId === null) {
-        setError("Complete the check to continue.");
+        // "Complete the check" is only true when there is a check to complete.
+        setError(
+          turnstileFailed ? TURNSTILE_UNAVAILABLE_MESSAGE : "Complete the check to continue.",
+        );
         return;
       }
       setError(null);
@@ -941,6 +962,15 @@ function ScansLeftNotice({ scansLeft }: { scansLeft: number | null }) {
     </p>
   );
 }
+
+/**
+ * What the page says when Cloudflare's widget will not render at all.
+ *
+ * This is the sentence the outage needed: the tap did nothing, and "Complete the check to
+ * continue" pointed at a check that was never created.
+ */
+export const TURNSTILE_UNAVAILABLE_MESSAGE =
+  "The security check could not load. Reload the page and try again.";
 
 function mealToInput(meal: PendingTrialMeal): { text: string | null; photos: TrialPhoto[] } {
   if (meal.kind === "photo") return { text: null, photos: meal.photos };

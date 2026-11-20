@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   requestInvite: vi.fn(),
   reportPageFunnelEvent: vi.fn(),
   turnstileCallback: null as ((token: string) => void) | null,
+  /** The options the page passed to turnstile.render, which is what this file guards. */
+  turnstileOptions: null as Record<string, unknown> | null,
+  /** Set for the test that reproduces Cloudflare refusing the widget outright. */
+  turnstileThrows: false,
 }));
 
 vi.mock("@/lib/trial", async (importOriginal) => {
@@ -55,6 +59,14 @@ vi.mock("@/lib/turnstile", () => ({
   loadTurnstile: async () => {},
   turnstileApi: () => ({
     render: (_el: HTMLElement, options: Record<string, unknown>) => {
+      mocks.turnstileOptions = options;
+      if (mocks.turnstileThrows) {
+        // What the live page actually threw: Cloudflare's client rejects the parameters it used
+        // to accept, before any widget exists.
+        throw new Error(
+          'TurnstileError: [Cloudflare Turnstile] Invalid value for parameter "size"',
+        );
+      }
       mocks.turnstileCallback = options["callback"] as (token: string) => void;
       return "widget-1";
     },
@@ -106,6 +118,8 @@ beforeEach(() => {
     if (typeof mock === "function") (mock as { mockReset?: () => void }).mockReset?.();
   }
   mocks.turnstileCallback = null;
+  mocks.turnstileOptions = null;
+  mocks.turnstileThrows = false;
   // The email flow is the default in these tests; the anonymous cases set this false.
   mocks.getTrialSettings.mockResolvedValue({ scansLimit: 10, requireEmail: true });
   mocks.requestInvite.mockResolvedValue("requested");
@@ -552,5 +566,49 @@ describe("the funnel steps the page reports", () => {
       (call) => call[0] === "analyse_tapped",
     );
     expect(analyseTaps).toHaveLength(1);
+  });
+});
+
+/**
+ * The Turnstile widget, and the parameters Cloudflare will accept.
+ *
+ * This is a regression test for a live outage rather than a hypothetical: the page passed
+ * `size: "invisible"`, which Cloudflare's client now rejects before any widget exists. The throw
+ * was swallowed, the widget id stayed null, and every Analyse tap stopped at "Complete the check
+ * to continue" — a dead button on a page that looked fine. Nothing about that is visible without
+ * asserting on the options, so here they are.
+ */
+describe("the Turnstile widget", () => {
+  it("renders with the parameters the current API accepts", async () => {
+    render(<TrialPage />);
+    await waitFor(() => expect(mocks.turnstileOptions).not.toBeNull());
+
+    const options = mocks.turnstileOptions ?? {};
+    // Invisible is the sitekey's mode now. "size" only takes normal, compact or flexible, and
+    // sending anything else throws — so the key is absent rather than set to a word that means
+    // something else here.
+    expect(options).not.toHaveProperty("size");
+    expect(options["appearance"]).toBe("interaction-only");
+    expect(options["execution"]).toBe("execute");
+    expect(options["sitekey"]).toBe("test-site-key");
+  });
+
+  it("says the check could not load when Cloudflare refuses to render it", async () => {
+    mocks.turnstileThrows = true;
+    // The anonymous flow, because that is the one that needs the widget before it can scan.
+    mocks.getTrialSettings.mockResolvedValue({ scansLimit: 10, requireEmail: false });
+
+    render(<TrialPage />);
+    await waitFor(() => expect(mocks.turnstileOptions).not.toBeNull());
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    // Not "Complete the check to continue": there was never a check to complete.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The security check could not load. Reload the page and try again.",
+    );
+    expect(mocks.parseTrialMeal).not.toHaveBeenCalled();
   });
 });
