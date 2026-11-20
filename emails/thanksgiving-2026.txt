@@ -1,20 +1,21 @@
-Hi {{{contact.first_name|there}}},
+Hi there,
 
-Thanksgiving, where “one more slice” is a lifestyle.
+Happy early Thanksgiving!
 
-My gift to you: snap your plate in NutriTrack and see what's actually in it. Turkey, stuffing,
-that suspicious third helping of pie, and the butter hiding in all of it.
+Everyone’s running Black Friday deals, so here’s mine: NutriTrack is now 100% off. Free,
+free, free. (It was free before too, but now you don’t even need to sign up.)
+
+Snap a photo of your plate and get the calories, protein and fibre in a few seconds. No
+account, no email, no 5 AM line outside a store.
 
 See it in action: https://tracknutri.app/demo/email-demo.gif
 
-Try it free → https://tracknutri.app/try?utm_source=email&utm_campaign=thanksgiving
+Claim your free deal: https://tracknutri.app/try?utm_source=email&utm_campaign=black_friday
 
-No sign-up. No email. No judgement. (Okay, a little judgement.)
+Deal ends: never. Pie photos: optional.
 
-Happy Thanksgiving!
+Enjoy the holiday,
 Aman
-
-P.S. Like it? Reply and I'll get you full access, right after you finish the pie.
 
 You're getting this because you joined NutriTrack or were invited to it.
 Unsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}
