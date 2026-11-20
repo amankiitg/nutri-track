@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandMark } from "@/components/app/BrandMark";
 import { TrialLinkExpired } from "@/components/trial/LinkStates";
+import { NoFoodResult, type NoFoodSource } from "@/components/capture/NoFoodResult";
 import { preparePhoto } from "@/lib/capture";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { requestInvite, type InviteResult } from "@/lib/invite-request";
@@ -82,6 +83,16 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   const [linkExpired, setLinkExpired] = useState(false);
 
   const [result, setResult] = useState<TrialParseResult | null>(null);
+  /**
+   * The empty answer: the model looked and found no food. It is not an error (the request
+   * succeeded) and not a result (there is nothing to review), so it is its own state — and the
+   * photo it answered about stays on screen above it.
+   */
+  const [noFood, setNoFood] = useState<NoFoodSource | null>(null);
+  /** The photo the last scan sent, so a no-food answer can show what was looked at. */
+  const [scannedPhoto, setScannedPhoto] = useState<TrialPhoto | null>(null);
+  /** Where "Type it instead" puts the caret, since the form is already on this screen. */
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const [scansLeft, setScansLeft] = useState<number | null>(null);
   const [scanLimit, setScanLimit] = useState<number | null>(null);
   const [text, setText] = useState("");
@@ -350,8 +361,17 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
           eatenAt: new Date(),
           mealType: null,
         });
-        setResult(outcome);
         setScansLeft(outcome.scans_left);
+        if (outcome.items.length === 0) {
+          // The scan is refunded server-side, which is why scans_left above is the number
+          // before this attempt. Nothing is reviewed because there is nothing to review.
+          setNoFood(input.photos.length > 0 ? "photo" : "text");
+          setScannedPhoto(input.photos[0] ?? null);
+          setResult(null);
+          return;
+        }
+        setNoFood(null);
+        setResult(outcome);
       } catch (caught) {
         const code = caught instanceof TrialRequestError ? caught.code : null;
         if (code === "trial_exhausted") {
@@ -535,6 +555,9 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file !== undefined) {
+                            // A new photo is a new question: the previous empty answer goes.
+                            setNoFood(null);
+                            setScannedPhoto(null);
                             void fileToTrialPhoto(file).then((photo) =>
                               beginScan({ text: null, photos: [photo] }),
                             );
@@ -550,8 +573,12 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                       className="space-y-2"
                     >
                       <Textarea
+                        ref={textRef}
                         value={text}
-                        onChange={(e) => setText(e.target.value)}
+                        onChange={(e) => {
+                          setText(e.target.value);
+                          setNoFood(null);
+                        }}
                         rows={3}
                         placeholder="Or type what you ate, e.g. dal and two rotis"
                       />
@@ -583,6 +610,35 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                   </p>
                 )}
 
+                {noFood !== null && (
+                  <div className="space-y-3">
+                    {/* Said here too, because this is the state where it matters most: the
+                        number did not move, and the visitor should be able to see that. */}
+                    <ScansLeftNotice scansLeft={scansLeft} />
+                    {scannedPhoto !== null && (
+                      <img
+                        src={"data:" + scannedPhoto.mimeType + ";base64," + scannedPhoto.base64}
+                        alt="The photo that was analysed"
+                        className="max-h-56 w-full rounded-2xl object-cover"
+                      />
+                    )}
+                    <NoFoodResult
+                      source={noFood}
+                      onRetake={() => {
+                        setNoFood(null);
+                        setScannedPhoto(null);
+                      }}
+                      onTypeInstead={() => {
+                        setNoFood(null);
+                        setScannedPhoto(null);
+                        // The fields are on this screen anyway, so the useful half of "type it
+                        // instead" is putting the caret where the typing goes.
+                        textRef.current?.focus();
+                      }}
+                    />
+                  </div>
+                )}
+
                 {result !== null && (
                   <div className="space-y-3">
                     <ul className="space-y-2">
@@ -603,15 +659,7 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                       ))}
                     </ul>
 
-                    {(scansLeft === 3 || scansLeft === 1) && (
-                      <p
-                        role="status"
-                        className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
-                      >
-                        {scansLeft === 1 ? "1 scan left." : scansLeft + " scans left."} Join to keep
-                        tracking.
-                      </p>
-                    )}
+                    <ScansLeftNotice scansLeft={scansLeft} />
 
                     {invited && (
                       <p className="text-sm text-muted-foreground">
@@ -875,6 +923,22 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * The near-the-end warning, in one place.
+ *
+ * It shows at three scans and at one, which are the two points where a number is worth an
+ * interruption. Both the results screen and the no-food screen use it: the refund means a no-food
+ * answer leaves this number where it was, and that is the visible half of "it did not cost you".
+ */
+function ScansLeftNotice({ scansLeft }: { scansLeft: number | null }) {
+  if (scansLeft !== 3 && scansLeft !== 1) return null;
+  return (
+    <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+      {scansLeft === 1 ? "1 scan left." : scansLeft + " scans left."} Join to keep tracking.
+    </p>
   );
 }
 

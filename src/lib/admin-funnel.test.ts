@@ -20,6 +20,7 @@ const reply = {
     limit_reached: 2,
     request_invite_submitted: 1,
     turnstile_failed: 3,
+    analysis_no_food: 4,
     analysis_error: 1,
   },
   window: {
@@ -30,6 +31,7 @@ const reply = {
     limit_reached: 20,
     request_invite_submitted: 10,
     turnstile_failed: 12,
+    analysis_no_food: 9,
     analysis_error: 6,
   },
 };
@@ -86,6 +88,7 @@ describe("presentFunnel", () => {
     expect(funnel.steps.map((step) => step.event)).not.toContain("analysis_error");
     expect(funnel.branches).toEqual([
       { event: "turnstile_failed", label: "Turnstile refusals", today: 3, week: 12 },
+      { event: "analysis_no_food", label: "No food found", today: 4, week: 9 },
       { event: "analysis_error", label: "Failed analyses", today: 1, week: 6 },
     ]);
   });
@@ -97,6 +100,6 @@ describe("presentFunnel", () => {
 
     expect(funnel.steps).toHaveLength(6);
     expect(funnel.steps[1]).toMatchObject({ label: "Analyse", today: 0, week: 0, dropToday: 100 });
-    expect(funnel.branches.map((branch) => branch.today)).toEqual([0, 0]);
+    expect(funnel.branches.map((branch) => branch.today)).toEqual([0, 0, 0]);
   });
 });

@@ -87,6 +87,19 @@ export type TrialScanResult = z.infer<typeof trialScanResultSchema>;
 export type TrialAnonStartResult = z.infer<typeof trialAnonStartResultSchema>;
 
 /**
+ * What `trial_scan_refund` answers.
+ *
+ * `refunded` is false for the ordinary reasons — the per-row cap was reached, or there was no
+ * spent scan to give back — so it is not an error and does not throw. scans_left is what the
+ * page then shows, and it is optional because a refused refund still reports the row's count.
+ */
+const trialRefundResultSchema = z.object({
+  status: z.string(),
+  refunded: z.boolean().nullish(),
+  scans_left: z.number().nullish(),
+});
+
+/**
  * The eight steps of the trial funnel, as the database's allowlist names them.
  *
  * Two are sent by the page (the view and the tap) and six by this service at the moment they
@@ -100,6 +113,7 @@ export const FUNNEL_EVENTS = [
   "turnstile_failed",
   "token_issued",
   "analysis_ok",
+  "analysis_no_food",
   "analysis_error",
   "limit_reached",
   "request_invite_submitted",
@@ -126,6 +140,14 @@ export interface TrialStore {
   /** What a token for this mailbox is worth now; a null version skips only the version check. */
   linkStatus(email: string, version: number | null): Promise<TrialLinkStatus>;
   logCall(callId: string, record: LlmCallRecord): Promise<void>;
+  /**
+   * Gives a scan back when the model found no food in what was sent.
+   *
+   * Best effort like the counters: a refund that fails must not turn a correct answer into an
+   * error, so the caller keeps the count it already reported and the log says the refund did not
+   * land. The database caps refunds per device or mailbox, so this cannot become free scans.
+   */
+  refundScan(target: TrialRefundTarget): Promise<TrialRefundResult>;
   /** The per-mailbox scan limit, read from trial_settings so the page never hardcodes it. */
   getScansLimit(): Promise<number>;
   /**
@@ -246,6 +268,18 @@ export function createTrialStore(
       return parsed.data;
     },
 
+    async refundScan(target) {
+      const { data, error } = await client.rpc("trial_scan_refund", {
+        p_server_secret: serverSecret,
+        p_email: "email" in target ? target.email : null,
+        p_device_id: "deviceId" in target ? target.deviceId : null,
+      });
+      if (error) return { refunded: false, scansLeft: null };
+      const parsed = trialRefundResultSchema.safeParse(data);
+      if (!parsed.success) return { refunded: false, scansLeft: null };
+      return { refunded: parsed.data.refunded === true, scansLeft: parsed.data.scans_left ?? null };
+    },
+
     async logCall(callId, record) {
       const { error } = await client.rpc("trial_log_call", {
         p_server_secret: serverSecret,
@@ -345,8 +379,25 @@ export interface TrialAnonymousParseInput {
   eatenAt: Date;
 }
 
+/** Which identity paid for the scan: the two trial paths differ only in that. */
+export type TrialRefundTarget = { email: string } | { deviceId: string };
+
+export interface TrialRefundResult {
+  /** False when the cap was reached, the row had nothing to give back, or the call failed. */
+  refunded: boolean;
+  /** The count after the refund, or null when the database could not be asked. */
+  scansLeft: number | null;
+}
+
 export interface TrialParseOutcome {
   items: MealItemDraft[];
+  /**
+   * True when the model looked and found nothing to eat.
+   *
+   * A separate flag rather than "items is empty" so the counter and the page read the same fact:
+   * this is a correct answer about a photo, not a failed analysis and not a meal.
+   */
+  no_food: boolean;
   scans_left: number;
   meal_type: MealType;
   source: MealSource;
@@ -379,6 +430,7 @@ async function analyzeTrialScan(
   meal: TrialMeal,
   scan: TrialScanResult,
   deps: TrialParseDeps,
+  refundTarget: TrialRefundTarget,
 ): Promise<TrialParseOutcome> {
   if (scan.status !== "ok") {
     throw trialScanError(scan);
@@ -405,8 +457,29 @@ async function analyzeTrialScan(
 
   const mealType = meal.mealType ?? guessMealType(meal.eatenAt, "UTC");
 
+  // Nothing on the plate is a correct answer, so it is not one of the ten analyses: the scan goes
+  // back. The database decides whether it may (three refunds a device or mailbox, so blank photos
+  // cannot become a free loop), and a refund that fails still answers the visitor correctly.
+  if (items.length === 0) {
+    const refund = await deps.trial.refundScan(refundTarget);
+    log("info", "no food in a trial scan", {
+      refunded: refund.refunded,
+      scansLeft: refund.scansLeft ?? scan.scans_left,
+    });
+    return {
+      items,
+      no_food: true,
+      scans_left: refund.scansLeft ?? scan.scans_left,
+      meal_type: mealType,
+      source,
+      model,
+      attempts,
+    };
+  }
+
   return {
     items,
+    no_food: false,
     scans_left: scan.scans_left,
     meal_type: mealType,
     source,
@@ -426,7 +499,7 @@ export async function parseTrialMeal(
   deps: TrialParseDeps,
 ): Promise<TrialParseOutcome> {
   const scan = await deps.trial.startScan(input.email, input.ip, input.version);
-  return analyzeTrialScan(input, scan, deps);
+  return analyzeTrialScan(input, scan, deps, { email: input.email });
 }
 
 /** The same scan, paid for by an anonymous device rather than a mailbox. */
@@ -435,5 +508,5 @@ export async function parseAnonymousTrialMeal(
   deps: TrialParseDeps,
 ): Promise<TrialParseOutcome> {
   const scan = await deps.trial.startAnonymousScan(input.deviceId, input.ip, input.version);
-  return analyzeTrialScan(input, scan, deps);
+  return analyzeTrialScan(input, scan, deps, { deviceId: input.deviceId });
 }

@@ -108,6 +108,8 @@ interface HarnessOptions {
   funnelThrows?: boolean;
   /** Makes the funnel store never answer, to prove no route waits for a count. */
   funnelHangs?: boolean;
+  /** What trial_scan_refund answers; the default gives the scan back. */
+  refundResult?: { refunded: boolean; scansLeft: number | null };
   /** The token version admin_trial_link_issue returns. */
   linkVersion?: number;
   /** Makes issuing a trial link fail, as a refused admin check would. */
@@ -142,6 +144,8 @@ function buildHarness(options: HarnessOptions = {}) {
   const anonStartCalls: Array<{ ip: string | null; deviceId: string | null }> = [];
   const anonScanCalls: Array<{ deviceId: string; version: number }> = [];
   const funnelEvents: Array<{ event: string; ip: string | null }> = [];
+  /** The refund targets the service asked for: a device id or an email, never both. */
+  const refundCalls: Array<Record<string, string>> = [];
   const replies = options.replies ?? [goodReply];
   let replyIndex = 0;
 
@@ -266,6 +270,10 @@ function buildHarness(options: HarnessOptions = {}) {
       return options.linkStatus ?? { status: "invalid", invited: false };
     },
     async logCall() {},
+    async refundScan(target) {
+      refundCalls.push(target);
+      return options.refundResult ?? { refunded: true, scansLeft: 10 };
+    },
     async logFunnel(event, ip) {
       funnelEvents.push({ event, ip });
       if (options.funnelThrows) throw new Error("funnel store exploded");
@@ -311,6 +319,7 @@ function buildHarness(options: HarnessOptions = {}) {
     anonStartCalls,
     anonScanCalls,
     funnelEvents,
+    refundCalls,
     draftedMime,
     order,
   };
@@ -1593,6 +1602,52 @@ describe("the trial funnel counters", () => {
 
     expect(response.status).toBe(200);
     expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_ok"]);
+  });
+
+  it("counts an empty answer as its own step, and gives the scan back", async () => {
+    const { app, funnelEvents, refundCalls } = buildHarness({
+      config: ANON_CONFIG,
+      replies: [JSON.stringify({ items: [] })],
+    });
+
+    const response = await request(app).post("/trial/parse").send(parseBody());
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toEqual([]);
+    expect(response.body.no_food).toBe(true);
+    // The refunded count, so the page's "scans left" does not drop for a photograph of a wall.
+    expect(response.body.scans_left).toBe(10);
+    // The device paid, so the device is what the refund names.
+    expect(refundCalls).toEqual([{ deviceId: ANON_DEVICE }]);
+    expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_no_food"]);
+  });
+
+  it("keeps the scan and the ordinary step when a meal was found", async () => {
+    const { app, funnelEvents, refundCalls } = buildHarness({ config: ANON_CONFIG });
+
+    const response = await request(app).post("/trial/parse").send(parseBody());
+
+    expect(response.status).toBe(200);
+    expect(response.body.no_food).toBe(false);
+    expect(response.body.scans_left).toBe(9);
+    expect(refundCalls).toEqual([]);
+    expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_ok"]);
+  });
+
+  it("still answers the visitor when the refund itself fails", async () => {
+    const { app, refundCalls } = buildHarness({
+      config: ANON_CONFIG,
+      replies: [JSON.stringify({ items: [] })],
+      refundResult: { refunded: false, scansLeft: null },
+    });
+
+    const response = await request(app).post("/trial/parse").send(parseBody());
+
+    // A refund that did not land is a number, not an error: the answer about the photo is right.
+    expect(response.status).toBe(200);
+    expect(response.body.no_food).toBe(true);
+    expect(response.body.scans_left).toBe(9);
+    expect(refundCalls).toHaveLength(1);
   });
 
   it("counts the last step when the scans are gone, and nothing when the trial is busy", async () => {

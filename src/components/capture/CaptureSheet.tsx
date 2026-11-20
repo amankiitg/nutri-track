@@ -64,6 +64,7 @@ import {
 } from "@/lib/speech";
 import { supabase } from "@/integrations/supabase/client";
 import { ReviewScreen } from "@/components/review/ReviewScreen";
+import { NoFoodResult, type NoFoodSource } from "@/components/capture/NoFoodResult";
 
 /**
  * How long a parse runs before the sheet admits it is taking a while.
@@ -141,6 +142,12 @@ export function CaptureSheet({
    * sheet, which throws away the photos the user just took.
    */
   const inFlight = useRef<AbortController | null>(null);
+  /**
+   * Set when the model answered with no items: the photo found no food, so the numbers screen
+   * never opens. Kept apart from `error`, which means the request failed; this one succeeded and
+   * the answer was "nothing here".
+   */
+  const [noFood, setNoFood] = useState<NoFoodSource | null>(null);
   /**
    * The items being reviewed, and the id of that review session.
    *
@@ -266,6 +273,7 @@ export function CaptureSheet({
     setDuplicate(null);
     setExistingItems(null);
     setIsReanalyzing(false);
+    setNoFood(null);
     setTab("photo");
   }
 
@@ -323,6 +331,8 @@ export function CaptureSheet({
       setError(null);
     }
 
+    // A new photo is a new question, so the previous empty answer stops showing.
+    setNoFood(null);
     setPhotos((current) => [
       ...current,
       ...accepted.map((file) => ({
@@ -334,6 +344,7 @@ export function CaptureSheet({
   }
 
   function removePhoto(id: string): void {
+    setNoFood(null);
     setPhotos((current) => {
       const going = current.find((photo) => photo.id === id);
       if (going) URL.revokeObjectURL(going.previewUrl);
@@ -398,6 +409,16 @@ export function CaptureSheet({
       ...(signal === undefined ? {} : { signal }),
     });
     unsavedUploads.current = { ...uploaded, fingerprint };
+
+    // No items is an answer, not a paragraph: an empty review screen looked like the app losing
+    // the photo, and the two buttons it offers are the two things worth doing next.
+    if (parsed.items.length === 0) {
+      setNoFood(source === "photo" ? "photo" : "text");
+      setReview(null);
+      return;
+    }
+
+    setNoFood(null);
     setReview({
       id: reviewId,
       meta: { source: parsed.source, model: parsed.model, attempts: parsed.attempts },
@@ -716,6 +737,7 @@ export function CaptureSheet({
               onChange={(event) => {
                 setText(event.target.value);
                 setTextOrigin("voice");
+                setNoFood(null);
               }}
               placeholder="What did you eat?"
               rows={4}
@@ -731,6 +753,7 @@ export function CaptureSheet({
               onChange={(event) => {
                 setText(event.target.value);
                 setTextOrigin("text");
+                setNoFood(null);
               }}
               placeholder="e.g. two slices of sourdough toast with butter and a flat white"
               rows={5}
@@ -783,6 +806,27 @@ export function CaptureSheet({
           </p>
         )}
 
+        {noFood !== null && review === null && (
+          <div className="mt-4">
+            <NoFoodResult
+              source={noFood}
+              onRetake={() => {
+                // The old upload is nobody's photo now, so it goes with the previews rather
+                // than waiting for the sweeper to find it in a day.
+                setNoFood(null);
+                void discardUploads();
+                releasePhotos(photos);
+                setPhotos([]);
+                setTab("photo");
+              }}
+              onTypeInstead={() => {
+                setNoFood(null);
+                setTab("type");
+              }}
+            />
+          </div>
+        )}
+
         {duplicate !== null && review === null && (
           <DuplicateBanner
             match={duplicate}
@@ -826,7 +870,7 @@ export function CaptureSheet({
               <Button
                 type="button"
                 className="flex-1 rounded-full"
-                disabled={!canSubmit || isWorking}
+                disabled={!canSubmit || isWorking || noFood !== null}
                 onClick={() => void submit()}
               >
                 {isWorking ? (

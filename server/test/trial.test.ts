@@ -120,6 +120,9 @@ describe("parseTrialMeal", () => {
       async logCall(callId, record) {
         logged.push({ callId, model: record.model });
       },
+      async refundScan() {
+        return { refunded: true, scansLeft: 10 };
+      },
       async logFunnel() {},
       async getScansLimit() {
         return 10;
@@ -135,6 +138,102 @@ describe("parseTrialMeal", () => {
     expect(started).toEqual([{ email: "trial@example.com", ip: "203.0.113.7", version: 0 }]);
     // The reserved row's id is what the post-model record() fills in.
     expect(logged).toEqual([{ callId: "call-123", model: "gemini-3.8-flash" }]);
+  });
+
+  it("gives the scan back when the model finds no food, and says so in the outcome", async () => {
+    const refunded: Array<Record<string, string>> = [];
+    const trial: TrialStore = {
+      async sendCode() {
+        return { status: "sent", code: "123456", email: "x@example.com", invited: false };
+      },
+      async verifyCode() {
+        return "ok";
+      },
+      async startScan() {
+        return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
+      },
+      async startAnonymousDevice() {
+        return { status: "ok", device_id: "device-1", scans_left: 10, scans_total: 10 };
+      },
+      async startAnonymousScan() {
+        return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
+      },
+      async logCall() {},
+      async refundScan(target) {
+        refunded.push(target as Record<string, string>);
+        // The database answered: the scan is back, so the count the page shows is the one
+        // before this attempt.
+        return { refunded: true, scansLeft: 10 };
+      },
+      async logFunnel() {},
+      async getScansLimit() {
+        return 10;
+      },
+      async linkStatus() {
+        return { status: "invalid", invited: false };
+      },
+    };
+
+    const emptyLlm: LlmClient = {
+      async complete(request: CompletionRequest) {
+        return {
+          content: JSON.stringify({ items: [] }),
+          model: request.model,
+          promptTokens: 11,
+          completionTokens: 2,
+          latencyMs: 3,
+          finishReason: "STOP",
+        };
+      },
+    };
+
+    const outcome = await parseTrialMeal(base, { config: CONFIG, llm: emptyLlm, trial });
+
+    expect(outcome.items).toEqual([]);
+    expect(outcome.no_food).toBe(true);
+    // The refunded count, not the one the scan reported.
+    expect(outcome.scans_left).toBe(10);
+    // The mailbox is the identity that paid, so that is what the refund names.
+    expect(refunded).toEqual([{ email: "trial@example.com" }]);
+  });
+
+  it("does not ask for a refund when a meal was found", async () => {
+    const refunded: unknown[] = [];
+    const trial: TrialStore = {
+      async sendCode() {
+        return { status: "sent", code: "123456", email: "x@example.com", invited: false };
+      },
+      async verifyCode() {
+        return "ok";
+      },
+      async startScan() {
+        return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
+      },
+      async startAnonymousDevice() {
+        return { status: "ok", device_id: "device-1", scans_left: 10, scans_total: 10 };
+      },
+      async startAnonymousScan() {
+        return { status: "ok", scans_left: 9, scans_total: 10, call_id: "call-123" };
+      },
+      async logCall() {},
+      async refundScan(target) {
+        refunded.push(target);
+        return { refunded: true, scansLeft: 10 };
+      },
+      async logFunnel() {},
+      async getScansLimit() {
+        return 10;
+      },
+      async linkStatus() {
+        return { status: "invalid", invited: false };
+      },
+    };
+
+    const outcome = await parseTrialMeal(base, { config: CONFIG, llm: fakeLlm(), trial });
+
+    expect(outcome.no_food).toBe(false);
+    expect(outcome.scans_left).toBe(9);
+    expect(refunded).toEqual([]);
   });
 
   it("throws the exhausted error when the scan is refused", async () => {
@@ -156,6 +255,9 @@ describe("parseTrialMeal", () => {
         return { status: "no_scans_left", scans_left: 0, scans_total: 10 };
       },
       async logCall() {},
+      async refundScan() {
+        return { refunded: true, scansLeft: 10 };
+      },
       async getScansLimit() {
         return 10;
       },

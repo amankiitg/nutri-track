@@ -462,3 +462,71 @@ describe("a parse that works", () => {
     expect(scrollRegion.className).toContain("pb-0");
   });
 });
+
+/**
+ * The empty answer, in the main app.
+ *
+ * A photo of a wall came back as zero items, and the sheet used to hand that to the review screen:
+ * a numbers page with no numbers on it. The photo had not been forgotten, so the screen says what
+ * happened and offers the two ways forward.
+ */
+describe("a parse that finds no food", () => {
+  const EMPTY = {
+    items: [],
+    no_food: true,
+    meal_type: "lunch",
+    source: "text",
+    model: "gemini-test",
+    attempts: 1,
+  };
+
+  it("says so on the same screen, with the two ways forward", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(EMPTY)));
+    const user = userEvent.setup();
+    renderSheet();
+    await analyseTypedMeal(user);
+
+    expect(await screen.findByText(/couldn't find any food in that/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retake photo/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /type it instead/i })).toBeInTheDocument();
+    // No review screen: there is nothing to review, and an empty one reads as a lost photo.
+    expect(screen.queryByRole("button", { name: /save meal/i })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not re-send the same meal when Analyse is pressed again", async () => {
+    // The answer was about the photo or the words already sent, so the button goes quiet rather
+    // than spending another analysis on the thing that just came back empty.
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(EMPTY)));
+    const user = userEvent.setup();
+    renderSheet();
+    await analyseTypedMeal(user);
+
+    await screen.findByText(/couldn't find any food in that/i);
+    expect(screen.getByRole("button", { name: /analyse meal/i })).toBeDisabled();
+  });
+
+  it("types it instead: the panel goes and the Type tab is where the typing goes", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(EMPTY)));
+    const user = userEvent.setup();
+    renderSheet();
+    await analyseTypedMeal(user);
+
+    await user.click(await screen.findByRole("button", { name: /type it instead/i }));
+
+    expect(screen.queryByText(/couldn't find any food/i)).toBeNull();
+    expect(screen.getByRole("tab", { name: /type/i })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("retake photo: the panel goes and the photos are cleared", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(EMPTY)));
+    const user = userEvent.setup();
+    renderSheet();
+    await analyseTypedMeal(user);
+
+    await user.click(await screen.findByRole("button", { name: /retake photo/i }));
+
+    expect(screen.queryByText(/couldn't find any food/i)).toBeNull();
+    expect(screen.getByRole("tab", { name: /photo/i })).toHaveAttribute("aria-selected", "true");
+  });
+});
