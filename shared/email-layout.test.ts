@@ -133,12 +133,13 @@ describe("every file in emails/", () => {
     // announcement.
     expect(html).toContain('Black Friday deal: <em style="color: #195c2e">100% off</em>.');
     expect(html).not.toContain("<strong");
-    // The demo starts on the result screen, so it is a new file: a cached old GIF would show the
-    // add-meal form instead.
-    expect(html).toContain("email-demo-result.gif");
+    // One still frame of the result card: a mail client that does not animate still shows the
+    // numbers, and the file is new so no cached GIF can linger.
+    expect(html).toContain("email-result-card.png");
     expect(html).not.toContain("email-demo.gif");
+    expect(html).not.toContain("email-demo-result.gif");
     expect(html.match(/utm_campaign=black_friday/g) ?? []).toHaveLength(2);
-    expect(html).toContain('alt="NutriTrack analysing a meal photo"');
+    expect(html).toContain('alt="NutriTrack showing the calories and macros for a meal photo"');
   });
 
   it("keeps the Diwali headline and its panel", () => {

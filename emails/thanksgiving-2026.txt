@@ -10,7 +10,7 @@ free, free. (It was free before too, but now you don’t even need to sign up.)
 Snap a photo of your plate and get the calories, protein and fibre in a few seconds. No
 account, no email, no 5 AM line outside a store.
 
-See it in action: https://tracknutri.app/demo/email-demo.gif
+See it in action: https://tracknutri.app/demo/email-result-card.png
 
 Claim your free deal: https://tracknutri.app/try?utm_source=email&utm_campaign=black_friday
 
