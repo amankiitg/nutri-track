@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "build:cloudflare": "VITE_PARSE_MEAL_URL=https://nutritrack-parse-meal.onrender.com/parse-meal VITE_TURNSTILE_SITE_KEY=0x4AAAAAAF6qU7ugp2HStVCT VITE_TRIAL_REQUIRE_EMAIL=false vite build",
     "deploy": "npm run build:cloudflare && wrangler deploy",
+    "email:render": "node_modules/.bin/esbuild tools/email/render.ts --bundle --platform=node --format=esm --outfile=/tmp/render-emails.mjs --log-level=error && node /tmp/render-emails.mjs",
     "preview:cloudflare": "wrangler dev",
     "preview": "vite preview",
     "lint": "eslint .",
