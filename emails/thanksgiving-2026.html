@@ -13,15 +13,16 @@
       Preview: Free, no sign-up, judgement-free.
       From:    Aman at NutriTrack <hello@tracknutri.app>, reply-to the same (it forwards to Gmail).
 
-      The same look as diwali-2026.html and the invite email in shared/invite-email.ts: cream
-      #f0ece4, card #fffdf9, ink #192217, quiet ink #5e6657, leaf green #195c2e, border #e2ded2,
-      panel #f4f0e6. Table layout with every style inline, and no <link> to a web font: the stacks
-      name Fraunces and Manrope and fall back to Georgia and Arial, so nothing waits on a request
-      that Gmail or Outlook would refuse.
+      This is emails/diwali-2026.html with the copy swapped, which is the point: one shell, so a
+      broadcast looks like the invite. Cream #f0ece4, card #fffdf9, ink #192217, quiet ink
+      #5e6657, leaf green #195c2e, border #e2ded2, panel #f4f0e6. Headline and sign-off use the
+      same Fraunces stack at 34px with one phrase in leaf green; the button is the invite's, filled
+      #195c2e with a 999px radius and 16px/34px padding, centered. Table layout, every style
+      inline, no <link> to a web font.
 
-      Two placeholders are Resend's own and are kept verbatim: the recipient's first name in
-      the greeting, with "there" as the fallback for a contact with no first name, and the
-      unsubscribe URL in the footer.
+      Two placeholders are Resend's own and are kept verbatim: the recipient's first name in the
+      greeting, with "there" as the fallback for a contact with no first name, and the unsubscribe
+      URL in the footer.
 
       The demo GIF is 480 px wide and 941 KB, under the 1 MB a Gmail clip would cut at. It is a
       link as well as an image, because in a mail client the picture is the thing people tap.
@@ -97,6 +98,22 @@
                     </td>
                   </tr>
                 </table>
+
+                <!-- Headline. Diwali's treatment, with the brief's own first line in it. -->
+                <p
+                  style="
+                    margin: 28px 0 0 0;
+                    font-family: &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 34px;
+                    line-height: 1.05;
+                    font-weight: 700;
+                    letter-spacing: -0.02em;
+                    color: #192217;
+                  "
+                >
+                  Thanksgiving: the one day a year
+                  <em style="color: #195c2e">&quot;just one more slice&quot;</em> is a lifestyle.
+                </p>
               </td>
             </tr>
 
@@ -119,10 +136,6 @@
                 "
               >
                 <p style="margin: 0 0 16px 0">Hi {{{contact.first_name|there}}},</p>
-
-                <p style="margin: 0 0 16px 0">
-                  Thanksgiving: the one day a year &quot;just one more slice&quot; is a lifestyle.
-                </p>
 
                 <p style="margin: 0">
                   My gift to you: snap your plate in NutriTrack and see what&apos;s actually in it.
@@ -149,9 +162,9 @@
               </td>
             </tr>
 
-            <!-- Button -->
+            <!-- Call to action, in the invite's button. -->
             <tr>
-              <td style="padding: 24px 40px 0 40px">
+              <td align="center" style="padding: 28px 40px 0 40px">
                 <table role="presentation" border="0" cellpadding="0" cellspacing="0">
                   <tr>
                     <td
@@ -163,7 +176,7 @@
                         href="https://tracknutri.app/try?utm_source=email&amp;utm_campaign=thanksgiving"
                         style="
                           display: inline-block;
-                          padding: 14px 28px;
+                          padding: 16px 34px;
                           font-family:
                             &quot;Manrope&quot;,
                             -apple-system,
@@ -175,8 +188,9 @@
                             sans-serif;
                           font-size: 16px;
                           font-weight: 700;
-                          color: #fffdf9;
+                          color: #fbf8f1;
                           text-decoration: none;
+                          border-radius: 999px;
                         "
                         >Try it free &rarr;</a
                       >
@@ -186,27 +200,39 @@
               </td>
             </tr>
 
+            <!-- The quiet aside, in Diwali's panel. -->
             <tr>
-              <td
-                style="
-                  padding: 18px 40px 0 40px;
-                  font-family:
-                    &quot;Manrope&quot;,
-                    -apple-system,
-                    BlinkMacSystemFont,
-                    &quot;Segoe UI&quot;,
-                    Roboto,
-                    Helvetica,
-                    Arial,
-                    sans-serif;
-                  font-size: 15px;
-                  line-height: 1.55;
-                  color: #5e6657;
-                "
-              >
-                <p style="margin: 0">
-                  No sign-up. No email. No judgement. (Okay, a little judgement.)
-                </p>
+              <td style="padding: 24px 40px 0 40px">
+                <table
+                  role="presentation"
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="background-color: #f4f0e6; border: 1px solid #e2ded2; border-radius: 14px"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding: 16px 18px;
+                        font-family:
+                          &quot;Manrope&quot;,
+                          -apple-system,
+                          BlinkMacSystemFont,
+                          &quot;Segoe UI&quot;,
+                          Roboto,
+                          Helvetica,
+                          Arial,
+                          sans-serif;
+                        font-size: 15px;
+                        line-height: 1.55;
+                        color: #5e6657;
+                      "
+                    >
+                      No sign-up. No email. No judgement. (Okay, a little judgement.)
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
 
@@ -228,18 +254,7 @@
                   color: #192217;
                 "
               >
-                <p
-                  style="
-                    margin: 0 0 4px 0;
-                    font-family: &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
-                    font-size: 24px;
-                    line-height: 1.2;
-                    font-weight: 700;
-                    letter-spacing: -0.01em;
-                  "
-                >
-                  Happy Thanksgiving!
-                </p>
+                <p style="margin: 0 0 4px 0">Happy Thanksgiving!</p>
                 <p style="margin: 0 0 16px 0">Aman</p>
 
                 <p style="margin: 0">
