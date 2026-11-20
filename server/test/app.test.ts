@@ -104,6 +104,8 @@ interface HarnessOptions {
   anonStartResult?: TrialAnonStartResult;
   /** What trial_anon_scan_start answers. */
   anonScanResult?: TrialScanResult;
+  /** Makes the funnel store throw, to prove a lost count never fails the request. */
+  funnelThrows?: boolean;
   /** The token version admin_trial_link_issue returns. */
   linkVersion?: number;
   /** Makes issuing a trial link fail, as a refused admin check would. */
@@ -137,6 +139,7 @@ function buildHarness(options: HarnessOptions = {}) {
   const scanCalls: Array<{ email: string; version: number }> = [];
   const anonStartCalls: Array<{ ip: string | null; deviceId: string | null }> = [];
   const anonScanCalls: Array<{ deviceId: string; version: number }> = [];
+  const funnelEvents: Array<{ event: string; ip: string | null }> = [];
   const replies = options.replies ?? [goodReply];
   let replyIndex = 0;
 
@@ -261,6 +264,10 @@ function buildHarness(options: HarnessOptions = {}) {
       return options.linkStatus ?? { status: "invalid", invited: false };
     },
     async logCall() {},
+    async logFunnel(event, ip) {
+      funnelEvents.push({ event, ip });
+      if (options.funnelThrows) throw new Error("funnel store exploded");
+    },
     async getScansLimit() {
       return 10;
     },
@@ -299,6 +306,7 @@ function buildHarness(options: HarnessOptions = {}) {
     scanCalls,
     anonStartCalls,
     anonScanCalls,
+    funnelEvents,
     draftedMime,
     order,
   };
@@ -1499,5 +1507,97 @@ describe("the invite drafts carry the plain trial link", () => {
 
   it("names the approval subject on the approval", () => {
     expect(APPROVED_SUBJECT).toContain("welcome to NutriTrack");
+  });
+});
+
+/**
+ * The funnel counters, at the service.
+ *
+ * The database is where the allowlist and the cap live (proved in the migrations test); what
+ * these pin is that the service records the six steps it owns at the moment they happen, that the
+ * page may only report its own two, and that a counter which fails never fails the request.
+ */
+describe("the trial funnel counters", () => {
+  /** A device token as the browser would hold one; the harness accepts it. */
+  const deviceToken = () => signAnonymousTrialToken(ANON_DEVICE, TOKEN_SECRET, NOW.getTime());
+  const parseBody = () => ({ token: deviceToken(), text: "dal and rice", photos: [] });
+
+  it("counts the two steps the page reports, with the caller's address", async () => {
+    const { app, funnelEvents } = buildHarness({ config: ANON_CONFIG });
+
+    const response = await request(app)
+      .post("/trial/funnel")
+      .set("x-forwarded-for", "203.0.113.5")
+      .send({ event: "try_page_view" });
+
+    expect(response.status).toBe(204);
+    expect(funnelEvents).toEqual([{ event: "try_page_view", ip: "203.0.113.5" }]);
+  });
+
+  it("refuses an event the service owns, and one nobody has heard of", async () => {
+    const { app, funnelEvents } = buildHarness({ config: ANON_CONFIG });
+
+    for (const event of ["token_issued", "not_an_event"]) {
+      const response = await request(app).post("/trial/funnel").send({ event });
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe("invalid_request");
+    }
+    expect(funnelEvents).toEqual([]);
+  });
+
+  it("still answers 204 when the count itself fails", async () => {
+    const { app } = buildHarness({ config: ANON_CONFIG, funnelThrows: true });
+
+    const response = await request(app).post("/trial/funnel").send({ event: "analyse_tapped" });
+
+    expect(response.status).toBe(204);
+  });
+
+  it("counts a refused Turnstile, and a token it issued", async () => {
+    const refused = buildHarness({ config: ANON_CONFIG });
+    turnstileSays(false);
+    await request(refused.app).post("/trial/start").send({ turnstileToken: "turnstile-token" });
+    expect(refused.funnelEvents.map((event) => event.event)).toEqual(["turnstile_failed"]);
+
+    const issued = buildHarness({ config: ANON_CONFIG });
+    turnstileSays(true);
+    await request(issued.app).post("/trial/start").send({ turnstileToken: "turnstile-token" });
+    expect(issued.funnelEvents.map((event) => event.event)).toEqual(["token_issued"]);
+  });
+
+  it("counts an analysis that came back", async () => {
+    const { app, funnelEvents } = buildHarness({ config: ANON_CONFIG });
+
+    const response = await request(app).post("/trial/parse").send(parseBody());
+
+    expect(response.status).toBe(200);
+    expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_ok"]);
+  });
+
+  it("counts the last step when the scans are gone, and nothing when the trial is busy", async () => {
+    const exhausted = buildHarness({
+      config: ANON_CONFIG,
+      anonScanResult: { status: "no_scans_left", scans_left: 0, scans_total: 10 },
+    });
+    await request(exhausted.app).post("/trial/parse").send(parseBody());
+    expect(exhausted.funnelEvents.map((event) => event.event)).toEqual(["limit_reached"]);
+
+    // Capacity is not a funnel step: nobody was refused for having used their scans.
+    const busy = buildHarness({
+      config: ANON_CONFIG,
+      anonScanResult: { status: "busy", scans_left: 5, scans_total: 10 },
+    });
+    await request(busy.app).post("/trial/parse").send(parseBody());
+    expect(busy.funnelEvents).toEqual([]);
+  });
+
+  it("counts an analysis that did not come back", async () => {
+    const { app, funnelEvents } = buildHarness({ config: ANON_CONFIG, replies: [""] });
+
+    const response = await request(app).post("/trial/parse").send(parseBody());
+
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe("unparseable_response");
+    expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_error"]);
   });
 });
