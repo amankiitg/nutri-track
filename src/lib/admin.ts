@@ -673,6 +673,7 @@ export const FUNNEL_STEPS = [
 
 export const FUNNEL_BRANCHES = [
   { event: "turnstile_failed", label: "Turnstile refusals" },
+  { event: "analysis_no_food", label: "No food found" },
   { event: "analysis_error", label: "Failed analyses" },
 ] as const;
 

@@ -96,6 +96,8 @@ export function retryInstructionForSchema(error: string): string {
 
 export interface ParseMealOutcome {
   items: MealItemDraft[];
+  /** True when the model found nothing to eat, which the screen answers in words. */
+  no_food: boolean;
   meal_type: MealType;
   source: MealSource;
   /** The model that actually answered, for the record on screen. */
@@ -362,6 +364,10 @@ export async function parseMeal(
 
   return {
     items,
+    // The same fact the trial reports: the model looked and found nothing to eat. The signed-in
+    // limit is not refunded for it — that ceiling bounds spend, and the call was paid for — but
+    // the screen still has to say something other than "nothing here" in silence.
+    no_food: items.length === 0,
     meal_type: mealType,
     source: input.source,
     model: modelThatAnswered,

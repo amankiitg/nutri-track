@@ -730,6 +730,7 @@ describe("the funnel card", () => {
       limit_reached: 2,
       request_invite_submitted: 1,
       turnstile_failed: 3,
+      analysis_no_food: 4,
       analysis_error: 1,
     },
     window: {
@@ -740,6 +741,7 @@ describe("the funnel card", () => {
       limit_reached: 20,
       request_invite_submitted: 10,
       turnstile_failed: 12,
+      analysis_no_food: 9,
       analysis_error: 6,
     },
   };
@@ -779,7 +781,10 @@ describe("the funnel card", () => {
     await openSection(user, /^Trial funnel/);
 
     expect(await screen.findByText("Turnstile refusals")).toBeInTheDocument();
+    // The no-food answer sits beside the chain too: it is neither a step nor a failure.
+    expect(screen.getByText("No food found")).toBeInTheDocument();
     expect(screen.getByText(/3 today · 12 in 7 days/)).toBeInTheDocument();
+    expect(screen.getByText(/4 today · 9 in 7 days/)).toBeInTheDocument();
     expect(screen.getByText(/1 today · 6 in 7 days/)).toBeInTheDocument();
     // The chain itself holds six rows, so neither event gained one.
     expect(screen.getAllByRole("row")).toHaveLength(7);

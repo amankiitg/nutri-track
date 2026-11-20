@@ -383,6 +383,42 @@ describe("the anonymous trial (flag false)", () => {
     await waitFor(() => expect(mocks.turnstileCallback).not.toBeNull());
   }
 
+  it("answers an empty photo with the two ways forward, and keeps the scan count the service sent", async () => {
+    // The service refunds a no-food scan and answers with the count from before the attempt, so
+    // the page shows 3 scans left — not 2 — and the trial's promise is not spent on a wall.
+    mocks.parseTrialMeal.mockResolvedValue({ ...parsedWith(3), items: [] });
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await waitForTurnstile();
+
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "a blurry photo");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+
+    expect(await screen.findByText(/couldn't find any food in that/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retake photo/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /type it instead/i })).toBeInTheDocument();
+    // Nothing to review, so the results screen never opened.
+    expect(screen.queryByRole("button", { name: /scan another meal/i })).toBeNull();
+    // The number the service sent, unmodified: the refund is the service's business.
+    expect(screen.getByText(/3 scans left/i)).toBeInTheDocument();
+  });
+
+  it("puts the caret in the text field when they choose to type instead", async () => {
+    mocks.parseTrialMeal.mockResolvedValue({ ...parsedWith(9), items: [] });
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+    await waitForTurnstile();
+
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "toast");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await user.click(await screen.findByRole("button", { name: /type it instead/i }));
+
+    expect(screen.queryByText(/couldn't find any food/i)).toBeNull();
+    expect(document.activeElement).toBe(screen.getByPlaceholderText(/type what you ate/i));
+  });
+
   it("asks for no email: Turnstile, a device token, then the analysis", async () => {
     render(<TrialPage />);
     const user = userEvent.setup();

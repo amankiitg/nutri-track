@@ -550,7 +550,9 @@ export function createApp(deps: AppDeps): Express {
       throw error;
     }
 
-    recordFunnel(deps, "analysis_ok", ip);
+    // A no-food answer is its own step: counting it as ok would read as though a meal was
+    // found, and as an error would blame the model for being right.
+    recordFunnel(deps, outcome.no_food ? "analysis_no_food" : "analysis_ok", ip);
     log("info", "parsed a trial meal", {
       items: outcome.items.length,
       attempts: outcome.attempts,
