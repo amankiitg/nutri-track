@@ -67,9 +67,20 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_fibre.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_funnel.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_food.sql"
 
-# Roll back newest first, checking each predecessor comes back. The funnel goes first: its
-# trigger on invite_requests depends on a column the trial tables rollback drops.
+# Roll back newest first, checking each predecessor comes back. The no-food rollback goes
+# before the funnel one because it restores the eight-event reader that the funnel rollback
+# then drops; and the funnel goes before the trial tables, whose rollback drops a column its
+# trigger depends on.
+apply "${ROOT}/supabase/rollback/20261120150000_no_food_result.sql"
+refund_left=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
+[ "${refund_left}" = "0" ] || { echo "FAIL: trial_scan_refund survived its rollback" >&2; exit 1; }
+refund_col=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='trial_devices' and column_name='no_food_refunds'")
+[ "${refund_col}" = "0" ] || { echo "FAIL: no_food_refunds survived its rollback" >&2; exit 1; }
+no_food_event=$("${PSQL[@]}" -Atc "select count(*) from pg_constraint where conname='trial_funnel_daily_event' and pg_get_constraintdef(oid) like '%analysis_no_food%'")
+[ "${no_food_event}" = "0" ] || { echo "FAIL: the restored allowlist still names analysis_no_food" >&2; exit 1; }
+echo "ok - the no-food refund rolls back: function, columns and the extra event all gone"
 apply "${ROOT}/supabase/rollback/20261120120000_trial_funnel.sql"
 funnel_left=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")
 [ "${funnel_left}" = "0" ] || { echo "FAIL: trial_funnel_daily survived its rollback" >&2; exit 1; }
@@ -91,6 +102,9 @@ apply "${MIGRATIONS}/20261110130000_trial_meal_first_invited.sql"
 apply "${MIGRATIONS}/20261112120000_admin_trial_list.sql"
 apply "${MIGRATIONS}/20261114120000_trial_anonymous.sql"
 apply "${MIGRATIONS}/20261120120000_trial_funnel.sql"
+apply "${MIGRATIONS}/20261120150000_no_food_result.sql"
+refund_back=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
+[ "${refund_back}" = "1" ] || { echo "FAIL: trial_scan_refund missing after the no-food migration reapplied" >&2; exit 1; }
 funnel_back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")
 [ "${funnel_back}" = "1" ] || { echo "FAIL: trial_funnel_daily missing after the funnel migration reapplied" >&2; exit 1; }
 echo "ok - the trial migrations (and the trials list) apply again after their rollback"

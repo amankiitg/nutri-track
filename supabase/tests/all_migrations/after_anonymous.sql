@@ -32,9 +32,11 @@ BEGIN
   SELECT string_agg(a.attname, ',') INTO v_cols
     FROM pg_attribute a
    WHERE a.attrelid = 'public.trial_devices'::regclass
-     AND a.attname IN ('id', 'token_version', 'scans_used', 'created_at', 'last_used_at', 'ip_hash')
+     AND a.attname IN ('id', 'token_version', 'scans_used', 'created_at', 'last_used_at', 'ip_hash', 'no_food_refunds')
      AND a.attnum > 0 AND NOT a.attisdropped;
-  IF v_cols IS NULL OR v_cols <> 'id,token_version,scans_used,created_at,last_used_at,ip_hash' THEN
+  -- no_food_refunds arrives with 20261120150000; this assertion is the whole column list on
+  -- purpose, so a column added without anyone deciding is a failure rather than a surprise.
+  IF v_cols IS NULL OR v_cols <> 'id,token_version,scans_used,created_at,last_used_at,ip_hash,no_food_refunds' THEN
     RAISE EXCEPTION 'not ok - trial_devices columns are %', v_cols;
   END IF;
 
