@@ -6,7 +6,7 @@
  * because a file somebody has to unzip before reading is a file they read later instead of now.
  */
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { saveFailureDetail } from "@/lib/profile";
@@ -121,14 +121,16 @@ export function ExportData({
             </option>
           ))}
         </select>
+        {/* The page's one filled button is Save changes; this sits beside it, so it is outlined
+            in the brand green and the same height as the two selects. */}
         <Button
           type="button"
           variant="outline"
-          className="rounded-full"
+          className="h-10 rounded-full border-primary text-primary hover:bg-primary/10 hover:text-primary"
           disabled={busy || userId === ""}
           onClick={() => void run()}
         >
-          {busy && <Loader2 className="animate-spin" />}
+          {busy ? <Loader2 className="animate-spin" /> : <Download />}
           Export my data
         </Button>
       </div>
