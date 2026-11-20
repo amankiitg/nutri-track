@@ -37,6 +37,7 @@ import {
   getStoredTrial,
   getTrialSettings,
   parseTrialMeal,
+  reportPageFunnelEvent,
   savePendingTrial,
   sendTrialCode,
   startAnonymousTrial,
@@ -97,6 +98,15 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileReady = useRef(false);
   const turnstileWidgetId = useRef<string | null>(null);
+
+  // One count per visit, and in an effect rather than during the first render: a render
+  // can happen more than once (StrictMode, a re-render before paint), and the visit is one.
+  const viewCounted = useRef(false);
+  useEffect(() => {
+    if (viewCounted.current) return;
+    viewCounted.current = true;
+    reportPageFunnelEvent("try_page_view");
+  }, []);
 
   // Restore the returning visitor and any meal left mid-trial, in an effect because
   // neither localStorage nor sessionStorage is readable while server-rendering.
@@ -290,6 +300,11 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
     // A double tap while the invisible challenge is running would start two token
     // exchanges. Neither has spent a scan yet, but the second is never wanted.
     if (busy || pendingScan !== null) return;
+
+    // Counted here rather than in the button's handler, and after the guard above: the
+    // step this measures is "asked for an analysis", so a double tap is one step, and an
+    // attempt refused for being already busy was not a visit of its own.
+    reportPageFunnelEvent("analyse_tapped");
 
     if (stored !== null) {
       void scan(input, stored.token);

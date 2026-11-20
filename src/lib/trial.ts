@@ -20,6 +20,31 @@ function trialUrl(path: string): string {
   return parseMealUrl().replace(/\/parse-meal$/, "") + path;
 }
 
+/** The two funnel steps the page is allowed to report; the rest are the server's. */
+export type PageFunnelEvent = "try_page_view" | "analyse_tapped";
+
+/**
+ * Counts one step of the trial funnel, and never does anything else.
+ *
+ * The counter is a measurement, not a feature: a lost count is a smaller problem than a
+ * page that stalls or an exception in a tap handler, so a failure here is swallowed
+ * deliberately. The request also outlives the tap — a visitor who analyses and leaves
+ * within the same tick should still be counted — which is why it is not awaited and the
+ * response is not read.
+ */
+export function reportPageFunnelEvent(event: PageFunnelEvent): void {
+  void fetch(trialUrl("/trial/funnel"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ event }),
+    // The service answers 204 and hangs up; keeping the response alive past unload is
+    // what lets the count land, and it is harmless when the page stays.
+    keepalive: true,
+  }).catch(() => {
+    // See above: this must never reach the page.
+  });
+}
+
 /** Whether the server should ask for an email before the trial. False is the default. */
 export function trialRequireEmailDefault(): boolean {
   const value = import.meta.env["VITE_TRIAL_REQUIRE_EMAIL"];
