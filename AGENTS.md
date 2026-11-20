@@ -394,3 +394,26 @@ reloadDocument: true })` in `_authenticated/route.tsx` and `onboarding.tsx` — 
   from `render.yaml` and a Cloudflare Worker for the frontend.
 - The build targets Cloudflare Workers via Nitro's `cloudflare-module` preset
   (`vite.config.ts`); switch to `node-server` to self-host the SSR bundle.
+
+## Checkpoint protocol (off-peak policy)
+- When told "checkpoint": stop at the next safe point, commit WIP to your task branch (never main), write HANDOFF.md (done, next steps, open questions, branch), and report one line.
+- When resuming: read HANDOFF.md first, then delete it once done.
+- Never checkpoint mid-merge or mid-push; finish that step first.
+
+
+# Filesystem boundary
+Work only inside your workspace and the repos you're assigned. Never scan or search the home folder (no find ~, du ~, ls -R ~, grep -r ~, mdfind).
+Never access ~/Pictures, ~/Library, ~/Desktop, ~/Documents, ~/Downloads, ~/Movies, ~/Music, Contacts, Calendar, Photos, Mail or Messages.
+If a task seems to need a path outside your workspace, stop and ask.
+
+## Emails, transactional and broadcast
+
+**Any email (transactional or broadcast) must use `shared/email-layout.ts` and follow
+`docs/email-style.md`.** Never hand-write email HTML: the broadcast `.html` files in `emails/`
+are generated with `npm run email:render`, and `shared/email-layout.test.ts` fails if a
+checked-in file is not the renderer's own output. The layout was extracted because the same shell
+hand-written four times had already drifted; a fifth copy would drift again.
+
+Before finishing any email change, render it at **600 px and 375 px** with playwright-core (not
+the Chrome CLI, which hangs on these pages), confirm there is no horizontal overflow, and compare
+it against the invite email. If it does not look like the invite, it does not ship.
