@@ -636,3 +636,122 @@ export function revokedRequests(requests: readonly InviteRequest[]): InviteReque
 export function pendingCount(requests: readonly InviteRequest[]): number {
   return requests.filter((request) => request.status === "pending").length;
 }
+
+/**
+ * The trial funnel, as the admin page reads it.
+ *
+ * `admin_trial_funnel` answers one jsonb object rather than rows, so a day with no views is a
+ * zero instead of a missing key, and this side never has to know which events exist. Both are
+ * true of the reply and the numbers below are the reply's, untouched: the only arithmetic here
+ * is the drop between two steps, which is the reason the panel exists.
+ */
+const funnelCounts = z.record(z.string(), z.number());
+
+const trialFunnelReply = z.object({
+  day: z.string(),
+  days: z.number(),
+  window_start: z.string(),
+  today: funnelCounts,
+  window: funnelCounts,
+});
+
+/**
+ * The chain, in the order a visitor walks it.
+ *
+ * Six steps out of eight events. `turnstile_failed` and `analysis_error` are not steps: they are
+ * ways a step ends without the next one, so they sit beside the chain rather than in it — a
+ * drop-off computed through them would be a percentage of the wrong thing.
+ */
+export const FUNNEL_STEPS = [
+  { event: "try_page_view", label: "/try views" },
+  { event: "analyse_tapped", label: "Analyse" },
+  { event: "token_issued", label: "Token" },
+  { event: "analysis_ok", label: "Result" },
+  { event: "limit_reached", label: "Out of scans" },
+  { event: "request_invite_submitted", label: "Invite requests" },
+] as const;
+
+export const FUNNEL_BRANCHES = [
+  { event: "turnstile_failed", label: "Turnstile refusals" },
+  { event: "analysis_error", label: "Failed analyses" },
+] as const;
+
+export interface FunnelRow {
+  event: string;
+  label: string;
+  today: number;
+  week: number;
+  /**
+   * Share lost against the step above it in the same column, or null for the first step.
+   *
+   * Signed, not clamped at zero. The page's two events are capped at 20 a day per hashed
+   * address while the service's are uncapped, so on a shared network the chain can genuinely
+   * grow — showing that as 0% would hide the one thing worth looking at.
+   */
+  dropToday: number | null;
+  dropWeek: number | null;
+}
+
+export interface TrialFunnel {
+  today: string;
+  windowStart: string;
+  days: number;
+  steps: FunnelRow[];
+  branches: Array<{ event: string; label: string; today: number; week: number }>;
+}
+
+/**
+ * The percentage of `previous` that `current` lost, to the nearest whole number.
+ *
+ * Null when there was nothing to lose from: a percentage of no visitors is a made-up number, and
+ * "0%" would read as "everyone continued".
+ */
+export function funnelDrop(previous: number, current: number): number | null {
+  if (previous <= 0) return null;
+  return Math.round(((previous - current) / previous) * 100);
+}
+
+/** Turns the RPC's two objects into the chain the panel draws. */
+export function presentFunnel(reply: {
+  day: string;
+  days: number;
+  window_start: string;
+  today: Record<string, number>;
+  window: Record<string, number>;
+}): TrialFunnel {
+  const steps = FUNNEL_STEPS.map((step, index) => {
+    const previous = index === 0 ? null : (FUNNEL_STEPS[index - 1] ?? null);
+    const today = reply.today[step.event] ?? 0;
+    const week = reply.window[step.event] ?? 0;
+    return {
+      event: step.event,
+      label: step.label,
+      today,
+      week,
+      dropToday: previous === null ? null : funnelDrop(reply.today[previous.event] ?? 0, today),
+      dropWeek: previous === null ? null : funnelDrop(reply.window[previous.event] ?? 0, week),
+    };
+  });
+
+  return {
+    today: reply.day,
+    windowStart: reply.window_start,
+    days: reply.days,
+    steps,
+    branches: FUNNEL_BRANCHES.map((branch) => ({
+      event: branch.event,
+      label: branch.label,
+      today: reply.today[branch.event] ?? 0,
+      week: reply.window[branch.event] ?? 0,
+    })),
+  };
+}
+
+/** The funnel for the last `days` days, today included. */
+export async function fetchTrialFunnel(days = 7): Promise<TrialFunnel> {
+  const { data, error } = await adminRpc("admin_trial_funnel", { p_days: days });
+  if (error) throw new Error(rpcErrorDetail(error));
+  const parsed = trialFunnelReply.safeParse(data);
+  if (!parsed.success) throw new Error("The funnel came back in an unexpected shape.");
+  return presentFunnel(parsed.data);
+}

@@ -1,5 +1,5 @@
 /**
- * The three panels of the admin page.
+ * The panels of the admin page.
  *
  * Kept in one file for the same reason `onboarding/steps.tsx` is: they are one screen's
  * worth of question groups and splitting them would mean three files that only ever get
@@ -26,6 +26,7 @@ import {
   fetchInviteRequests,
   fetchInvites,
   fetchSpend,
+  fetchTrialFunnel,
   fetchTrialList,
   fetchTrialStats,
   formatCount,
@@ -740,5 +741,125 @@ export function TrialCard() {
         </div>
       </CardContent>
     </Section>
+  );
+}
+
+/**
+ * The trial funnel: where visitors stop between opening /try and asking for an invite.
+ *
+ * Two columns rather than one because today's numbers are too small to read on their own and the
+ * week's are too coarse to act on: the question is usually "did the thing I changed today move
+ * the step I changed it for", and that needs both.
+ *
+ * The percentages are the panel's whole point, so they are signed and never clamped: the page's
+ * two events are capped at 20 a day per hashed address while the service's six are not, and on a
+ * shared network a later step can therefore outnumber an earlier one. That is a real reading of
+ * these figures, not a bug to hide behind a 0%.
+ */
+export function FunnelCard() {
+  const funnel = useQuery({
+    queryKey: ["admin-trial-funnel"],
+    queryFn: () => fetchTrialFunnel(7),
+    retry: false,
+  });
+
+  const todayViews = funnel.isSuccess ? (funnel.data.steps[0]?.today ?? 0) : 0;
+  const todayAnalysed = funnel.isSuccess ? (funnel.data.steps[1]?.today ?? 0) : 0;
+
+  return (
+    <Section
+      id="funnel"
+      title="Trial funnel"
+      summary={
+        funnel.isSuccess
+          ? `${formatCount(todayViews)} /try views, ${formatCount(todayAnalysed)} analysed today.`
+          : "Loading the funnel."
+      }
+    >
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Counted anonymously: no address, no meal, no photo. The percentage after each step is what
+          that step lost against the one above it, in the same column.
+        </p>
+
+        {funnel.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {funnel.isError && (
+          <PanelError message={`Could not load the funnel. ${errorDetail(funnel.error)}`} />
+        )}
+
+        {funnel.isSuccess && (
+          <>
+            <table className="w-full text-sm tabular-nums">
+              <caption className="sr-only">
+                Trial funnel, today and the last {funnel.data.days} days
+              </caption>
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th scope="col" className="py-1 font-normal">
+                    Step
+                  </th>
+                  <th scope="col" className="py-1 text-right font-normal">
+                    Today
+                  </th>
+                  <th scope="col" className="py-1 text-right font-normal">
+                    {funnel.data.days} days
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {funnel.data.steps.map((step, index) => (
+                  <tr key={step.event} className="border-t border-border align-top">
+                    <th scope="row" className="py-1.5 text-left font-normal">
+                      {step.label}
+                    </th>
+                    <td className="py-1.5 text-right">
+                      {formatCount(step.today)}
+                      <DropOff value={step.dropToday} first={index === 0} />
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {formatCount(step.week)}
+                      <DropOff value={step.dropWeek} first={index === 0} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
+              {funnel.data.branches.map((branch) => (
+                <div key={branch.event} className="col-span-2 flex justify-between gap-2">
+                  <dt>{branch.label}</dt>
+                  <dd className="tabular-nums">
+                    {formatCount(branch.today)} today · {formatCount(branch.week)} in{" "}
+                    {funnel.data.days} days
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <p className="text-xs text-muted-foreground">
+              A rise between two steps is real: the page reports its own two counts from the
+              browser, capped at 20 a day per network, while the steps after them are counted by the
+              service and are not.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Section>
+  );
+}
+
+/**
+ * The loss after one step, as a small number under the count.
+ *
+ * Nothing is drawn for the first step, and nothing for a step whose predecessor had no visitors:
+ * a percentage of nobody is a made-up figure, and "0%" would read as "everyone continued".
+ */
+function DropOff({ value, first }: { value: number | null; first: boolean }) {
+  if (first || value === null) return null;
+  return (
+    <span className="block text-xs text-muted-foreground">
+      {value < 0 ? `${Math.abs(value)}% more` : `${value}% lost`}
+    </span>
   );
 }
