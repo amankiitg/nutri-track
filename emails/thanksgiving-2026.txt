@@ -1,6 +1,6 @@
 Hi {{{contact.first_name|there}}},
 
-Thanksgiving: the one day a year "just one more slice" is a lifestyle.
+Thanksgiving, where “one more slice” is a lifestyle.
 
 My gift to you: snap your plate in NutriTrack and see what's actually in it. Turkey, stuffing,
 that suspicious third helping of pie, and the butter hiding in all of it.
