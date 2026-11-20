@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { log } from "./log";
 import {
   guessMealType,
   type MealItemDraft,
@@ -85,6 +86,27 @@ export type TrialSendResult = z.infer<typeof trialSendResultSchema>;
 export type TrialScanResult = z.infer<typeof trialScanResultSchema>;
 export type TrialAnonStartResult = z.infer<typeof trialAnonStartResultSchema>;
 
+/**
+ * The eight steps of the trial funnel, as the database's allowlist names them.
+ *
+ * Two are sent by the page (the view and the tap) and six by this service at the moment they
+ * happen. The list is here as a type so a typo is a compile error rather than a silent no-op:
+ * the database would refuse an unknown event, and this service only logs a warning when a count
+ * fails.
+ */
+export const FUNNEL_EVENTS = [
+  "try_page_view",
+  "analyse_tapped",
+  "turnstile_failed",
+  "token_issued",
+  "analysis_ok",
+  "analysis_error",
+  "limit_reached",
+  "request_invite_submitted",
+] as const;
+
+export type FunnelEvent = (typeof FUNNEL_EVENTS)[number];
+
 export interface TrialStore {
   sendCode(email: string, firstName: string, ip: string | null): Promise<TrialSendResult>;
   verifyCode(email: string, code: string): Promise<string>;
@@ -106,6 +128,12 @@ export interface TrialStore {
   logCall(callId: string, record: LlmCallRecord): Promise<void>;
   /** The per-mailbox scan limit, read from trial_settings so the page never hardcodes it. */
   getScansLimit(): Promise<number>;
+  /**
+   * Counts one funnel step. Best effort by design: a counter must never fail the page or the
+   * analysis it is counting, so a failure is logged and swallowed here rather than thrown at the
+   * visitor.
+   */
+  logFunnel(event: FunnelEvent, ip: string | null): Promise<void>;
 }
 
 /**
@@ -143,6 +171,18 @@ export function createTrialStore(
       });
       if (error) throw new ApiError(502, "upstream_error", TRIAL_FAILURE_MESSAGE);
       return typeof data === "string" ? data : "invalid";
+    },
+
+    async logFunnel(event, ip) {
+      const { error } = await client.rpc("trial_funnel_log", {
+        p_event: event,
+        p_ip: ip,
+        p_server_secret: serverSecret,
+      });
+      if (error) {
+        // A lost count is a gap in a graph; a thrown error here would be a broken page.
+        log("warn", "funnel event not recorded", { event, code: error.code ?? null });
+      }
     },
 
     async getScansLimit() {

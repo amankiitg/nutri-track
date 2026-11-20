@@ -120,6 +120,7 @@ describe("parseTrialMeal", () => {
       async logCall(callId, record) {
         logged.push({ callId, model: record.model });
       },
+      async logFunnel() {},
       async getScansLimit() {
         return 10;
       },
@@ -150,6 +151,7 @@ describe("parseTrialMeal", () => {
       async startAnonymousDevice() {
         return { status: "ok", device_id: "device-1", scans_left: 10, scans_total: 10 };
       },
+      async logFunnel() {},
       async startAnonymousScan() {
         return { status: "no_scans_left", scans_left: 0, scans_total: 10 };
       },

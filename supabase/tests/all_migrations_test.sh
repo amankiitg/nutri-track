@@ -66,8 +66,13 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_trial_list.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_fibre.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_funnel.sql"
 
-# Roll back newest first, checking each predecessor comes back.
+# Roll back newest first, checking each predecessor comes back. The funnel goes first: its
+# trigger on invite_requests depends on a column the trial tables rollback drops.
+apply "${ROOT}/supabase/rollback/20261120120000_trial_funnel.sql"
+funnel_left=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")
+[ "${funnel_left}" = "0" ] || { echo "FAIL: trial_funnel_daily survived its rollback" >&2; exit 1; }
 apply "${ROOT}/supabase/rollback/20261114120000_trial_anonymous.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous_rollback.sql"
 apply "${ROOT}/supabase/rollback/20261112120000_admin_trial_list.sql"
@@ -85,6 +90,9 @@ apply "${MIGRATIONS}/20261110120000_trial_links.sql"
 apply "${MIGRATIONS}/20261110130000_trial_meal_first_invited.sql"
 apply "${MIGRATIONS}/20261112120000_admin_trial_list.sql"
 apply "${MIGRATIONS}/20261114120000_trial_anonymous.sql"
+apply "${MIGRATIONS}/20261120120000_trial_funnel.sql"
+funnel_back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")
+[ "${funnel_back}" = "1" ] || { echo "FAIL: trial_funnel_daily missing after the funnel migration reapplied" >&2; exit 1; }
 echo "ok - the trial migrations (and the trials list) apply again after their rollback"
 
 # The fibre migration adds a profile column and replaces two functions. Its rollback has to

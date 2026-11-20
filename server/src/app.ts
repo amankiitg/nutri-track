@@ -14,12 +14,18 @@ import type { CallerStore } from "./caller-store";
 import type { Config } from "./config";
 import type { GmailDraftClient } from "./gmail";
 import { invite } from "./invite";
+import type { FunnelEvent, TrialParseOutcome } from "./trial";
 import type { LlmClient } from "./llm";
 import { ApiError, isApiError } from "./errors";
 import { log } from "./log";
 import { parseMeal } from "./parse-meal";
 import type { EmailClient } from "./resend";
-import { assertPathsOwnedBy, inviteRequestSchema, parseMealRequestSchema } from "./schemas";
+import {
+  assertPathsOwnedBy,
+  inviteRequestSchema,
+  parseMealRequestSchema,
+  trialFunnelSchema,
+} from "./schemas";
 import type { IssuedTrialLink } from "./caller-store";
 import {
   clientIp,
@@ -48,6 +54,21 @@ export interface AppDeps {
   /** Null without RESEND_API_KEY; the trial route says the trial is unavailable. */
   email: EmailClient | null;
   now?: () => Date;
+}
+
+/**
+ * Counts one funnel step, and never lets that count fail the request it is counting.
+ *
+ * The store already swallows a database refusal and logs it; this wrapper is here so a thrown
+ * error from the client itself cannot escape into the route either. A missing data point is a
+ * gap in a graph, which is a smaller problem than a broken trial.
+ */
+async function recordFunnel(deps: AppDeps, event: FunnelEvent, ip: string | null): Promise<void> {
+  try {
+    await deps.trial.logFunnel(event, ip);
+  } catch {
+    log("warn", "funnel event not recorded", { event });
+  }
 }
 
 /** Turns Zod's issues into something a client can act on. */
@@ -310,6 +331,7 @@ export function createApp(deps: AppDeps): Express {
     const ip = clientIp(req.headers, req.ip);
     const human = await verifyTurnstile(secrets.turnstile, parsed.data.turnstileToken, ip);
     if (!human) {
+      await recordFunnel(deps, "turnstile_failed", ip);
       throw new ApiError(403, "forbidden", "Could not verify you are a person. Try again.");
     }
 
@@ -322,6 +344,7 @@ export function createApp(deps: AppDeps): Express {
       version: started.token_version ?? 0,
     });
 
+    await recordFunnel(deps, "token_issued", ip);
     log("info", "anonymous trial started", { scansTotal: started.scans_total ?? null });
     res.json({
       status: "ok",
@@ -330,6 +353,22 @@ export function createApp(deps: AppDeps): Express {
       scans_left: started.scans_left,
       scans_total: started.scans_total ?? null,
     });
+  });
+
+  /**
+   * The two funnel steps the page reports about itself: it opened, and Analyse was tapped.
+   *
+   * Open on purpose, because an anonymous visitor has no session to present, and harmless because
+   * it writes one counter: the body may name only those two events, and the database caps each at
+   * 20 a day per hashed address. The answer is 204 whatever the count did, so a page never waits
+   * on telemetry or shows an error about it.
+   */
+  app.post("/trial/funnel", async (req: Request, res: Response) => {
+    const parsed = trialFunnelSchema.safeParse(req.body);
+    if (!parsed.success) throw validationError(parsed.error);
+
+    await recordFunnel(deps, parsed.data.event, clientIp(req.headers, req.ip));
+    res.status(204).end();
   });
 
   /**
@@ -488,17 +527,31 @@ export function createApp(deps: AppDeps): Express {
       eatenAt,
     };
 
-    const outcome =
-      verified.kind === "anonymous"
-        ? await parseAnonymousTrialMeal(
-            { deviceId: verified.deviceId, version: verified.version, ...meal },
-            { config: deps.config, llm: deps.llm, trial: deps.trial },
-          )
-        : await parseTrialMeal(
-            { email: verified.email, version: verified.version, ...meal },
-            { config: deps.config, llm: deps.llm, trial: deps.trial },
-          );
+    let outcome: TrialParseOutcome;
+    try {
+      outcome =
+        verified.kind === "anonymous"
+          ? await parseAnonymousTrialMeal(
+              { deviceId: verified.deviceId, version: verified.version, ...meal },
+              { config: deps.config, llm: deps.llm, trial: deps.trial },
+            )
+          : await parseTrialMeal(
+              { email: verified.email, version: verified.version, ...meal },
+              { config: deps.config, llm: deps.llm, trial: deps.trial },
+            );
+    } catch (error) {
+      // Three refusals, three different stories. Out of scans is the funnel's last step; a busy
+      // or rate-limited trial is capacity, which the funnel does not describe; anything else is
+      // an analysis that did not come back.
+      if (isApiError(error) && error.code === "trial_exhausted") {
+        await recordFunnel(deps, "limit_reached", ip);
+      } else if (!(isApiError(error) && error.code === "trial_busy")) {
+        await recordFunnel(deps, "analysis_error", ip);
+      }
+      throw error;
+    }
 
+    await recordFunnel(deps, "analysis_ok", ip);
     log("info", "parsed a trial meal", {
       items: outcome.items.length,
       attempts: outcome.attempts,

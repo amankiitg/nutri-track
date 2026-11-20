@@ -1,4 +1,15 @@
 /**
+ * The request body for POST /trial/funnel: the two steps the page itself can report.
+ *
+ * Only these two. The other six are logged by the service at the moment they happen, so a body
+ * that names one of them is refused rather than trusted: the page cannot be the source of a
+ * count about a token it was never issued.
+ */
+export const trialFunnelSchema = z.object({
+  event: z.enum(["try_page_view", "analyse_tapped"]),
+});
+
+/**
  * The request body for POST /parse-meal.
  *
  * Validated strictly: this is the one payload the browser controls, and the shape it

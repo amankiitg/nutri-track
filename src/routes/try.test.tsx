@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   startAnonymousTrial: vi.fn(),
   preparePhoto: vi.fn(),
   requestInvite: vi.fn(),
+  reportPageFunnelEvent: vi.fn(),
   turnstileCallback: null as ((token: string) => void) | null,
 }));
 
@@ -29,6 +30,7 @@ vi.mock("@/lib/trial", async (importOriginal) => {
     parseTrialMeal: (...args: unknown[]) => mocks.parseTrialMeal(...args),
     getTrialSettings: (...args: unknown[]) => mocks.getTrialSettings(...args),
     startAnonymousTrial: (...args: unknown[]) => mocks.startAnonymousTrial(...args),
+    reportPageFunnelEvent: (...args: unknown[]) => mocks.reportPageFunnelEvent(...args),
   };
 });
 
@@ -469,5 +471,50 @@ describe("the anonymous trial (flag false)", () => {
 
     expect(mocks.requestInvite).toHaveBeenCalledWith("late@example.com", { fromTrial: true });
     expect(await screen.findByText(/Request sent/)).toBeTruthy();
+  });
+});
+
+/**
+ * The page's half of the funnel.
+ *
+ * Eight steps are counted; six belong to the service because only it knows whether a
+ * token was issued or an analysis came back. These two are the ones the browser knows
+ * first, and they are asserted through the rendered page rather than the helper, because
+ * the place they are called from is the thing that decides whether they mean anything.
+ */
+describe("the funnel steps the page reports", () => {
+  it("counts one visit when the page opens, not one per render", async () => {
+    render(<TrialPage />);
+    await screen.findByRole("heading", { name: "Try a meal" });
+
+    await waitFor(() => expect(mocks.reportPageFunnelEvent).toHaveBeenCalledTimes(1));
+    expect(mocks.reportPageFunnelEvent).toHaveBeenCalledWith("try_page_view");
+  });
+
+  it("counts the tap on Analyse once, even though the analysis waits for the code", async () => {
+    mocks.sendTrialCode.mockResolvedValue({
+      status: "sent",
+      email: "trial@example.com",
+      invited: false,
+    });
+    mocks.verifyTrialCode.mockResolvedValue({ status: "ok", token: "token-1" });
+    mocks.parseTrialMeal.mockResolvedValue(parsedWith(9));
+
+    render(<TrialPage />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByPlaceholderText(/type what you ate/i), "dal and roti");
+    await user.click(screen.getByRole("button", { name: /analyse/i }));
+    await screen.findByRole("heading", { name: "Enter your email to see your results" });
+    await finishCodeStep(user);
+    await screen.findByRole("button", { name: /scan another meal/i });
+
+    // The meal parked at the email step is analysed after the code, without a second tap;
+    // that replay is not a visit of its own, so it must not be counted again.
+    expect(mocks.parseTrialMeal).toHaveBeenCalledTimes(1);
+    const analyseTaps = mocks.reportPageFunnelEvent.mock.calls.filter(
+      (call) => call[0] === "analyse_tapped",
+    );
+    expect(analyseTaps).toHaveLength(1);
   });
 });
