@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Your Thanksgiving plate called. It has questions. 🦃</title>
+    <!--
+      Thanksgiving 2026, for a Resend broadcast.
+
+      Subject: Your Thanksgiving plate called. It has questions. 🦃
+      Preview: Free, no sign-up, judgement-free.
+      From:    Aman at NutriTrack <hello@tracknutri.app>, reply-to the same (it forwards to Gmail).
+
+      The same look as diwali-2026.html and the invite email in shared/invite-email.ts: cream
+      #f0ece4, card #fffdf9, ink #192217, quiet ink #5e6657, leaf green #195c2e, border #e2ded2,
+      panel #f4f0e6. Table layout with every style inline, and no <link> to a web font: the stacks
+      name Fraunces and Manrope and fall back to Georgia and Arial, so nothing waits on a request
+      that Gmail or Outlook would refuse.
+
+      Two placeholders are Resend's own and are kept verbatim: the recipient's first name in
+      the greeting, with "there" as the fallback for a contact with no first name, and the
+      unsubscribe URL in the footer.
+
+      The demo GIF is 480 px wide and 941 KB, under the 1 MB a Gmail clip would cut at. It is a
+      link as well as an image, because in a mail client the picture is the thing people tap.
+    -->
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f0ece4">
+    <!-- Preheader: shown in the inbox next to the subject, hidden in the body. -->
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        max-width: 0;
+        overflow: hidden;
+        opacity: 0;
+        font-size: 1px;
+        line-height: 1px;
+        color: #f0ece4;
+      "
+    >
+      Free, no sign-up, judgement-free.
+      &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+    </div>
+
+    <table
+      role="presentation"
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      width="100%"
+      style="background-color: #f0ece4"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            border="0"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              width: 100%;
+              max-width: 600px;
+              background-color: #fffdf9;
+              border: 1px solid #e2ded2;
+              border-radius: 20px;
+            "
+          >
+            <tr>
+              <td style="padding: 40px 40px 8px 40px">
+                <!-- Brand row -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="40" valign="middle">
+                      <img
+                        src="https://tracknutri.app/icons/icon-192.png"
+                        width="40"
+                        height="40"
+                        alt="NutriTrack"
+                        style="display: block; width: 40px; height: 40px; border-radius: 10px"
+                      />
+                    </td>
+                    <td valign="middle" style="padding-left: 12px">
+                      <span
+                        style="
+                          font-family:
+                            &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                          font-size: 19px;
+                          font-weight: 700;
+                          letter-spacing: -0.01em;
+                          color: #192217;
+                        "
+                        >NutriTrack</span
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 24px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p style="margin: 0 0 16px 0">Hi {{{contact.first_name|there}}},</p>
+
+                <p style="margin: 0 0 16px 0">
+                  Thanksgiving: the one day a year &quot;just one more slice&quot; is a lifestyle.
+                </p>
+
+                <p style="margin: 0">
+                  My gift to you: snap your plate in NutriTrack and see what&apos;s actually in it.
+                  Turkey, stuffing, that suspicious third helping of pie, and the butter hiding in
+                  all of it.
+                </p>
+              </td>
+            </tr>
+
+            <!-- The demo, linked to the trial as well as shown. -->
+            <tr>
+              <td style="padding: 24px 40px 0 40px">
+                <a
+                  href="https://tracknutri.app/try?utm_source=email&amp;utm_campaign=thanksgiving"
+                  style="text-decoration: none"
+                >
+                  <img
+                    src="https://tracknutri.app/demo/email-demo.gif"
+                    width="480"
+                    alt="NutriTrack analysing a meal photo"
+                    style="display: block; width: 100%; max-width: 480px; height: auto; border: 0"
+                  />
+                </a>
+              </td>
+            </tr>
+
+            <!-- Button -->
+            <tr>
+              <td style="padding: 24px 40px 0 40px">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td
+                      align="center"
+                      bgcolor="#195c2e"
+                      style="background-color: #195c2e; border-radius: 999px"
+                    >
+                      <a
+                        href="https://tracknutri.app/try?utm_source=email&amp;utm_campaign=thanksgiving"
+                        style="
+                          display: inline-block;
+                          padding: 14px 28px;
+                          font-family:
+                            &quot;Manrope&quot;,
+                            -apple-system,
+                            BlinkMacSystemFont,
+                            &quot;Segoe UI&quot;,
+                            Roboto,
+                            Helvetica,
+                            Arial,
+                            sans-serif;
+                          font-size: 16px;
+                          font-weight: 700;
+                          color: #fffdf9;
+                          text-decoration: none;
+                        "
+                        >Try it free &rarr;</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 18px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 15px;
+                  line-height: 1.55;
+                  color: #5e6657;
+                "
+              >
+                <p style="margin: 0">
+                  No sign-up. No email. No judgement. (Okay, a little judgement.)
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  padding: 26px 40px 0 40px;
+                  font-family:
+                    &quot;Manrope&quot;,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    &quot;Segoe UI&quot;,
+                    Roboto,
+                    Helvetica,
+                    Arial,
+                    sans-serif;
+                  font-size: 16px;
+                  line-height: 1.6;
+                  color: #192217;
+                "
+              >
+                <p
+                  style="
+                    margin: 0 0 4px 0;
+                    font-family: &quot;Fraunces&quot;, Georgia, &quot;Times New Roman&quot;, serif;
+                    font-size: 24px;
+                    line-height: 1.2;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
+                  "
+                >
+                  Happy Thanksgiving!
+                </p>
+                <p style="margin: 0 0 16px 0">Aman</p>
+
+                <p style="margin: 0">
+                  P.S. Like it? Reply and I&apos;ll get you full access, right after you finish the
+                  pie.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Close -->
+            <tr>
+              <td style="padding: 28px 40px 40px 40px">
+                <table
+                  role="presentation"
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="border-top: 1px solid #e2ded2"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding-top: 18px;
+                        font-family:
+                          &quot;Manrope&quot;,
+                          -apple-system,
+                          BlinkMacSystemFont,
+                          &quot;Segoe UI&quot;,
+                          Roboto,
+                          Helvetica,
+                          Arial,
+                          sans-serif;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        color: #5e6657;
+                      "
+                    >
+                      You&apos;re getting this because you joined NutriTrack or were invited to
+                      it.<br />
+                      <a
+                        href="{{{RESEND_UNSUBSCRIBE_URL}}}"
+                        style="color: #195c2e; text-decoration: underline"
+                        >Unsubscribe</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
