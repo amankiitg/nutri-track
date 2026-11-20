@@ -43,6 +43,16 @@ describe("reportPageFunnelEvent", () => {
     expect(() => reportPageFunnelEvent("analyse_tapped")).not.toThrow();
   });
 
+  it("survives a fetch that throws where a promise belongs", () => {
+    // A bare call in a click handler dies with the handler, so the tap that was being counted
+    // would do nothing at all — the count would have taken the feature down with it.
+    fetchMock.mockImplementation(() => {
+      throw new Error("no fetch today");
+    });
+
+    expect(() => reportPageFunnelEvent("analyse_tapped")).not.toThrow();
+  });
+
   it("does not wait for the reply, so a slow count cannot stall a tap", () => {
     // A promise that never settles stands in for a service that has not answered yet.
     fetchMock.mockReturnValue(new Promise<Response>(() => {}));

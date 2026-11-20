@@ -33,16 +33,31 @@ export type PageFunnelEvent = "try_page_view" | "analyse_tapped";
  * response is not read.
  */
 export function reportPageFunnelEvent(event: PageFunnelEvent): void {
-  void fetch(trialUrl("/trial/funnel"), {
+  // Inside a try as well as a catch: a bare call in a tap handler dies with the handler, and the
+  // click that triggered it would then do nothing at all. Even the URL lookup can throw.
+  try {
+    void sendFunnelEvent(trialUrl("/trial/funnel"), event);
+  } catch {
+    // See above: this must never reach the page.
+  }
+}
+
+function sendFunnelEvent(url: string, event: PageFunnelEvent): Promise<void> {
+  return fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ event }),
     // The service answers 204 and hangs up; keeping the response alive past unload is
     // what lets the count land, and it is harmless when the page stays.
     keepalive: true,
-  }).catch(() => {
-    // See above: this must never reach the page.
-  });
+  }).then(
+    () => {
+      // The answer is not read: whether it landed is not the page's business.
+    },
+    () => {
+      // A count that failed is a gap in a graph, not an error the visitor can act on.
+    },
+  );
 }
 
 /** Whether the server should ask for an email before the trial. False is the default. */
