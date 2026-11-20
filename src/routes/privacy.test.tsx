@@ -33,6 +33,17 @@ describe("the privacy page", () => {
     expect(screen.getByText(/aggregate|totals across everyone/)).toBeInTheDocument();
   });
 
+  it("claims only that the counter does not try to identify you", () => {
+    render(<PrivacyPage />);
+
+    // "does not identify you" is a claim about an outcome nobody here can verify; "does not try"
+    // is the one Cloudflare's own description supports.
+    expect(
+      screen.getByText(/It is cookieless and does not try to identify you\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/does not identify you/)).toBeNull();
+  });
+
   it("says the count is of visits, not of what you log", () => {
     render(<PrivacyPage />);
 

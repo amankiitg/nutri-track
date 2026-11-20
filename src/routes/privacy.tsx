@@ -137,11 +137,11 @@ function PrivacyPage() {
           That is all it is for.
         </p>
         <p>
-          It is cookieless and it does not identify you. Nothing is stored on your device, it does
-          not try to identify you, and a reader who comes back is not recognised as the same person:
-          the figures are totals across everyone, not a row per visitor. What it records is which
-          page was opened, which site sent you here, and the coarse details any web request carries,
-          such as the country and the browser's broad family.
+          It is cookieless and does not try to identify you. Nothing is stored on your device, and a
+          reader who comes back is not recognised as the same person: the figures are totals across
+          everyone, not a row per visitor. What it records is which page was opened, which site sent
+          you here, and the coarse details any web request carries, such as the country and the
+          browser's broad family.
         </p>
         <p>
           It does not see what you log. Your meals, photos, weights, targets and profile are behind
