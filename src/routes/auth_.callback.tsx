@@ -1,11 +1,15 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandMark } from "@/components/app/BrandMark";
 import { Button } from "@/components/ui/button";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import { safeRedirect } from "@/lib/auth-redirect";
+import { endSession } from "@/lib/auth-sign-in";
+import { reportPageFunnelEvent } from "@/lib/trial";
+import { signedInAsSomebodyElse, takePendingGoogleEmail } from "@/lib/pending-google-email";
+import { signedInVisit } from "@/lib/post-signin";
 
 const SESSION_POLL_ATTEMPTS = 10;
 const SESSION_POLL_INTERVAL_MS = 150;
@@ -50,10 +54,25 @@ export const Route = createFileRoute("/auth_/callback")({
  * waits for whichever arrives, then lets the `_authenticated` guard decide
  * between `/today` and `/onboarding`.
  */
-function AuthCallbackPage() {
+export function AuthCallbackPage() {
   const router = useRouter();
   const { code, redirect, error: urlError, errorDescription } = Route.useSearch();
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The wrong account, when Google came back as somebody else.
+   *
+   * Typed on the sign-in screen, chosen differently in Google's chooser. Nothing redirects while this
+   * is set: the person is told who they are signed in as, and offered the way back to the address
+   * they named.
+   */
+  const [mismatch, setMismatch] = useState<{ typed: string; actual: string } | null>(null);
+  /**
+   * Set the moment a mismatch is shown, and never cleared.
+   *
+   * The remembered address is read once, so a second pass of this effect would find nothing typed
+   * and redirect as the wrong person. This flag is what makes "asked and answered" survive a re-run.
+   */
+  const answered = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +84,7 @@ function AuthCallbackPage() {
       errorDescription ?? hashParam("error_description") ?? urlError ?? hashParam("error");
 
     async function finish() {
+      if (answered.current) return;
       if (code) {
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
         if (exchangeError) {
@@ -79,7 +99,28 @@ function AuthCallbackPage() {
         if (!active) return;
         const { data } = await supabase.auth.getSession();
         if (data.session) {
-          router.history.replace(safeRedirect(redirect));
+          // Read once, and only now: `takePendingGoogleEmail` clears the key, so a reload cannot
+          // show a warning about an attempt that has already been answered.
+          const typed = takePendingGoogleEmail();
+          const actual = data.session.user.email ?? null;
+          if (signedInAsSomebodyElse(typed, actual)) {
+            if (!active) return;
+            answered.current = true;
+            setMismatch({ typed: typed ?? "", actual: actual ?? "" });
+            return;
+          }
+
+          // A Google sign-up has no email link to hang the funnel step on, so it is reported here:
+          // the session exists and there is no profile yet, which is what "a new account" means.
+          const visit = await signedInVisit(redirect);
+          if (!active) return;
+          if (visit.kind === "not_set_up") {
+            reportPageFunnelEvent("signup_completed");
+            router.history.replace("/onboarding");
+            return;
+          }
+
+          router.history.replace(visit.kind === "ready" ? visit.to : safeRedirect(redirect));
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, SESSION_POLL_INTERVAL_MS));
@@ -100,11 +141,36 @@ function AuthCallbackPage() {
     };
   }, [code, redirect, urlError, errorDescription, router]);
 
+  /** Leaves the wrong account and goes back to the address they meant, filled in. */
+  async function signOutAndReturn(): Promise<void> {
+    if (mismatch === null) return;
+    await endSession(supabase).catch(() => null);
+    router.history.replace(`/auth?email=${encodeURIComponent(mismatch.typed)}`);
+  }
+
   return (
     <main className="paper-grain min-h-dvh">
       <div className="app-shell flex min-h-dvh flex-col items-center justify-center gap-4 py-10 text-center">
         <BrandMark size={48} />
-        {error ? (
+        {mismatch !== null ? (
+          <>
+            <h1 className="text-2xl font-semibold">You&apos;re signed in as somebody else</h1>
+            <p className="text-muted-foreground">
+              You&apos;re signed in as <strong>{mismatch.actual}</strong>, not{" "}
+              <strong>{mismatch.typed}</strong>.
+            </p>
+            <Button
+              type="button"
+              className="mt-2 h-12 rounded-full"
+              onClick={() => void signOutAndReturn()}
+            >
+              Sign out and use {mismatch.typed}
+            </Button>
+            <Button asChild variant="outline" className="h-12 rounded-full">
+              <Link to="/today">Keep this account</Link>
+            </Button>
+          </>
+        ) : error ? (
           <>
             <h1 className="text-2xl font-semibold">Sign-in failed</h1>
             <p className="text-muted-foreground">{error}</p>
