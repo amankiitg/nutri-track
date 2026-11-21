@@ -46,14 +46,27 @@ export function inviteRequestMailto(email: string): string {
  *
  * `google_only` is an account that has never had a password. A password box in front of it is a dead
  * end, and the only door that works is the one that says so.
+ *
+ * `link_only` is the same dead end for a different reason: an email account that never set a password,
+ * which is what a magic-link sign-up leaves behind. `has_password` can use the password box.
  */
 export type AuthEntryState =
-  "not_invited" | "invited_new" | "open_signup" | "has_account" | "google_only" | "busy";
+  | "not_invited"
+  | "invited_new"
+  | "open_signup"
+  | "has_password"
+  | "link_only"
+  /** What a database from before the three-way split answers; read as `has_password`. */
+  | "has_account"
+  | "google_only"
+  | "busy";
 
 const ENTRY_STATES: readonly AuthEntryState[] = [
   "not_invited",
   "invited_new",
   "open_signup",
+  "has_password",
+  "link_only",
   "has_account",
   "google_only",
   "busy",

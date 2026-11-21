@@ -35,7 +35,7 @@ import { requestEmailLink, resendConfirmation, startOAuthSignIn } from "@/lib/au
  *
  *   not_invited  this address is not on the list yet: ask for an invite
  *   invited_new  on the list with no account: email a link, which is the only way to prove the inbox
- *   has_account  on the list with a password: sign in, or reset it
+ *   has_password  an account with a password: sign in, or reset it
  *   google_only  on the list with an account that has never had a password: Google, or a link
  *   busy         the throttle refused to answer: try again in a minute
  *
@@ -64,7 +64,16 @@ const RESET_COOLDOWN_SECONDS = 60;
  * other state means what it did before, so with the switch off this screen is unchanged.
  */
 type Step =
-  "email" | "not_invited" | "invited_new" | "open_signup" | "has_account" | "google_only" | "reset";
+  | "email"
+  | "not_invited"
+  | "invited_new"
+  | "open_signup"
+  /** An account with a password: the password box applies. */
+  | "has_password"
+  /** An email account that never set one: the magic link is the only door. */
+  | "link_only"
+  | "google_only"
+  | "reset";
 
 /**
  * A countdown a button starts, used by the controls that must not be pressed twice in a row.
@@ -411,7 +420,9 @@ export function AuthPage() {
     // The sign-up screen appearing is the funnel step; it is counted here rather than in the render
     // so a re-render cannot count it twice.
     if (state === "open_signup") reportPageFunnelEvent("signup_started");
-    setStep(state);
+    // One translation, in one place: a database from before the three-way split says `has_account`,
+    // and everything below speaks in `has_password`.
+    setStep(state === "has_account" ? "has_password" : state);
   }
 
   const continueWithEmail = async (e: FormEvent) => {
@@ -568,7 +579,7 @@ export function AuthPage() {
           ? "Create your account"
           : step === "invited_new"
             ? "You're invited!"
-            : step === "has_account"
+            : step === "has_password" || step === "link_only"
               ? "Welcome back"
               : step === "google_only"
                 ? "This account signs in with Google."
@@ -836,7 +847,7 @@ export function AuthPage() {
                 </>
               )}
 
-              {step === "has_account" && (
+              {step === "has_password" && (
                 <>
                   <p className="text-sm text-muted-foreground">
                     Signing in as <strong>{email}</strong>.
@@ -859,7 +870,7 @@ export function AuthPage() {
                     <button
                       type="button"
                       className="text-xs text-muted-foreground underline"
-                      onClick={() => openReset("has_account")}
+                      onClick={() => openReset("has_password")}
                     >
                       Forgot password?
                     </button>
@@ -873,7 +884,7 @@ export function AuthPage() {
                         <button
                           type="button"
                           className="underline"
-                          onClick={() => openReset("has_account")}
+                          onClick={() => openReset("has_password")}
                         >
                           {CREDENTIALS_MISMATCH.reset}
                         </button>
@@ -915,15 +926,58 @@ export function AuthPage() {
                 </>
               )}
 
+              {/*
+                An email account that never set a password. It has no password box because there is
+                no password to type: this is what a magic-link sign-up leaves behind, and every
+                account created by the open sign-up flow starts here.
+              */}
+              {step === "link_only" && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>{email}</strong> signs in by email link. We&apos;ll send you one to open
+                    on this device.
+                  </p>
+                  <Button
+                    type="button"
+                    className="h-12 w-full rounded-full text-base"
+                    onClick={() => void emailSignInLink(email)}
+                    disabled={busy !== null}
+                  >
+                    {busy === "link" && <Loader2 className="animate-spin" />}
+                    Email me a sign-in link
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Set a password in Settings later, and this screen will offer it instead.
+                  </p>
+                  {error && (
+                    <div role="alert">
+                      <p className="text-sm text-destructive">{error}</p>
+                      {errorDetail !== null && (
+                        <p className="mt-1 text-xs text-muted-foreground break-words">
+                          {errorDetail}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={useDifferentEmail}
+                  >
+                    Use a different email
+                  </button>
+                </>
+              )}
+
               {step === "google_only" && (
                 <>
                   <p className="text-sm text-muted-foreground">
                     <strong>{email}</strong> has never had a password here. Sign in with Google, or
                     ask for a link if you would rather have one.
                   </p>
+                  {/* The one door that works here is the primary action, not the alternative. */}
                   <Button
                     type="button"
-                    variant="outline"
                     className="h-12 w-full rounded-full text-base"
                     onClick={() => void google(email)}
                     disabled={busy !== null}
@@ -1019,7 +1073,7 @@ export function AuthPage() {
                         setStep(resetFrom);
                       }}
                     >
-                      {resetFrom === "has_account" ? "Back to sign in" : "Back to the email field"}
+                      {resetFrom === "has_password" ? "Back to sign in" : "Back to the email field"}
                     </button>
                     <button
                       type="button"

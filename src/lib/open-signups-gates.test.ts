@@ -91,3 +91,16 @@ describe("the client", () => {
     expect(lib).toContain('rpc("is_email_allowed")');
   });
 });
+
+describe("the sign-in answer", () => {
+  it("distinguishes an account with a password from one that never set one", () => {
+    const files = migrations();
+    const body = lastDefinition(files, "auth_entry_state");
+
+    // Without these two, an account created by a magic link is shown a password box it can never
+    // satisfy, which is exactly the bug this guards.
+    expect(body).toContain("'link_only'");
+    expect(body).toContain("'has_password'");
+    expect(body).toContain("encrypted_password");
+  });
+});

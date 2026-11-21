@@ -333,3 +333,73 @@ describe("the widget slot across steps", () => {
     expect(sent.options["captchaToken"]).toBe("captcha-token-1");
   });
 });
+
+describe("the three account states", () => {
+  it("shows no password box for an account that never set one", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "magic-link@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    // The bug: this screen used to draw a password field the account could never satisfy.
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /forgot password/i })).toBeNull();
+  });
+
+  it("still sends the link through the captcha helper", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only");
+    mocks.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "magic-link@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Email me a sign-in link" }));
+
+    expect(mocks.signInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "magic-link@example.com",
+        options: expect.objectContaining({
+          shouldCreateUser: false,
+          captchaToken: "captcha-token-1",
+        }),
+      }),
+    );
+  });
+
+  it("keeps the password box for an account that has one", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("has_password");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "password@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /forgot password/i })).toBeTruthy();
+  });
+
+  it("still treats the old has_account answer as an account with a password", async () => {
+    const user = userEvent.setup();
+    // What a database from before the three-way split says, i.e. after a rollback of the migration.
+    await reachStep(user, "has_account");
+
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+
+  it("makes Google the primary action on a Google-only account", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "google_only");
+
+    const googleButton = screen.getByRole("button", { name: /continue with google/i });
+    // Filled rather than outlined: the only door that works is the one presented as the way in.
+    expect(googleButton.className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+  });
+});
