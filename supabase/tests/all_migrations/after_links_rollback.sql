@@ -1,6 +1,7 @@
 -- After rolling back 20261110120000 alone: trial_scan_start is the three-argument function
 -- again, with its grant, and the link functions and columns are gone.
 
+
 \set ON_ERROR_STOP on
 
 DO $$

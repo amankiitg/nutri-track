@@ -3,6 +3,10 @@
 -- Runs after after_funnel.sql, so the secret is planted and the counters exist. Every row here
 -- is synthetic: a device with a scan spent, and a mailbox with one spent.
 
+-- This file describes the invite-only product, so the switch is pinned closed for it;
+-- with sign-ups open, `check_email_allowed` and the request trigger answer differently.
+update public.app_settings set open_signups = false where id;
+
 \set ON_ERROR_STOP on
 
 update vault.decrypted_secrets
@@ -174,3 +178,5 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - the admin funnel read lists analysis_no_food and counts it'
+
+update public.app_settings set open_signups = true where id;

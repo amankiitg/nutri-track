@@ -4,6 +4,10 @@
 -- ('links-secret'). The email-flow rows from earlier files stay in place so the admin
 -- list test can prove both funnels still answer together.
 
+-- This file describes the invite-only product, so the switch is pinned closed for it;
+-- with sign-ups open, `check_email_allowed` and the request trigger answer differently.
+update public.app_settings set open_signups = false where id;
+
 \set ON_ERROR_STOP on
 
 update vault.decrypted_secrets
@@ -236,3 +240,5 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - a non-admin is refused the anonymous trial list'
+
+update public.app_settings set open_signups = true where id;

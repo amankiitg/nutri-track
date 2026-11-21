@@ -1,5 +1,9 @@
 -- Personal trial links (20261110120000), after every migration. Synthetic rows only.
 
+-- This file describes the invite-only product, so the switch is pinned closed for it;
+-- with sign-ups open, `check_email_allowed` and the request trigger answer differently.
+update public.app_settings set open_signups = false where id;
+
 \set ON_ERROR_STOP on
 
 insert into vault.decrypted_secrets (name, decrypted_secret)
@@ -219,3 +223,5 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - the code and link routes share one trial_users row (one scan counter)'
+
+update public.app_settings set open_signups = true where id;
