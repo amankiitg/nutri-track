@@ -128,7 +128,10 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await finishOnboarding(page);
   });
 
-  test("b. the same account sees only the link, and the link signs it in", async ({ page, harness }) => {
+  test("b. the same account sees only the link, and the link signs it in", async ({
+    page,
+    harness,
+  }) => {
     watch(page, harness);
     // A fresh browser, the same account: what the next visit looks like.
     await openAuth(page);
@@ -191,14 +194,19 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     // The sentence, and the raw error under it: the detail line is what a person can quote.
     await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page.getByText(/invalid_credentials|Invalid login credentials/i).first()).toBeVisible();
+    await expect(
+      page.getByText(/invalid_credentials|Invalid login credentials/i).first(),
+    ).toBeVisible();
 
     await page.getByLabel("Password").fill(FIRST_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
   });
 
-  test("d. Forgot password sends a reset link, and the new password signs in", async ({ page, harness }) => {
+  test("d. Forgot password sends a reset link, and the new password signs in", async ({
+    page,
+    harness,
+  }) => {
     watch(page, harness);
     await openAuth(page);
     await askState(page, account);
@@ -214,7 +222,10 @@ test.describe.serial("the sign-in screen, end to end", () => {
 
     await page.getByLabel("Password", { exact: true }).fill(SECOND_PASSWORD);
     await page.getByLabel("Confirm password").fill(SECOND_PASSWORD);
-    await page.getByRole("button", { name: /save|set password/i }).first().click();
+    await page
+      .getByRole("button", { name: /save|set password/i })
+      .first()
+      .click();
 
     await page.goto("/auth");
     await askState(page, account);
@@ -252,7 +263,9 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await page.unroute("**/auth/v1/authorize**");
     await openAuth(page);
     await askState(page, GOOGLE_ONLY);
-    await expect(page.getByRole("heading", { name: "This account signs in with Google." })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "This account signs in with Google." }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
     await expect(page.getByLabel("Password")).toHaveCount(0);
@@ -338,7 +351,9 @@ test.describe.serial("the sign-in screen, end to end", () => {
     uninvite(stranger);
     await openAuth(page);
     await askState(page, stranger);
-    await expect(page.getByRole("heading", { name: "This email isn't invited yet." })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "This email isn't invited yet." }),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "Request an invite" })).toBeVisible();
 
     const invited = freshEmail("invited", "suite");
