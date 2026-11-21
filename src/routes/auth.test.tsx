@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   signInWithOAuth: vi.fn(),
   resend: vi.fn(),
   resetPasswordForEmail: vi.fn(),
+  rpc: vi.fn(),
   replace: vi.fn(),
 }));
 
@@ -73,6 +74,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       resend: (...args: unknown[]) => mocks.resend(...args),
       resetPasswordForEmail: (...args: unknown[]) => mocks.resetPasswordForEmail(...args),
     },
+    rpc: (...args: unknown[]) => mocks.rpc(...args),
   },
 }));
 
@@ -533,6 +535,25 @@ describe("an account with no evidence of a password", () => {
     expect(await screen.findByLabelText("Password")).toBeTruthy();
     expect(screen.getByRole("button", { name: /continue with google/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Email me a sign-in link" })).toBeNull();
+  });
+});
+
+describe("a password that worked", () => {
+  it("records that this account has one, which is the only evidence the screen has", async () => {
+    const user = userEvent.setup();
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: null,
+    });
+    await reachStep(user, "has_password");
+
+    await user.type(screen.getByLabelText("Password"), "correct horse battery");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(mocks.signInWithPassword).toHaveBeenCalledTimes(1));
+    // An account from before the flag existed becomes has_password on its next password sign-in,
+    // so this call is the self heal rather than a note about the screen.
+    expect(mocks.rpc).toHaveBeenCalledWith("mark_has_password");
   });
 });
 

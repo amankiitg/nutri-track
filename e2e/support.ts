@@ -12,9 +12,11 @@
 import { execFileSync } from "node:child_process";
 import { test as base, expect, type ConsoleMessage, type Page } from "@playwright/test";
 
-export const MAILPIT_URL = process.env.E2E_MAILPIT_URL ?? "http://127.0.0.1:54324";
+// Bracket access because the project does not allow dot access on an index signature, which is
+// what process.env is.
+export const MAILPIT_URL = process.env["E2E_MAILPIT_URL"] ?? "http://127.0.0.1:54324";
 export const DB_URL =
-  process.env.E2E_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+  process.env["E2E_DB_URL"] ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 /**
  * Everything a test may talk to. Production is not in this list, on purpose.
@@ -107,6 +109,7 @@ export async function mailTo(address: string, after = 0): Promise<Mail> {
     const messages = await messagesTo(address);
     if (messages.length > after) {
       const newest = messages[0];
+      if (newest === undefined) throw new Error("no message to read");
       const response = await fetch(MAILPIT_URL + "/api/v1/message/" + newest.ID);
       const full = (await response.json()) as { Text?: string; HTML?: string };
       return { subject: newest.Subject, text: full.Text ?? "", html: full.HTML ?? "" };

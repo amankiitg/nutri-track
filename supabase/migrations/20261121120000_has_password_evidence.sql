@@ -1,47 +1,43 @@
 -- ---------------------------------------------------------------------------
 -- A password door, only where a password is known to exist.
 --
--- The revision before this one stopped reading the stored hash, because GoTrue writes a random
--- 60 character bcrypt hash for an account created by a magic link, so presence there proves nothing.
--- That removed the false positive, and it also removed the password door from every account that
--- really has one: auth_entry_state had no evidence left to look at and answered link_only for
--- everybody.
+-- Two earlier revisions of this function guessed. The first read `encrypted_password`, and GoTrue
+-- writes a random 60 character bcrypt hash for an account created by an emailed link, so every
+-- link account claimed a password it did not have. The second read `auth.mfa_amr_claims` for
+-- authentication_method = 'password', on the theory that GoTrue only records that when a password
+-- was actually used. Measured on the local stack (GoTrue v2.198), a session established by an
+-- emailed link writes both claims:
 --
--- There is evidence, and it is not the hash. Two facts, both recorded by something other than the
--- client's opinion:
+--   email                          | profiles.has_password | amr claims   | auth_entry_state
+--   new.suite.mwqkst39@example.com | false                 | password,otp | has_password
 --
---   1. auth.mfa_amr_claims with authentication_method = 'password'. GoTrue writes a row there every
---      time a session is established with a password, so it covers every account that has ever
---      signed in that way, including every account that existed before this migration.
---   2. profiles.has_password, added below, set by the app when somebody saves a password in
---      Settings. GoTrue does not write an amr claim for a password that was set and never used, and
---      without this an account that set one in Settings would still be sent to the link.
+-- So that record says nothing about whether a password exists either, and there is no reason to
+-- expect the production GoTrue to differ, since the claims describe how the session was proved
+-- rather than what the account holds.
 --
--- The column is written by one security definer function, mark_has_password(), which can only set
--- it true on the caller's own row, and a trigger refuses a direct write of it from the client. So it
--- says "the app recorded a password", not "the client says it has one".
+-- What is left is the honest answer: a flag the app sets when it knows a password exists. Three
+-- places set it, and all three are moments the app itself saw a password work or be set:
+--
+--   1. Settings, after supabase.auth.updateUser({ password }) succeeds.
+--   2. The reset screen, after the same call succeeds with a new password.
+--   3. Any successful password sign-in, so an account that already had a password from before this
+--      migration becomes `has_password` the first time it uses one. Nothing is backfilled: there is
+--      no record to backfill from, and guessing one is what this migration is undoing.
+--
+-- The column is written through mark_has_password(), a security definer function that can only set
+-- it true on the caller's own row, and a trigger refuses a direct write of it from the client. An
+-- account without the flag is shown the link only. It can still sign in, so nobody is locked out.
 -- ---------------------------------------------------------------------------
 
 alter table public.profiles
   add column if not exists has_password boolean not null default false;
 
--- The backfill: every account that has ever signed in with a password, from the record GoTrue
--- already keeps.
-update public.profiles p
-   set has_password = true
- where p.has_password = false
-   and exists (
-     select 1
-       from auth.mfa_amr_claims c
-       join auth.sessions s on s.id = c.session_id
-      where s.user_id = p.user_id
-        and c.authentication_method = 'password'
-   );
+-- No backfill. The only records that could feed one are the amr claims, and the measurement above
+-- is the reason they cannot be trusted for this question.
 
 -- The client may edit its own profile, and this column is not its to edit: an address that never
--- had a password must not be able to hand itself a password box by writing true, and one that does
--- must not be able to hide the door by writing false. Inside mark_has_password() the current user is
--- the owner, which is how the app writes it.
+-- had a password must not be able to hand itself a password box by writing true. Inside the
+-- function below the current user is the owner, which is how the app writes it.
 create or replace function public.profiles_has_password_guard()
 returns trigger
 language plpgsql
@@ -62,8 +58,9 @@ create trigger profiles_has_password_guard
 /**
  * Records that the caller has a password.
  *
- * Called after supabase.auth.updateUser({ password }) succeeds. No arguments on purpose: the row is
- * the caller's own, one way, and there is no way to say "false" or to name somebody else.
+ * Called after a password is set in Settings, after a reset, and after a password sign-in. No
+ * arguments on purpose: the row is the caller's own, one way, and there is no way to say "false" or
+ * to name somebody else.
  */
 create or replace function public.mark_has_password()
 returns void
@@ -79,7 +76,6 @@ $$;
 
 revoke execute on function public.mark_has_password() from public;
 grant execute on function public.mark_has_password() to authenticated;
-
 create or replace function public.auth_entry_state(p_email text)
 returns text
 language plpgsql
@@ -161,18 +157,10 @@ begin
     return 'google_only';
   end if;
 
-  -- The two pieces of evidence, and neither of them is the stored hash: see the note at the top.
-  v_has_password := exists (
-    select 1
-      from auth.mfa_amr_claims c
-      join auth.sessions s on s.id = c.session_id
-     where s.user_id = v_user_id
-       and c.authentication_method = 'password'
-  ) or exists (
-    select 1 from public.profiles p
-     where p.user_id = v_user_id
-       and p.has_password
-  );
+  -- The only evidence, and the note at the top is the reason there is no second one.
+  v_has_password := coalesce((
+    select p.has_password from public.profiles p where p.user_id = v_user_id
+  ), false);
 
   if v_has_password then
     return case when v_has_google then 'has_password_google' else 'has_password' end;

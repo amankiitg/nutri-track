@@ -482,6 +482,10 @@ export function AuthPage() {
     if (signInError === null) {
       setBusy(null);
       setShowPassword(false);
+      // The password worked, so this account has one: record it, because that is the only evidence
+      // the sign-in screen has, and an account from before the flag existed self heals here on its
+      // first password sign-in. Fire and forget: a failed note must not stop somebody signing in.
+      void supabase.rpc("mark_has_password");
       router.history.replace(destination);
       return;
     }

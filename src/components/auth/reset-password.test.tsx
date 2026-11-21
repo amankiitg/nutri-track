@@ -14,6 +14,7 @@ import userEvent from "@testing-library/user-event";
 const h = vi.hoisted(() => ({
   getSession: vi.fn(),
   updateUser: vi.fn(),
+  rpc: vi.fn(),
   replace: vi.fn(),
 }));
 
@@ -45,6 +46,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       getSession: h.getSession,
       updateUser: h.updateUser,
     },
+    rpc: h.rpc,
   },
 }));
 
@@ -76,6 +78,9 @@ describe("a usable reset link", () => {
     await typePassword("correct horse battery");
 
     expect(h.updateUser).toHaveBeenCalledWith({ password: "correct horse battery" });
+    // The new password is a password this account now has, and the sign-in screen cannot work that
+    // out for itself, so the reset records it.
+    expect(h.rpc).toHaveBeenCalledWith("mark_has_password");
     expect(h.replace).toHaveBeenCalledWith("/today");
   });
 

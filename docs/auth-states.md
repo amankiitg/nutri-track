@@ -10,14 +10,28 @@ Two rules run through all of it.
    password panel. There is no state in which two panels are mounted, so there is never a duplicate
    "Email me a sign-in link" and never a stray password box.
 2. **A password door exists only where a password is known to exist.** "Known to exist" means one
-   of two pieces of evidence, and never the stored hash:
-   - a row in `auth.mfa_amr_claims` with `authentication_method = 'password'` for that user, which
-     GoTrue writes when somebody actually signs in with a password; or
-   - `profiles.has_password` set to true, which the app writes when somebody sets or changes a
-     password in Settings (backfilled from `auth.mfa_amr_claims` by the migration that added it).
+   thing: `profiles.has_password` is true. Three places set it, and each is a moment the app itself
+   saw a password work or be set:
+   - Settings, after `updateUser({ password })` succeeds;
+   - the reset screen, after the same call succeeds with a new password;
+   - any successful password sign-in, so an account that already had a password before the flag
+     existed heals itself the first time it uses one.
 
-   The hash is not evidence: GoTrue writes a random 60 character bcrypt hash for an account created
-   by a magic link, which is why reading it claimed a password that did not exist.
+   Nothing is backfilled. The two other candidates were measured and rejected:
+   - **the stored hash is not evidence.** GoTrue writes a random 60 character bcrypt hash for an
+     account created by a magic link, so presence there claimed a password that did not exist.
+   - **the amr claims are not evidence either.** `auth.mfa_amr_claims` looked right, because a row
+     with `authentication_method = 'password'` ought to mean a password was used. Measured on a
+     local stack (GoTrue v2.198), a session established by an emailed link writes both claims:
+
+     ```
+     email                          | profiles.has_password | amr claims   | auth_entry_state
+     new.suite.mwqkst39@example.com | false                 | password,otp | has_password
+     ```
+
+     That account never had a password. The claims describe how the session was proved, not what the
+     account holds, so a rule reading them handed the password box to exactly the accounts it was
+     written to exclude.
 
 ## The table
 
@@ -73,17 +87,30 @@ field cleared.
 
 ### How an account reaches `has_password`
 
-1. It signs in with a password, and GoTrue records `authentication_method = 'password'` in
-   `auth.mfa_amr_claims`. This covers every account created before `profiles.has_password` existed
-   that has ever signed in that way, which is what the backfill copies.
-2. Or it sets a password in Settings, and the app calls `mark_has_password()`, a security definer
-   function that flips the flag on the caller's own row and nothing else. The column is guarded by a
-   trigger that refuses a direct write from the client, so the flag says "the app recorded a
-   password" rather than "the client claims one".
+1. It sets or changes a password in Settings, and the app calls `mark_has_password()`, a security
+   definer function that flips the flag on the caller's own row and nothing else. The column is
+   guarded by a trigger that refuses a direct write from the client, so the flag says "the app
+   recorded a password" rather than "the client claims one".
+2. It finishes a password reset, and the same function is called from the reset screen.
+3. It signs in with a password, and the sign-in screen calls the same function. This is the self
+   heal: an account that had a password before the flag existed becomes `has_password` on its next
+   password sign-in, with no backfill and no guessing.
 
-One consequence, deliberately accepted: an account that set a password before this change and has
-never signed in with it has no evidence of either kind, so it is shown the link only. The link works,
-and the next time a password is saved in Settings the flag is set and both doors appear.
+A failed call never blocks the password that was just set or used; the flag is bookkeeping, and the
+next attempt writes it again.
+
+One consequence, deliberately accepted: an account that has a password, has never used it since this
+deploy, and has not touched Settings is shown the link only until one of those three moments happens.
+The link always works, so nobody is locked out, which is the property that made this the acceptable
+side of the trade.
+
+### What the OAuth button actually sends
+
+One correction worth recording, because it is invisible in the code: `signInWithOAuth` in
+`@supabase/auth-js` forwards `redirectTo`, `scopes` and `queryParams`, and drops `captchaToken`
+entirely. The app passes a token and the URL that leaves the browser does not carry it. Harmless in
+practice, because GoTrue's CAPTCHA gate covers the password, OTP, signup and recovery endpoints rather
+than `/authorize`, but it means "Google sign-in is CAPTCHA protected" is not a claim to make.
 
 ### With the CAPTCHA off
 

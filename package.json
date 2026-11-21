@@ -24,6 +24,8 @@
     "invite:check": "npm run check --prefix tools/invite",
     "invite:preview": "npm run preview --prefix tools/invite",
     "typecheck": "tsc --noEmit",
+    "typecheck:e2e": "tsc -p e2e --noEmit",
+    "test:e2e": "bash e2e/run.sh",
     "format": "prettier --write ."
   },
   "overrides": {
