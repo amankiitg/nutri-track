@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   updateUser: vi.fn(),
   signOut: vi.fn(),
   navigate: vi.fn(),
+  authEntryState: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -32,6 +33,14 @@ vi.mock("@/integrations/supabase/client", () => ({
       signOut: h.signOut,
     },
   },
+}));
+
+/**
+ * The database's answer about whether this account has a password, which the identities cannot
+ * give: a magic-link account has an `email` identity and no password.
+ */
+vi.mock("@/lib/invite-request", () => ({
+  authEntryState: () => h.authEntryState(),
 }));
 
 import { AccountSection } from "./AccountSection";
@@ -75,6 +84,7 @@ async function typeNewPassword(password: string, confirmation = password): Promi
 beforeEach(() => {
   vi.clearAllMocks();
   h.getUser.mockResolvedValue(account(["google"]));
+  h.authEntryState.mockResolvedValue("google_only");
   h.updateUser.mockResolvedValue({ data: { user: null }, error: null });
   h.signOut.mockResolvedValue({ error: null });
 });
@@ -92,11 +102,34 @@ describe("who is signed in", () => {
 
   it("says so when the account has both ways in", async () => {
     h.getUser.mockResolvedValue(account(["google", "email"]));
+    h.authEntryState.mockResolvedValue("has_password");
 
     renderAccount();
 
     expect(await screen.findByText(/signing in with google and email/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /change password/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /change password/i })).toBeInTheDocument();
+  });
+
+  it("offers to set one on a magic-link account, which has an email identity and no password", async () => {
+    // The bug: this account has `email` in its identities, so the button said "Change password"
+    // for a password that was never set.
+    h.getUser.mockResolvedValue(account(["email"]));
+    h.authEntryState.mockResolvedValue("link_only");
+
+    renderAccount();
+
+    expect(await screen.findByRole("button", { name: /set a password/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /change password/i })).toBeNull();
+  });
+
+  it("still offers to set one when the answer cannot be read", async () => {
+    h.getUser.mockResolvedValue(account(["email"]));
+    h.authEntryState.mockResolvedValue(null);
+
+    renderAccount();
+
+    // The fallback is the old behaviour: an unknown answer is not a promise either way.
+    expect(await screen.findByRole("button", { name: /change password/i })).toBeInTheDocument();
   });
 });
 

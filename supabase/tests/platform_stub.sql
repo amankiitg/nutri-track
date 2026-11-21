@@ -35,7 +35,12 @@ create table auth.users (
   email character varying(255),
   raw_user_meta_data jsonb,
   raw_app_meta_data jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- On the real table, and read by `auth_entry_state` to tell an account with a password from one
+  -- created by a magic link. Empty string is Supabase's "no password", which is why the function
+  -- tests `nullif(..., '')` and not only `is not null`.
+  encrypted_password text,
+  email_confirmed_at timestamptz
 );
 
 create table auth.identities (

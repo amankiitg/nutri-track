@@ -70,8 +70,10 @@ type Step =
   | "open_signup"
   /** An account with a password: the password box applies. */
   | "has_password"
-  /** An email account that never set one: the magic link is the only door. */
+  /** An email account that never set one: the magic link is the door. */
   | "link_only"
+  /** The same, plus a Google identity: Google works too. */
+  | "link_only_google"
   | "google_only"
   | "reset";
 
@@ -579,7 +581,7 @@ export function AuthPage() {
           ? "Create your account"
           : step === "invited_new"
             ? "You're invited!"
-            : step === "has_password" || step === "link_only"
+            : step === "has_password" || step === "link_only" || step === "link_only_google"
               ? "Welcome back"
               : step === "google_only"
                 ? "This account signs in with Google."
@@ -945,6 +947,41 @@ export function AuthPage() {
                   >
                     {busy === "link" && <Loader2 className="animate-spin" />}
                     Email me a sign-in link
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Set a password in Settings later, and this screen will offer it instead.
+                  </p>
+                </>
+              )}
+
+              {/*
+                The same account, with a Google identity attached: the link stays the primary action
+                because that is how the account was made, and Google is offered beside it because it
+                works and hiding it would be a door with no handle.
+              */}
+              {step === "link_only_google" && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>{email}</strong> signs in with a link or with Google.
+                  </p>
+                  <Button
+                    type="button"
+                    className="h-12 w-full rounded-full text-base"
+                    onClick={() => void emailSignInLink(email)}
+                    disabled={busy !== null}
+                  >
+                    {busy === "link" && <Loader2 className="animate-spin" />}
+                    Email me a sign-in link
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 w-full rounded-full text-base"
+                    onClick={() => void google(email)}
+                    disabled={busy !== null}
+                  >
+                    {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+                    Continue with Google
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     Set a password in Settings later, and this screen will offer it instead.

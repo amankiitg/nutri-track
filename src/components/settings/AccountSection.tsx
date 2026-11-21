@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { supabase } from "@/integrations/supabase/client";
 import { providerSummary } from "@/lib/account";
+import { authEntryState } from "@/lib/invite-request";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import type { AnalysesLine } from "@/lib/calls";
 import type { UnitSystem } from "@/lib/units";
@@ -60,14 +61,44 @@ export function AccountSection({
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState<"password" | "signout" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether this account actually has a password.
+   *
+   * The identities cannot answer this, and assuming they could was the bug: a magic-link account has
+   * an `email` identity from the moment it is created and no password at all, so it was offered
+   * "Change password" for a password that never existed. `auth_entry_state` is the one place that
+   * knows, and its answer is what the sign-in screen uses too.
+   *
+   * Null while it is being read, and on a failed read. The fallback is deliberately the old
+   * behaviour: an `email` identity means "Change password", which is wrong for a link-only account
+   * but safe, because saving sets a password either way.
+   */
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
 
+  /** Reads the account, and asks the database whether a password is set. */
   useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+    let active = true;
+    void supabase.auth.getUser().then(async ({ data }) => {
+      if (!active) return;
+      const nextUser = data.user ?? null;
+      setUser(nextUser);
+      const address = nextUser?.email ?? "";
+      if (address === "") {
+        setHasPassword(null);
+        return;
+      }
+      const state = await authEntryState(address);
+      if (!active) return;
+      setHasPassword(state === "has_password" ? true : state === null ? null : false);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const providers = (user?.identities ?? []).map((identity) => identity.provider);
   const hasPasswordIdentity = providers.includes("email");
-  const passwordLabel = hasPasswordIdentity ? "Change password" : "Set a password";
+  const passwordLabel = (hasPassword ?? hasPasswordIdentity) ? "Change password" : "Set a password";
 
   async function savePassword(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -91,14 +122,16 @@ export function AccountSection({
     // rather than assumed: the button that said "Set a password" would otherwise keep saying it.
     const { data } = await supabase.auth.getUser();
     setUser(data.user ?? null);
+    // A password exists now, whatever the database said a moment ago.
+    setHasPassword(true);
     setPassword("");
     setConfirmation("");
     setVisible(false);
     setOpen(false);
     toast.success(
-      hasPasswordIdentity
+      hasPassword === true
         ? "Password changed."
-        : "Password set. You can now sign in with email as well as Google.",
+        : "Password set. You can now sign in with email and a password, without waiting for a link.",
     );
   }
 

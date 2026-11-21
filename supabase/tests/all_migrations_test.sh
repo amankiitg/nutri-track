@@ -76,6 +76,10 @@ echo "ok - applied all ${count} migrations in order"
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261120200000_link_only_google.sql"
+linkonly=$("${PSQL[@]}" -Atc "select pg_get_functiondef(oid) from pg_proc where proname='auth_entry_state'" | grep -c "link_only_google" || true)
+[ "${linkonly}" = "0" ] || { echo "FAIL: the restored auth_entry_state still names link_only_google" >&2; exit 1; }
+echo "ok - the combined answer rolls back to three states"
 apply "${ROOT}/supabase/rollback/20261120180000_open_signups_post_login.sql"
 postlogin=$("${PSQL[@]}" -Atc "select count(*) from pg_trigger where tgname='invite_requests_skip_when_open'")
 [ "${postlogin}" = "0" ] || { echo "FAIL: the request trigger survived its rollback" >&2; exit 1; }
@@ -122,6 +126,7 @@ apply "${MIGRATIONS}/20261120150000_no_food_result.sql"
 apply "${MIGRATIONS}/20261120160000_open_signups.sql"
 apply "${MIGRATIONS}/20261120170000_global_analysis_cap.sql"
 apply "${MIGRATIONS}/20261120180000_open_signups_post_login.sql"
+apply "${MIGRATIONS}/20261120200000_link_only_google.sql"
 refund_back=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
 [ "${refund_back}" = "1" ] || { echo "FAIL: trial_scan_refund missing after the no-food migration reapplied" >&2; exit 1; }
 funnel_back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")

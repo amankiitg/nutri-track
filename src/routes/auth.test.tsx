@@ -403,3 +403,44 @@ describe("the three account states", () => {
     expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
   });
 });
+
+describe("an account with a link and Google but no password", () => {
+  it("offers both doors, with the link first", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only_google");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "both@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+
+    // The link is the primary action because that is how the account was made.
+    const link = screen.getByRole("button", { name: "Email me a sign-in link" });
+    expect(link.className).toContain("bg-primary");
+    const googleButton = screen.getByRole("button", { name: /continue with google/i });
+    expect(googleButton.className).toContain("border");
+    expect(googleButton.className).not.toContain("bg-primary");
+  });
+
+  it("sends the Google call with a captcha token, like every other sign-in", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only_google");
+    mocks.signInWithOAuth.mockResolvedValue({
+      data: { url: "https://accounts.google.com/x" },
+      error: null,
+    });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "both@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: /continue with google/i }));
+
+    expect(mocks.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ captchaToken: "captcha-token-1" }),
+      }),
+    );
+  });
+});
