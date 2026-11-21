@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CREDENTIALS_MISMATCH,
+  authErrorDetail,
   credentialsMismatchText,
   friendlyAuthError,
   isInvalidCredentials,
@@ -100,5 +101,29 @@ describe("isInvalidCredentials", () => {
 
     expect(friendlyAuthError(error)).toMatch(/don't match/i);
     expect(isInvalidCredentials(error)).toBe(true);
+  });
+});
+
+describe("authErrorDetail", () => {
+  it("keeps the code, the status and the message, in that order", () => {
+    const error = {
+      name: "AuthApiError",
+      code: "captcha_failed",
+      status: 400,
+      message: "captcha verification process failed",
+    };
+
+    expect(authErrorDetail(error)).toBe(
+      "captcha_failed · HTTP 400 · captcha verification process failed",
+    );
+  });
+
+  it("leaves out the parts that are missing, rather than printing empty separators", () => {
+    expect(authErrorDetail({ message: "Email not confirmed" })).toBe("Email not confirmed");
+    expect(authErrorDetail({ code: "over_email_send_rate_limit" })).toBe(
+      "over_email_send_rate_limit",
+    );
+    expect(authErrorDetail(null)).toBeNull();
+    expect(authErrorDetail({})).toBeNull();
   });
 });

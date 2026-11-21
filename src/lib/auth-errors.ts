@@ -118,3 +118,27 @@ export function friendlyAuthError(error: unknown): string {
 
   return "Something went wrong signing in. Please try again.";
 }
+
+/**
+ * The raw error, for the line under the friendly one.
+ *
+ * Supabase returns an error code and a message, and both are what an operator needs to tell a
+ * captcha refusal from a rate limit from a database fault. The friendly sentence stays the headline
+ * because it is what a person can act on; this is the receipt, in small text, and it is never a
+ * secret.
+ */
+export function authErrorDetail(error: unknown): string | null {
+  if (error === null || typeof error !== "object") {
+    const text = authErrorText(error).trim();
+    return text === "" ? null : text;
+  }
+  const shape = error as { code?: unknown; status?: unknown; message?: unknown };
+  const code =
+    typeof shape.code === "string" && shape.code.trim() !== "" ? shape.code.trim() : null;
+  const message =
+    typeof shape.message === "string" && shape.message.trim() !== "" ? shape.message.trim() : null;
+  const status = typeof shape.status === "number" ? `HTTP ${shape.status}` : null;
+
+  const parts = [code, status, message].filter((part): part is string => part !== null);
+  return parts.length === 0 ? null : parts.join(" · ");
+}

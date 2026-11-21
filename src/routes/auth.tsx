@@ -11,6 +11,7 @@ import { PasswordInput } from "@/components/auth/PasswordInput";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import {
   CREDENTIALS_MISMATCH,
+  authErrorDetail,
   authErrorText,
   friendlyAuthError,
   isInvalidCredentials,
@@ -21,6 +22,7 @@ import { authEntryState } from "@/lib/invite-request";
 import { openSignups } from "@/lib/open-signups";
 import { reportPageFunnelEvent } from "@/lib/trial";
 import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
+import { createTurnstileTokenSource, type TurnstileTokenSource } from "@/lib/turnstile-token";
 
 /**
  * Signing in, in one email-first flow.
@@ -176,14 +178,17 @@ export function AuthPage() {
   const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null);
 
   /**
-   * The Turnstile token, when there is one.
+   * Where a fresh Turnstile token comes from, one per attempt.
    *
-   * The widget only exists if a site key is configured, and every sign-in call below sends
-   * `captchaToken` only when this string is non-empty. That is what makes the page work while
-   * Supabase CAPTCHA is off: no token means no field, and the call is exactly the call it was.
+   * A source rather than a state string because the token has to be fetched at the moment of the
+   * request and thrown away afterwards: it is single use, it expires in about five minutes, and an
+   * `interaction-only` widget may not have produced one before the button is pressed.
    */
-  const [captchaToken, setCaptchaToken] = useState("");
+  const tokenSource = useRef<TurnstileTokenSource | null>(null);
   const turnstileRef = useRef<HTMLDivElement>(null);
+
+  /** The raw error behind the friendly line, shown small underneath it. */
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -211,40 +216,33 @@ export function AuthPage() {
   }, []);
 
   /**
-   * The Turnstile widget, rendered once when a site key exists.
+   * The widget, created once but only *rendered* when a request needs a token.
    *
-   * `interaction-only` is the appearance /try uses: Cloudflare shows nothing unless it decides a
-   * person has to do something, and the token arrives in the callback either way. A widget that
-   * fails to load leaves the token empty, and the sign-in goes ahead without it rather than
-   * blocking on a challenge that Supabase may not even be asking for.
+   * Nothing here waits for Cloudflare on page load: `ensure()` runs the widget at submit time and
+   * give up after a few seconds, so a slow challenge cannot hold the form hostage.
    */
   useEffect(() => {
-    const siteKey = turnstileSiteKey();
-    if (siteKey === null || turnstileRef.current === null) return;
-    let cancelled = false;
-    let widgetId: string | null = null;
-    void loadTurnstile()
-      .then(() => {
-        if (cancelled || turnstileRef.current === null) return;
-        const api = turnstileApi();
-        if (api === undefined) return;
-        widgetId = api.render(turnstileRef.current, {
-          sitekey: siteKey,
-          appearance: "interaction-only",
-          callback: (token: string) => setCaptchaToken(token),
-          "error-callback": () => setCaptchaToken(""),
-          "expired-callback": () => setCaptchaToken(""),
-        });
-      })
-      .catch(() => {
-        // See above: no widget, no token, and the form still works.
-      });
+    const source = createTurnstileTokenSource({
+      siteKey: turnstileSiteKey(),
+      container: turnstileRef.current,
+      load: loadTurnstile,
+      api: turnstileApi,
+    });
+    tokenSource.current = source;
     return () => {
-      cancelled = true;
-      const api = turnstileApi();
-      if (api !== undefined && widgetId !== null) api.remove(widgetId);
+      tokenSource.current = null;
     };
   }, []);
+
+  /** A token for this attempt, and a fresh one for the next. */
+  async function takeCaptchaToken(): Promise<string | null> {
+    return (await tokenSource.current?.ensure()) ?? null;
+  }
+
+  /** Drops the spent token and resets the widget, after success or failure alike. */
+  function releaseCaptchaToken(): void {
+    tokenSource.current?.reset();
+  }
 
   /**
    * Legacy links: `?tab=signup` means the email step, and `?request=1` means the invite request page,
@@ -280,14 +278,17 @@ export function AuthPage() {
   const google = async (hint?: string) => {
     setBusy("google");
     setError(null);
+    setErrorDetail(null);
     const address = normalizeEmail(hint ?? email);
+    // A fresh token, in the same options object as the redirect. The previous version spread a
+    // second `options` key before this one, which the literal then overwrote: the token never
+    // reached Supabase on this path at all.
+    const token = await takeCaptchaToken();
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      // Sent only when the widget produced one: with Supabase CAPTCHA off, this object is exactly
-      // the object it was before the widget existed.
-      ...(captchaToken === "" ? {} : { options: { captchaToken } }),
       options: {
         redirectTo: callbackUrl(),
+        ...(token === null ? {} : { captchaToken: token }),
         // Take the URL back rather than letting supabase-js navigate, so any error it returns lands in
         // the error state below.
         //
@@ -299,8 +300,10 @@ export function AuthPage() {
         ...(address === "" ? {} : { queryParams: { login_hint: address } }),
       },
     });
+    releaseCaptchaToken();
     if (oauthError) {
       setError(friendlyAuthError(oauthError));
+      setErrorDetail(authErrorDetail(oauthError));
       setBusy(null);
       return;
     }
@@ -321,18 +324,22 @@ export function AuthPage() {
    */
   async function emailLink(address: string, kind: LinkKind): Promise<void> {
     setError(null);
+    setErrorDetail(null);
     setBusy("link");
+    const token = await takeCaptchaToken();
     const { error: linkError } = await supabase.auth.signInWithOtp({
       email: address,
       options: {
         shouldCreateUser: true,
         emailRedirectTo: `${window.location.origin}/auth/welcome`,
-        ...(captchaToken === "" ? {} : { captchaToken }),
+        ...(token === null ? {} : { captchaToken: token }),
       },
     });
+    releaseCaptchaToken();
     setBusy(null);
     if (linkError) {
       setError(friendlyAuthError(linkError));
+      setErrorDetail(authErrorDetail(linkError));
       return;
     }
     // A link that creates the account is the sign-up finishing as far as the page can see: the
@@ -354,18 +361,22 @@ export function AuthPage() {
    */
   async function emailSignInLink(address: string): Promise<void> {
     setError(null);
+    setErrorDetail(null);
     setBusy("link");
+    const token = await takeCaptchaToken();
     const { error: linkError } = await supabase.auth.signInWithOtp({
       email: address,
       options: {
         shouldCreateUser: false,
         emailRedirectTo: window.location.origin,
-        ...(captchaToken === "" ? {} : { captchaToken }),
+        ...(token === null ? {} : { captchaToken: token }),
       },
     });
+    releaseCaptchaToken();
     setBusy(null);
     if (linkError) {
       setError(friendlyAuthError(linkError));
+      setErrorDetail(authErrorDetail(linkError));
       return;
     }
     setLinkSent({ email: address, kind: "signin" });
@@ -680,9 +691,14 @@ export function AuthPage() {
                       />
                     </div>
                     {error && (
-                      <p role="alert" className="text-sm text-destructive">
-                        {error}
-                      </p>
+                      <div role="alert">
+                        <p className="text-sm text-destructive">{error}</p>
+                        {errorDetail !== null && (
+                          <p className="mt-1 text-xs text-muted-foreground break-words">
+                            {errorDetail}
+                          </p>
+                        )}
+                      </div>
                     )}
                     <Button
                       type="submit"
@@ -768,9 +784,14 @@ export function AuthPage() {
                     read.
                   </p>
                   {error && (
-                    <p role="alert" className="text-sm text-destructive">
-                      {error}
-                    </p>
+                    <div role="alert">
+                      <p className="text-sm text-destructive">{error}</p>
+                      {errorDetail !== null && (
+                        <p className="mt-1 text-xs text-muted-foreground break-words">
+                          {errorDetail}
+                        </p>
+                      )}
+                    </div>
                   )}
                   <button
                     type="button"

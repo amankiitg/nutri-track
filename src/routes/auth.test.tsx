@@ -13,6 +13,9 @@ import { AuthPage } from "./auth";
 
 const mocks = vi.hoisted(() => ({
   authEntryState: vi.fn(),
+  /** The captcha source: what a token looks like, and whether it was released afterwards. */
+  ensure: vi.fn(),
+  release: vi.fn(),
   signInWithOtp: vi.fn(),
   signInWithPassword: vi.fn(),
   signInWithOAuth: vi.fn(),
@@ -30,6 +33,26 @@ let signupsOpen = false;
 
 vi.mock("@/lib/open-signups", () => ({
   openSignups: async () => signupsOpen,
+}));
+
+/**
+ * The captcha source, replaced with one the test drives.
+ *
+ * The real one waits on a Cloudflare widget; here `ensure` answers whatever the test set, which is
+ * what lets the tests assert that a token is fetched at submit time and released afterwards.
+ */
+vi.mock("@/lib/turnstile-token", () => ({
+  createTurnstileTokenSource: () => ({
+    ensure: () => mocks.ensure(),
+    reset: () => mocks.release(),
+    hasToken: () => true,
+  }),
+}));
+
+vi.mock("@/lib/turnstile", () => ({
+  turnstileSiteKey: () => "site-key",
+  loadTurnstile: async () => {},
+  turnstileApi: () => undefined,
 }));
 
 vi.mock("@/lib/post-signin", () => ({
@@ -79,6 +102,7 @@ beforeEach(() => {
   sessionStorage.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.authEntryState.mockResolvedValue("has_account");
+  mocks.ensure.mockResolvedValue("captcha-token-1");
   mocks.signInWithOtp.mockResolvedValue({ error: null });
 });
 
@@ -139,6 +163,9 @@ describe("sending the sign-in link", () => {
       options: {
         shouldCreateUser: false,
         emailRedirectTo: window.location.origin,
+        // A freshly fetched token rides along; it is the same call plus the proof GoTrue asks for
+        // when CAPTCHA is on.
+        captchaToken: "captcha-token-1",
       },
     });
   });
@@ -194,5 +221,68 @@ describe("the sign-up screen, with the switch either way", () => {
     render(<AuthPage />);
     // The read lands asynchronously; the closed sentence is the first one drawn.
     expect(await screen.findByText(/Invite-only for now/)).toBeTruthy();
+  });
+});
+
+describe("the captcha token on the sign-in calls", () => {
+  beforeEach(() => {
+    signupsOpen = true;
+  });
+
+  it("fetches a token at submit time and sends it with the magic link", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("open_signup");
+    mocks.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "stranger@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Email me a link" }));
+
+    expect(mocks.ensure).toHaveBeenCalled();
+    expect(mocks.signInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ captchaToken: "captcha-token-1" }),
+      }),
+    );
+  });
+
+  it("releases the spent token whether the call worked or not", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("open_signup");
+    mocks.signInWithOtp.mockResolvedValue({
+      data: {},
+      error: {
+        code: "captcha_failed",
+        status: 400,
+        message: "captcha verification process failed",
+      },
+    });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "stranger@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Email me a link" }));
+
+    expect(mocks.release).toHaveBeenCalled();
+    expect(await screen.findByText(/captcha_failed/)).toBeInTheDocument();
+    expect(screen.getByText(/captcha verification process failed/)).toBeInTheDocument();
+  });
+
+  it("sends the token inside the Google options object, not beside it", async () => {
+    const user = userEvent.setup();
+    mocks.signInWithOAuth.mockResolvedValue({
+      data: { url: "https://accounts.google.com/x" },
+      error: null,
+    });
+    render(<AuthPage />);
+
+    await user.click(screen.getByRole("button", { name: /continue with google/i }));
+
+    expect(mocks.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({ captchaToken: "captcha-token-1" }),
+      }),
+    );
   });
 });

@@ -47,6 +47,8 @@ export interface TurnstileApi {
   render(element: HTMLElement, options: Record<string, unknown>): string;
   /** Runs an invisible widget's challenge; the render callback receives the token. */
   execute(widgetId: string): void;
+  /** Clears the widget's token, so the next `execute` produces a new one. */
+  reset(widgetId: string): void;
   remove(widgetId: string): void;
 }
 
