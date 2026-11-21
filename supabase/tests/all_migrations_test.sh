@@ -68,11 +68,18 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_anonymous.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_funnel.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_food.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_open_signups.sql"
 
 # Roll back newest first, checking each predecessor comes back. The no-food rollback goes
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261120160000_open_signups.sql"
+settings_left=$("${PSQL[@]}" -Atc "select coalesce(to_regclass('public.app_settings')::text, 'none')")
+[ "${settings_left}" = "none" ] || { echo "FAIL: app_settings survived its rollback" >&2; exit 1; }
+switch_left=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='open_signups'")
+[ "${switch_left}" = "0" ] || { echo "FAIL: open_signups survived its rollback" >&2; exit 1; }
+echo "ok - the open-signups migration rolls back: the switch and its table are gone"
 apply "${ROOT}/supabase/rollback/20261120150000_no_food_result.sql"
 refund_left=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
 [ "${refund_left}" = "0" ] || { echo "FAIL: trial_scan_refund survived its rollback" >&2; exit 1; }
@@ -103,6 +110,7 @@ apply "${MIGRATIONS}/20261112120000_admin_trial_list.sql"
 apply "${MIGRATIONS}/20261114120000_trial_anonymous.sql"
 apply "${MIGRATIONS}/20261120120000_trial_funnel.sql"
 apply "${MIGRATIONS}/20261120150000_no_food_result.sql"
+apply "${MIGRATIONS}/20261120160000_open_signups.sql"
 refund_back=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
 [ "${refund_back}" = "1" ] || { echo "FAIL: trial_scan_refund missing after the no-food migration reapplied" >&2; exit 1; }
 funnel_back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")

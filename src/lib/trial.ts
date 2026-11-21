@@ -20,8 +20,15 @@ function trialUrl(path: string): string {
   return parseMealUrl().replace(/\/parse-meal$/, "") + path;
 }
 
-/** The two funnel steps the page is allowed to report; the rest are the server's. */
-export type PageFunnelEvent = "try_page_view" | "analyse_tapped";
+/**
+ * The funnel steps the page is allowed to report; the rest are the server's.
+ *
+ * The last two belong to the sign-in screen rather than to /try: the sign-up form appeared, and an
+ * account was created. They are reported by the page because only the page knows a person got that
+ * far, and they are capped like the other two for the same reason.
+ */
+export type PageFunnelEvent =
+  "try_page_view" | "analyse_tapped" | "signup_started" | "signup_completed";
 
 /**
  * Counts one step of the trial funnel, and never does anything else.

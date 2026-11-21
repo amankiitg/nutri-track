@@ -14,13 +14,16 @@
 import { createFileRoute, getRouteApi, redirect } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useState } from "react";
 import {
   FunnelCard,
   InviteList,
   InviteRequestsPanel,
+  SignupsCard,
   SpendPanel,
   TrialCard,
 } from "@/components/admin/panels";
+import { openSignups } from "@/lib/open-signups";
 
 const parentApi = getRouteApi("/_authenticated");
 
@@ -33,6 +36,23 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 function AdminPage() {
   const { user } = parentApi.useRouteContext();
+  /**
+   * Whether sign-ups are open, which decides whether the request list is worth showing.
+   *
+   * Null until the read lands, and the panel is hidden only when open is explicitly true: a slow
+   * read must not blink the section away, and a failed one leaves the page as it was.
+   */
+  const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void openSignups().then((open) => {
+      if (active) setSignupsOpen(open);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="app-shell space-y-6 py-8">
@@ -46,7 +66,8 @@ function AdminPage() {
         </p>
       </header>
 
-      <InviteRequestsPanel />
+      <SignupsCard />
+      {signupsOpen !== true && <InviteRequestsPanel />}
       <InviteList adminId={user.id} />
       <TrialCard />
       <FunnelCard />

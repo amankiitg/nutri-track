@@ -47,11 +47,13 @@ export function inviteRequestMailto(email: string): string {
  * `google_only` is an account that has never had a password. A password box in front of it is a dead
  * end, and the only door that works is the one that says so.
  */
-export type AuthEntryState = "not_invited" | "invited_new" | "has_account" | "google_only" | "busy";
+export type AuthEntryState =
+  "not_invited" | "invited_new" | "open_signup" | "has_account" | "google_only" | "busy";
 
 const ENTRY_STATES: readonly AuthEntryState[] = [
   "not_invited",
   "invited_new",
+  "open_signup",
   "has_account",
   "google_only",
   "busy",

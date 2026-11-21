@@ -9,6 +9,7 @@ import { InviteAddress } from "@/components/invite/InviteAddress";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { signedInVisit } from "@/lib/post-signin";
 import { requestInvite, type InviteResult } from "@/lib/invite-request";
+import { openSignups } from "@/lib/open-signups";
 
 /**
  * Asking for an invite, as its own page.
@@ -79,6 +80,21 @@ function RequestInvitePage() {
   const [result, setResult] = useState<InviteResult | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    // With sign-ups open there is nothing to request either: the sign-in screen creates the
+    // account. Sent with the address the person arrived with, so nothing is retyped.
+    void openSignups().then((open) => {
+      if (!active || !open) return;
+      const query = email.trim() === "" ? "" : `?email=${encodeURIComponent(email)}`;
+      router.history.replace(`/auth${query}`);
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once; the address does not move
+  }, []);
 
   useEffect(() => {
     let active = true;

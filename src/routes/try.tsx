@@ -801,9 +801,12 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
             <div className="mt-8 space-y-4 rounded-2xl border border-border bg-muted/30 p-5">
               {anonymousTrial ? (
                 <>
-                  <h2 className="text-xl font-semibold">Your trial is done. Want full access?</h2>
+                  <h2 className="text-xl font-semibold">
+                    Your trial is done. Create a free account to keep tracking.
+                  </h2>
                   <p className="text-sm text-muted-foreground">
-                    Ask for an invite and you&apos;ll be able to save your meals and see your day.
+                    An account keeps your meals and shows your day. Sign in with your email and a
+                    link comes to your inbox.
                   </p>
 
                   {inviteResult === null && (
@@ -861,23 +864,24 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                   )}
 
                   <p className="text-sm text-muted-foreground">
-                    Already invited?{" "}
+                    Or skip the request and{" "}
                     <Link to="/auth" className="underline">
-                      Sign in
-                    </Link>
+                      create a free account
+                    </Link>{" "}
+                    now.
                   </p>
                 </>
               ) : invited ? (
                 <>
                   <h2 className="text-xl font-semibold">
-                    Your trial is done. Sign in to keep tracking.
+                    Your trial is done. Create a free account to keep tracking.
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Sign in with {email} to save your meals and see your day.
+                    Continue with {email} to save your meals and see your day.
                   </p>
                   <Button asChild className="w-full rounded-full">
                     <Link to="/auth" search={{ email }}>
-                      Sign in
+                      Create an account
                     </Link>
                   </Button>
                 </>

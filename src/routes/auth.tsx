@@ -18,6 +18,9 @@ import {
 import { safeRedirect } from "@/lib/auth-redirect";
 import { signedInVisit } from "@/lib/post-signin";
 import { authEntryState } from "@/lib/invite-request";
+import { openSignups } from "@/lib/open-signups";
+import { reportPageFunnelEvent } from "@/lib/trial";
+import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
 
 /**
  * Signing in, in one email-first flow.
@@ -53,7 +56,12 @@ const RESET_COOLDOWN_SECONDS = 60;
  * `verify` is the panel that replaces the form once a link has been sent, rather than a step: it
  * belongs to whichever step sent it.
  */
-type Step = "email" | "not_invited" | "invited_new" | "has_account" | "google_only" | "reset";
+/**
+ * `open_signup` is the state open sign-ups add: an address with no account, offered one. Every
+ * other state means what it did before, so with the switch off this screen is unchanged.
+ */
+type Step =
+  "email" | "not_invited" | "invited_new" | "open_signup" | "has_account" | "google_only" | "reset";
 
 /**
  * A countdown a button starts, used by the controls that must not be pressed twice in a row.
@@ -161,6 +169,22 @@ export function AuthPage() {
   /** Guards the automatic run, so `?email=` asks the database once rather than on every render. */
   const autoRan = useRef(false);
 
+  /**
+   * Whether anybody may create an account. Null while the answer is on its way, and the screen
+   * reads that as "not known yet" rather than as either answer.
+   */
+  const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null);
+
+  /**
+   * The Turnstile token, when there is one.
+   *
+   * The widget only exists if a site key is configured, and every sign-in call below sends
+   * `captchaToken` only when this string is non-empty. That is what makes the page work while
+   * Supabase CAPTCHA is off: no token means no field, and the call is exactly the call it was.
+   */
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     let active = true;
     // Somebody already signed in has no business on this page. Where they go is decided by the same
@@ -174,6 +198,53 @@ export function AuthPage() {
       active = false;
     };
   }, [router, search.redirect]);
+
+  // The switch, once, from the database.
+  useEffect(() => {
+    let active = true;
+    void openSignups().then((open) => {
+      if (active) setSignupsOpen(open);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /**
+   * The Turnstile widget, rendered once when a site key exists.
+   *
+   * `interaction-only` is the appearance /try uses: Cloudflare shows nothing unless it decides a
+   * person has to do something, and the token arrives in the callback either way. A widget that
+   * fails to load leaves the token empty, and the sign-in goes ahead without it rather than
+   * blocking on a challenge that Supabase may not even be asking for.
+   */
+  useEffect(() => {
+    const siteKey = turnstileSiteKey();
+    if (siteKey === null || turnstileRef.current === null) return;
+    let cancelled = false;
+    let widgetId: string | null = null;
+    void loadTurnstile()
+      .then(() => {
+        if (cancelled || turnstileRef.current === null) return;
+        const api = turnstileApi();
+        if (api === undefined) return;
+        widgetId = api.render(turnstileRef.current, {
+          sitekey: siteKey,
+          appearance: "interaction-only",
+          callback: (token: string) => setCaptchaToken(token),
+          "error-callback": () => setCaptchaToken(""),
+          "expired-callback": () => setCaptchaToken(""),
+        });
+      })
+      .catch(() => {
+        // See above: no widget, no token, and the form still works.
+      });
+    return () => {
+      cancelled = true;
+      const api = turnstileApi();
+      if (api !== undefined && widgetId !== null) api.remove(widgetId);
+    };
+  }, []);
 
   /**
    * Legacy links: `?tab=signup` means the email step, and `?request=1` means the invite request page,
@@ -212,6 +283,9 @@ export function AuthPage() {
     const address = normalizeEmail(hint ?? email);
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
+      // Sent only when the widget produced one: with Supabase CAPTCHA off, this object is exactly
+      // the object it was before the widget existed.
+      ...(captchaToken === "" ? {} : { options: { captchaToken } }),
       options: {
         redirectTo: callbackUrl(),
         // Take the URL back rather than letting supabase-js navigate, so any error it returns lands in
@@ -253,6 +327,7 @@ export function AuthPage() {
       options: {
         shouldCreateUser: true,
         emailRedirectTo: `${window.location.origin}/auth/welcome`,
+        ...(captchaToken === "" ? {} : { captchaToken }),
       },
     });
     setBusy(null);
@@ -260,6 +335,9 @@ export function AuthPage() {
       setError(friendlyAuthError(linkError));
       return;
     }
+    // A link that creates the account is the sign-up finishing as far as the page can see: the
+    // inbox is what makes it real, and by then the browser is gone.
+    if (kind === "setup") reportPageFunnelEvent("signup_completed");
     setLinkSent({ email: address, kind });
     resendCooldown.start();
     toast.success("Link sent");
@@ -282,6 +360,7 @@ export function AuthPage() {
       options: {
         shouldCreateUser: false,
         emailRedirectTo: window.location.origin,
+        ...(captchaToken === "" ? {} : { captchaToken }),
       },
     });
     setBusy(null);
@@ -323,6 +402,9 @@ export function AuthPage() {
       setError("Too many attempts. Try again in a minute.");
       return;
     }
+    // The sign-up screen appearing is the funnel step; it is counted here rather than in the render
+    // so a re-render cannot count it twice.
+    if (state === "open_signup") reportPageFunnelEvent("signup_started");
     setStep(state);
   }
 
@@ -476,13 +558,15 @@ export function AuthPage() {
       ? "Welcome"
       : step === "not_invited"
         ? "This email isn't invited yet."
-        : step === "invited_new"
-          ? "You're invited!"
-          : step === "has_account"
-            ? "Welcome back"
-            : step === "google_only"
-              ? "This account signs in with Google."
-              : "Reset your password";
+        : step === "open_signup"
+          ? "Create your account"
+          : step === "invited_new"
+            ? "You're invited!"
+            : step === "has_account"
+              ? "Welcome back"
+              : step === "google_only"
+                ? "This account signs in with Google."
+                : "Reset your password";
 
   /** The panel that replaces the form once a link has gone out. */
   const linkPanel =
@@ -553,7 +637,9 @@ export function AuthPage() {
           <h1 className="text-4xl font-semibold">{heading}</h1>
           {step === "email" && (
             <p className="mt-2 text-muted-foreground">
-              Invite-only for now. Use the email you were invited with.
+              {signupsOpen === true
+                ? "New here, or coming back? Either way, start with your email."
+                : "Invite-only for now. Use the email you were invited with."}
             </p>
           )}
 
@@ -612,16 +698,22 @@ export function AuthPage() {
                     The request page has an address of its own, and the typed address travels with
                     the link so nobody has to type it twice.
                   */}
-                  <p className="text-xs text-muted-foreground">
-                    No invite yet?{" "}
-                    <Link
-                      to="/auth/request"
-                      search={email.trim() === "" ? {} : { email: normalizeEmail(email) }}
-                      className="underline"
-                    >
-                      Request one
-                    </Link>
-                  </p>
+                  {signupsOpen === false && (
+                    <p className="text-xs text-muted-foreground">
+                      No invite yet?{" "}
+                      <Link
+                        to="/auth/request"
+                        search={email.trim() === "" ? {} : { email: normalizeEmail(email) }}
+                        className="underline"
+                      >
+                        Request one
+                      </Link>
+                    </p>
+                  )}
+
+                  {/* The Turnstile widget lives here, rendered once and invisible unless Cloudflare
+                      decides a person has to do something. No site key means no widget at all. */}
+                  <div ref={turnstileRef} />
                 </>
               )}
 
@@ -636,6 +728,50 @@ export function AuthPage() {
                       Request an invite
                     </Link>
                   </Button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={useDifferentEmail}
+                  >
+                    Use a different email
+                  </button>
+                </>
+              )}
+
+              {step === "open_signup" && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>{email}</strong> has no account yet, and sign-ups are open. We&apos;ll
+                    email you a link to create one.
+                  </p>
+                  <Button
+                    type="button"
+                    className="h-12 w-full rounded-full text-base"
+                    disabled={busy !== null}
+                    onClick={() => void emailLink(email, "setup")}
+                  >
+                    {busy === "link" ? <Loader2 className="animate-spin" /> : null}
+                    Email me a link
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-12 w-full rounded-full text-base"
+                    disabled={busy !== null}
+                    onClick={() => void google(email)}
+                  >
+                    {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+                    Continue with Google
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    The link proves the address is yours, which is also what lets your first meal be
+                    read.
+                  </p>
+                  {error && (
+                    <p role="alert" className="text-sm text-destructive">
+                      {error}
+                    </p>
+                  )}
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline"
