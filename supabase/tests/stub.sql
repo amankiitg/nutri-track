@@ -26,7 +26,12 @@ create table if not exists auth.users (
   id uuid primary key,
   email text,
   raw_user_meta_data jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Present on the real table, read by `auth_entry_state` to tell an account with a password from
+  -- one created by a magic link. Empty string is Supabase's "no password", which is why the
+  -- function tests `nullif(..., '')` rather than only `is not null`.
+  encrypted_password text,
+  email_confirmed_at timestamptz
 );
 
 create or replace function auth.uid() returns uuid

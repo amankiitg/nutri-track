@@ -102,5 +102,7 @@ describe("the sign-in answer", () => {
     expect(body).toContain("'link_only'");
     expect(body).toContain("'has_password'");
     expect(body).toContain("encrypted_password");
+    // An account with a link and Google gets both doors, so the answer has to name that case.
+    expect(body).toContain("'link_only_google'");
   });
 });

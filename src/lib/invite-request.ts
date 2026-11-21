@@ -56,6 +56,8 @@ export type AuthEntryState =
   | "open_signup"
   | "has_password"
   | "link_only"
+  /** No password, but a Google identity beside the email one: both doors work. */
+  | "link_only_google"
   /** What a database from before the three-way split answers; read as `has_password`. */
   | "has_account"
   | "google_only"
@@ -67,6 +69,7 @@ const ENTRY_STATES: readonly AuthEntryState[] = [
   "open_signup",
   "has_password",
   "link_only",
+  "link_only_google",
   "has_account",
   "google_only",
   "busy",
