@@ -213,7 +213,11 @@ describe("the meal-first trial page", () => {
     const user = userEvent.setup();
 
     const file = new File(["x"], "plate.jpg", { type: "image/jpeg" });
-    await user.upload(screen.getByLabelText(/snap or upload a photo/i), file);
+    // The camera input behind the box: the box is a button that opens it, so the file goes to the
+    // input the box clicks.
+    const camera = document.querySelector<HTMLInputElement>('input[data-snap-input="camera"]');
+    if (camera === null) throw new Error("the snap box has no camera input");
+    await user.upload(camera, file);
 
     expect(
       await screen.findByRole("heading", { name: "Enter your email to see your results" }),
