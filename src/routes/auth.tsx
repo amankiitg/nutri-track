@@ -75,6 +75,11 @@ type Step =
   | "link_only"
   /** The same, plus a Google identity: Google works too. */
   | "link_only_google"
+  /**
+   * Evidence of a password, plus a Google identity. Both doors, and the password view arrives first
+   * because it is the one the evidence is about.
+   */
+  | "has_password_google"
   | "google_only"
   | "reset";
 
@@ -203,13 +208,12 @@ export function AuthPage() {
   /** The raw error behind the friendly line, shown small underneath it. */
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   /**
-   * The password form, revealed on request.
+   * Which of the two views an account with a password is looking at.
    *
-   * An account with an email identity is shown the link first, because a magic-link account has no
-   * password and GoTrue cannot tell us which kind an account is. People who do have a password get
-   * here by pressing the quiet link under the button.
+   * They are alternatives, not layers. "Use an email link instead" swaps this value and the other
+   * panel unmounts in the same commit, which is what keeps exactly one view on the screen.
    */
-  const [passwordInstead, setPasswordInstead] = useState(false);
+  const [accountView, setAccountView] = useState<"password" | "link">("password");
 
   useEffect(() => {
     let active = true;
@@ -434,8 +438,8 @@ export function AuthPage() {
     // The sign-up screen appearing is the funnel step; it is counted here rather than in the render
     // so a re-render cannot count it twice.
     if (state === "open_signup") reportPageFunnelEvent("signup_started");
-    // A new address starts at the link again, not on the previous address's revealed form.
-    setPasswordInstead(false);
+    // A new address starts on the view its own answer deserves, not on the last address's.
+    setAccountView("password");
     // One translation, in one place: a database from before the three-way split says `has_account`,
     // and everything below speaks in `has_password`.
     setStep(state === "has_account" ? "has_password" : state);
@@ -575,8 +579,10 @@ export function AuthPage() {
   /** Back to the address field, from any step. Everything typed after it belongs to that step. */
   function useDifferentEmail(): void {
     setStep("email");
-    // A different address is a different account, so the revealed password form goes away.
-    setPasswordInstead(false);
+    // A different address is a different account, so the password view goes away, and the field is
+    // cleared: what is left of the old address is a value nobody typed for this step.
+    setAccountView("password");
+    setEmail("");
     setPassword("");
     setShowPassword(false);
     setError(null);
@@ -593,6 +599,25 @@ export function AuthPage() {
     setStep("reset");
   }
 
+  /**
+   * Swaps between the password view and the link view of an account that has both doors.
+   *
+   * The other view unmounts in the same commit, so there is never a moment with two panels on the
+   * screen, and the password typed into the view being left is dropped rather than carried to a
+   * view that does not ask for it.
+   */
+  function showAccountView(view: "password" | "link"): void {
+    setAccountView(view);
+    setPassword("");
+    setShowPassword(false);
+    setError(null);
+    setErrorDetail(null);
+    setMismatch(false);
+  }
+
+  /** An account the database has evidence of a password for: two views, one at a time. */
+  const passwordAccount = step === "has_password" || step === "has_password_google";
+
   const heading =
     step === "email"
       ? "Welcome"
@@ -602,7 +627,10 @@ export function AuthPage() {
           ? "Create your account"
           : step === "invited_new"
             ? "You're invited!"
-            : step === "has_password" || step === "link_only" || step === "link_only_google"
+            : step === "has_password" ||
+                step === "has_password_google" ||
+                step === "link_only" ||
+                step === "link_only_google"
               ? "Welcome back"
               : step === "google_only"
                 ? "This account signs in with Google."
@@ -870,7 +898,13 @@ export function AuthPage() {
                 </>
               )}
 
-              {(step === "has_password" || passwordInstead) && (
+              {/*
+                An account with evidence of a password. The password view arrives first, and the link
+                is a view of its own reached from the quiet link below, never a panel stacked under
+                this one: two panels at once is how this screen grew two "Email me a sign-in link"
+                buttons and ran "Forgot password?" into "Use an email link instead".
+              */}
+              {passwordAccount && accountView === "password" && (
                 <>
                   <p className="text-sm text-muted-foreground">
                     Signing in as <strong>{email}</strong>.
@@ -883,6 +917,9 @@ export function AuthPage() {
                         autoComplete="current-password"
                         required
                         minLength={8}
+                        // This view appeared because somebody asked for it, so the field is where
+                        // they are going next.
+                        autoFocus
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         visible={showPassword}
@@ -890,31 +927,6 @@ export function AuthPage() {
                         className="h-11"
                       />
                     </div>
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground underline"
-                      onClick={() => openReset("has_password")}
-                    >
-                      Forgot password?
-                    </button>
-                    {passwordInstead && (
-                      <button
-                        type="button"
-                        className="text-xs text-muted-foreground underline"
-                        onClick={() => {
-                          setPasswordInstead(false);
-                          setPassword("");
-                          setError(null);
-                          setErrorDetail(null);
-                          setMismatch(false);
-                        }}
-                      >
-                        Use an email link instead
-                      </button>
-                    )}
-                    {errorDetail !== null && (
-                      <p className="text-xs text-muted-foreground break-words">{errorDetail}</p>
-                    )}
                     {mismatch ? (
                       <p role="alert" className="text-sm text-destructive">
                         {CREDENTIALS_MISMATCH.before}
@@ -938,6 +950,9 @@ export function AuthPage() {
                         </p>
                       )
                     )}
+                    {errorDetail !== null && (
+                      <p className="text-xs text-muted-foreground break-words">{errorDetail}</p>
+                    )}
                     <Button
                       type="submit"
                       className="h-12 w-full rounded-full text-base"
@@ -947,16 +962,95 @@ export function AuthPage() {
                       Sign in
                     </Button>
                   </form>
+                  {step === "has_password_google" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 w-full rounded-full text-base"
+                      onClick={() => void google(email)}
+                      disabled={busy !== null}
+                      ref={googleButton}
+                    >
+                      {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+                      Continue with Google
+                    </Button>
+                  )}
+                  {/*
+                    One row, with room between the two: as separate inline buttons they ran together
+                    into "Forgot password?Use an email link instead".
+                  */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline"
+                      onClick={() => openReset("has_password")}
+                    >
+                      Forgot password?
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline"
+                      onClick={() => showAccountView("link")}
+                    >
+                      Use an email link instead
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={useDifferentEmail}
+                  >
+                    Use a different email
+                  </button>
+                </>
+              )}
+
+              {/* The other view of the same account, and the only thing on the screen when it is. */}
+              {passwordAccount && accountView === "link" && (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    <strong>{email}</strong> signs in with a link, or with the password you set.
+                  </p>
                   <Button
                     type="button"
-                    variant="outline"
                     className="h-12 w-full rounded-full text-base"
                     onClick={() => void emailSignInLink(email)}
                     disabled={busy !== null}
+                    autoFocus
                   >
                     {busy === "link" && <Loader2 className="animate-spin" />}
                     Email me a sign-in link
                   </Button>
+                  {step === "has_password_google" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 w-full rounded-full text-base"
+                      onClick={() => void google(email)}
+                      disabled={busy !== null}
+                      ref={googleButton}
+                    >
+                      {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+                      Continue with Google
+                    </Button>
+                  )}
+                  {error && (
+                    <div role="alert">
+                      <p className="text-sm text-destructive">{error}</p>
+                      {errorDetail !== null && (
+                        <p className="mt-1 text-xs text-muted-foreground break-words">
+                          {errorDetail}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={() => showAccountView("password")}
+                  >
+                    Use a password instead
+                  </button>
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline"
@@ -968,9 +1062,10 @@ export function AuthPage() {
               )}
 
               {/*
-                An email account that never set a password. It has no password box because there is
-                no password to type: this is what a magic-link sign-up leaves behind, and every
-                account created by the open sign-up flow starts here.
+                An email account with no evidence of a password, and no Google identity: one door,
+                and no password control of any kind. It has none, and a control that cannot work is
+                worse than none. This is what a magic-link sign-up leaves behind, and every account
+                created by the open sign-up flow starts here.
               */}
               {step === "link_only" && (
                 <>
@@ -988,19 +1083,16 @@ export function AuthPage() {
                     Email me a sign-in link
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    Set a password in Settings later, and this screen will offer it instead.
+                    Set a password in Settings, and this screen will offer it from then on.
                   </p>
+                  {/* This panel had no way back: every other state has one, and a person who typed
+                      the wrong address here was stuck with it. */}
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline"
-                    onClick={() => {
-                      setPasswordInstead(true);
-                      setError(null);
-                      setErrorDetail(null);
-                      setMismatch(false);
-                    }}
+                    onClick={useDifferentEmail}
                   >
-                    Use a password instead
+                    Use a different email
                   </button>
                 </>
               )}
@@ -1035,20 +1127,8 @@ export function AuthPage() {
                     Continue with Google
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    Set a password in Settings later, and this screen will offer it instead.
+                    Set a password in Settings, and this screen will offer it from then on.
                   </p>
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground underline"
-                    onClick={() => {
-                      setPasswordInstead(true);
-                      setError(null);
-                      setErrorDetail(null);
-                      setMismatch(false);
-                    }}
-                  >
-                    Use a password instead
-                  </button>
                   {error && (
                     <div role="alert">
                       <p className="text-sm text-destructive">{error}</p>
@@ -1173,7 +1253,9 @@ export function AuthPage() {
                         setStep(resetFrom);
                       }}
                     >
-                      {resetFrom === "has_password" ? "Back to sign in" : "Back to the email field"}
+                      {resetFrom === "has_password" || resetFrom === "has_password_google"
+                        ? "Back to sign in"
+                        : "Back to the email field"}
                     </button>
                     <button
                       type="button"

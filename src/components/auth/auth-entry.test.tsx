@@ -355,9 +355,11 @@ describe("getting back to the address", () => {
     });
     await user.click(screen.getByRole("button", { name: /use a different email/i }));
 
-    // Back on the email field, with the address still there to edit rather than retype.
+    // Back on the email field, and empty: the address that led here belonged to the screen that
+    // was just left, and a field still holding it makes "use a different email" a delete-first
+    // instruction on a phone.
     expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^email$/i)).toHaveValue(address);
+    expect(screen.getByLabelText(/^email$/i)).toHaveValue("");
   });
 });
 

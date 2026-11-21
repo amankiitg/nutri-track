@@ -29,6 +29,16 @@ dist-ssr
 # pooler-url, which contains the database password in plain text.
 supabase/.temp/
 
+# The local stack the e2e suite drives: its own config and workdir, and the docker client config
+# that points at colima. Local keys and local mail only, and never a copy of production's.
+.e2e/
+.env.e2e
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

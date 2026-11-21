@@ -53,6 +53,22 @@ create table auth.identities (
   identity_data jsonb
 );
 
+-- Two tables the password evidence rule reads: a session, and the authentication methods its
+-- claims record. GoTrue writes one mfa_amr_claims row per method used to establish the session,
+-- which is why "has ever signed in with a password" is a question with an answer.
+create table auth.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz default now()
+);
+
+create table auth.mfa_amr_claims (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references auth.sessions (id) on delete cascade,
+  authentication_method text not null,
+  created_at timestamptz default now()
+);
+
 create function auth.uid() returns uuid
 language sql stable as $$
   select coalesce(

@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   signOut: vi.fn(),
   navigate: vi.fn(),
   authEntryState: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -32,6 +33,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       updateUser: h.updateUser,
       signOut: h.signOut,
     },
+    rpc: h.rpc,
   },
 }));
 
@@ -41,6 +43,10 @@ vi.mock("@/integrations/supabase/client", () => ({
  */
 vi.mock("@/lib/invite-request", () => ({
   authEntryState: () => h.authEntryState(),
+  // The real rule, not a stub of it: the label under test is exactly "does this answer mean a
+  // password exists".
+  stateHasPassword: (state: string | null) =>
+    state === "has_password" || state === "has_password_google",
 }));
 
 import { AccountSection } from "./AccountSection";
@@ -143,6 +149,9 @@ describe("setting a password", () => {
     await user.click(screen.getByRole("button", { name: /set a password/i }));
 
     expect(h.updateUser).toHaveBeenCalledWith({ password: "correct horse battery" });
+    // The flag the sign-in screen reads, written here because GoTrue records nothing for a password
+    // that has been set and not yet used.
+    expect(h.rpc).toHaveBeenCalledWith("mark_has_password");
     // Read again, because setting one turns a Google-only account into a two-provider one and the
     // label has to follow it.
     await waitFor(() => expect(h.getUser).toHaveBeenCalledTimes(2));

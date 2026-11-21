@@ -122,16 +122,20 @@ async function reachStep(user: ReturnType<typeof userEvent.setup>, state: string
       ? "This email isn't invited yet."
       : state === "invited_new"
         ? "You're invited!"
-        : state === "has_account"
-          ? "Welcome back"
-          : "This account signs in with Google.";
+        : state === "open_signup"
+          ? "Create your account"
+          : state === "google_only"
+            ? "This account signs in with Google."
+            : "Welcome back";
   await screen.findByRole("heading", { name: heading });
 }
 
 describe("the sign-in link button", () => {
-  it("shows on the has_account step", async () => {
+  it("is behind the password view on the has_account step, one press away", async () => {
     const user = userEvent.setup();
     await reachStep(user, "has_account");
+    expect(screen.queryByRole("button", { name: "Email me a sign-in link" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Use an email link instead" }));
     expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
   });
 
@@ -160,6 +164,7 @@ describe("sending the sign-in link", () => {
   it("calls signInWithOtp with shouldCreateUser false and the current origin", async () => {
     const user = userEvent.setup();
     await reachStep(user, "has_account");
+    await user.click(screen.getByRole("button", { name: "Use an email link instead" }));
     await user.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
 
     await waitFor(() => expect(mocks.signInWithOtp).toHaveBeenCalledTimes(1));
@@ -178,6 +183,7 @@ describe("sending the sign-in link", () => {
   it("shows the inbox sentence and holds the resend behind a 60 second cooldown", async () => {
     const user = userEvent.setup();
     await reachStep(user, "has_account");
+    await user.click(screen.getByRole("button", { name: "Use an email link instead" }));
     await user.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
 
     expect(await screen.findByRole("heading", { name: "Check your inbox" })).toBeTruthy();
@@ -445,66 +451,122 @@ describe("an account with a link and Google but no password", () => {
   });
 });
 
-describe("an account whose password we cannot know about", () => {
-  it("offers the link first, with the password form behind a quiet link", async () => {
+describe("the link view of an account with a password", () => {
+  async function toLinkView(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.click(await screen.findByRole("button", { name: "Use an email link instead" }));
+  }
+
+  it("is one press away on the has_account step, and the only view is the one showing", async () => {
     const user = userEvent.setup();
-    mocks.authEntryState.mockResolvedValue("link_only");
-    render(<AuthPage />);
+    await reachStep(user, "has_account");
 
-    await user.type(screen.getByLabelText("Email"), "link@example.com");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    // No password box on arrival: GoTrue writes a hash for magic-link accounts, so a box here
-    // would be asking for a password that does not exist.
-    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
-    expect(screen.queryByLabelText("Password")).toBeNull();
-    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "Use a password instead" }));
-
-    // People who do have one get exactly the form they expected.
+    // The password view arrives, because a password is the thing the answer is about.
     expect(await screen.findByLabelText("Password")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /use an email link instead/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Email me a sign-in link" })).toBeNull();
+
+    await toLinkView(user);
+
+    // Now the link view, and the password form is gone rather than sitting under it.
+    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /forgot password/i })).toBeNull();
   });
 
-  it("shows the raw error under a refused password, as the link flow does", async () => {
+  it("toggles as many times as it likes without ever stacking the two", async () => {
     const user = userEvent.setup();
-    mocks.authEntryState.mockResolvedValue("link_only");
+    await reachStep(user, "has_account");
+    await screen.findByLabelText("Password");
+
+    for (let round = 0; round < 3; round += 1) {
+      await toLinkView(user);
+      expect(screen.getAllByRole("button", { name: "Email me a sign-in link" })).toHaveLength(1);
+      expect(screen.queryByLabelText("Password")).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Use a password instead" }));
+      expect(screen.getAllByLabelText("Password")).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Email me a sign-in link" })).toBeNull();
+    }
+  });
+
+  it("moves focus to the control the view is about", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "has_account");
+    expect(await screen.findByLabelText("Password")).toHaveFocus();
+
+    await toLinkView(user);
+    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "Use a password instead" }));
+    expect(screen.getByLabelText("Password")).toHaveFocus();
+  });
+});
+
+describe("an account with no evidence of a password", () => {
+  it("shows one door and no password control at all", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "link_only");
+
+    expect(await screen.findByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+    // Not "hidden behind a quiet link": there is no password to type, so there is nothing to
+    // offer, and a control that cannot work is worse than no control.
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByRole("button", { name: /use a password instead/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /forgot password/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /use an email link instead/i })).toBeNull();
+  });
+
+  it("adds Google beside the link when the account has a Google identity", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "link_only_google");
+
+    expect(await screen.findByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /continue with google/i })).toBeTruthy();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("shows the password view first, with Google beside it, once a password is known", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "has_password_google");
+
+    expect(await screen.findByLabelText("Password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /continue with google/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Email me a sign-in link" })).toBeNull();
+  });
+});
+
+describe("a refused password", () => {
+  it("shows the sentence, and the raw error under it as the link flow does", async () => {
+    const user = userEvent.setup();
     mocks.signInWithPassword.mockResolvedValue({
       data: { user: null, session: null },
       error: { code: "invalid_credentials", status: 400, message: "Invalid login credentials" },
     });
-    render(<AuthPage />);
+    await reachStep(user, "has_account");
 
-    await user.type(screen.getByLabelText("Email"), "link@example.com");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await user.click(await screen.findByRole("button", { name: "Use a password instead" }));
     await user.type(await screen.findByLabelText("Password"), "wrong password");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByText(/invalid_credentials/)).toBeInTheDocument();
     expect(screen.getByText(/Invalid login credentials/)).toBeInTheDocument();
+    // Still one view, still the password one, and the field still there to correct.
+    expect(screen.getByLabelText("Password")).toBeTruthy();
   });
+});
 
-  it("keeps the revealed form out of the way when the address changes", async () => {
-    const user = userEvent.setup();
-    mocks.authEntryState.mockResolvedValue("link_only");
-    render(<AuthPage />);
+describe("use a different email", () => {
+  it.each(["not_invited", "invited_new", "open_signup", "link_only", "has_account"])(
+    "clears the field from %s",
+    async (state) => {
+      const user = userEvent.setup();
+      await reachStep(user, state);
+      await user.click(await screen.findByRole("button", { name: /use a different email/i }));
 
-    await user.type(screen.getByLabelText("Email"), "link@example.com");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await user.click(await screen.findByRole("button", { name: "Use a password instead" }));
-    expect(await screen.findByLabelText("Password")).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "Use a different email" }));
-    // The field still holds the old address, so it is cleared rather than appended to.
-    await user.clear(screen.getByLabelText("Email"));
-    await user.type(screen.getByLabelText("Email"), "other@example.com");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-
-    await screen.findByRole("heading", { name: "Welcome back" });
-    // The next address starts at the link, not on the last one's password form.
-    expect(screen.queryByLabelText("Password")).toBeNull();
-  });
+      expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
+      // Empty, not prefilled: a phone field still holding the old address makes the button a
+      // delete-first instruction.
+      expect(screen.getByLabelText("Email")).toHaveValue("");
+    },
+  );
 });

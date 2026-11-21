@@ -24,7 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { supabase } from "@/integrations/supabase/client";
 import { providerSummary } from "@/lib/account";
-import { authEntryState } from "@/lib/invite-request";
+import { authEntryState, stateHasPassword } from "@/lib/invite-request";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import type { AnalysesLine } from "@/lib/calls";
 import type { UnitSystem } from "@/lib/units";
@@ -73,7 +73,7 @@ export function AccountSection({
    * behaviour: an `email` identity means "Change password", which is wrong for a link-only account
    * but safe, because saving sets a password either way.
    */
-  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [hasPassword, setHasPasswordState] = useState<boolean | null>(null);
 
   /** Reads the account, and asks the database whether a password is set. */
   useEffect(() => {
@@ -84,12 +84,14 @@ export function AccountSection({
       setUser(nextUser);
       const address = nextUser?.email ?? "";
       if (address === "") {
-        setHasPassword(null);
+        setHasPasswordState(null);
         return;
       }
       const state = await authEntryState(address);
       if (!active) return;
-      setHasPassword(state === "has_password" ? true : state === null ? null : false);
+      // One helper decides what counts as a password, so this label and the sign-in screen cannot
+      // disagree about the same account.
+      setHasPasswordState(stateHasPassword(state) ? true : state === null ? null : false);
     });
     return () => {
       active = false;
@@ -122,8 +124,19 @@ export function AccountSection({
     // rather than assumed: the button that said "Set a password" would otherwise keep saying it.
     const { data } = await supabase.auth.getUser();
     setUser(data.user ?? null);
+    // Recorded in the database, which is the only place the sign-in screen looks. GoTrue writes no
+    // amr claim for a password that was set and never used, so without this the next sign-in would
+    // send this person to the link and offer no password box at all. A failed call does not undo the
+    // password that was just saved, so it is swallowed rather than shown: the person would be told
+    // "could not save" about something that did save.
+    try {
+      await supabase.rpc("mark_has_password");
+    } catch {
+      // Nothing to do: the password exists, and the next sign-in with it writes the amr claim that
+      // makes the flag unnecessary.
+    }
     // A password exists now, whatever the database said a moment ago.
-    setHasPassword(true);
+    setHasPasswordState(true);
     setPassword("");
     setConfirmation("");
     setVisible(false);
