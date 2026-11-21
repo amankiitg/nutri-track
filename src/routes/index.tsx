@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/app/BrandMark";
 import { DemoIntro, INTRO_FADE_MS } from "@/components/landing/DemoIntro";
+import { openSignups } from "@/lib/open-signups";
 import {
   introDeadlinePassed,
   LANDING_GATE_SCRIPT,
@@ -52,8 +53,30 @@ type Phase = "pending" | "intro" | "landing";
  * no intro; a visitor who saw it this session, or prefers reduced motion, gets the page; anyone
  * else gets the intro, which claims the screen only once its video is actually playing.
  */
+/**
+ * True once the database says sign-ups are open.
+ *
+ * Starts false, which is the wording the page had before the switch existed: a visitor sees the
+ * invite line for the moment before the read lands, rather than being promised an account the
+ * database would refuse.
+ */
+function useSignupsOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void openSignups().then((answer) => {
+      if (active) setOpen(answer);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return open;
+}
+
 export function Landing() {
   const navigate = useNavigate();
+  const signupsOpen = useSignupsOpen();
   const [phase, setPhase] = useState<Phase>("pending");
   const [introMounted, setIntroMounted] = useState(false);
   /** The page-load intro has the 3 s deadline; a replay from "Watch the demo" does not. */
@@ -151,14 +174,16 @@ export function Landing() {
             <Link to="/try">Try it now</Link>
           </Button>
           <p className="text-center text-sm">
-            {/* The request page, not a step inside sign-in: somebody with no invite has one thing
-                to do, and it should not begin with a form that asks them to prove they need it. */}
-            <Link to="/auth/request" className="underline">
-              Request an invite
+            {/* With sign-ups closed the request page is the way in, and it is its own page rather
+                than a step inside sign-in: somebody with no invite has one thing to do, and it
+                should not begin with a form that asks them to prove they need it. With them open
+                there is nothing to request, so the line goes away. */}
+            <Link to={signupsOpen ? "/auth" : "/auth/request"} className="underline">
+              {signupsOpen ? "Create an account" : "Request an invite"}
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground">
-            Private, invite-only. Estimates are estimates. You always review before saving.
+            Private by default. Estimates are estimates. You always review before saving.
           </p>
         </div>
 

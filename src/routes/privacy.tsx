@@ -105,9 +105,10 @@ function PrivacyPage() {
           an error; it could not show you somebody else's meals.
         </p>
         <p>
-          I am the admin, so I keep the invite list. Through the admin screen I can see the
-          addresses on it and whether they have signed up, and for each account its email address,
-          timezone, and how many analyses it has used.
+          I am the admin, so I keep the invite list when sign-ups are closed, and through the admin
+          screen I can see the addresses on it and whether they have signed up. For each account I
+          can see its email address, timezone, how many analyses it has used, and when it was
+          created; the sign-up counts are counts per day, not a list of who joined.
         </p>
         <p>
           I cannot see anyone's meals, photos, weight, waist or targets through the admin screen,

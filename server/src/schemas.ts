@@ -6,7 +6,7 @@
  * count about a token it was never issued.
  */
 export const trialFunnelSchema = z.object({
-  event: z.enum(["try_page_view", "analyse_tapped"]),
+  event: z.enum(["try_page_view", "analyse_tapped", "signup_started", "signup_completed"]),
 });
 
 /**

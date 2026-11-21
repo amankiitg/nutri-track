@@ -15,7 +15,7 @@ import { Check, Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -25,6 +25,7 @@ import {
   draftInvite,
   fetchInviteRequests,
   fetchInvites,
+  fetchSignupCounts,
   fetchSpend,
   fetchTrialFunnel,
   fetchTrialList,
@@ -861,5 +862,41 @@ function DropOff({ value, first }: { value: number | null; first: boolean }) {
     <span className="block text-xs text-muted-foreground">
       {value < 0 ? `${Math.abs(value)}% more` : `${value}% lost`}
     </span>
+  );
+}
+
+/**
+ * How many accounts exist, for the top of the admin page.
+ *
+ * Three numbers and no identity: today, the last seven days, and the total. With sign-ups open
+ * this is the card that answers "is anybody arriving", which the invite list used to answer and
+ * no longer can, because most people who arrive were never invited.
+ */
+export function SignupsCard() {
+  const counts = useQuery({ queryKey: ["admin-signup-counts"], queryFn: fetchSignupCounts });
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <p className="text-sm font-medium">Sign-ups</p>
+        <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
+          {[
+            { label: "Today", value: counts.data?.today },
+            { label: "7 days", value: counts.data?.week },
+            { label: "Total", value: counts.data?.total },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-lg bg-muted/50 px-2 py-1">
+              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dd className="font-semibold">{value === undefined ? "…" : value}</dd>
+            </div>
+          ))}
+        </dl>
+        {counts.isError && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            Could not read the counts.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -25,6 +25,13 @@ vi.mock("@/lib/invite-request", () => ({
   authEntryState: (...args: unknown[]) => mocks.authEntryState(...args),
 }));
 
+/** The switch, per test: closed is the old product, open is the new one. */
+let signupsOpen = false;
+
+vi.mock("@/lib/open-signups", () => ({
+  openSignups: async () => signupsOpen,
+}));
+
 vi.mock("@/lib/post-signin", () => ({
   signedInVisit: async () => ({ kind: "signed_out" as const }),
 }));
@@ -150,5 +157,42 @@ describe("sending the sign-in link", () => {
     mocks.signInWithOtp.mockClear();
     await user.click(resend);
     expect(mocks.signInWithOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe("the sign-up screen, with the switch either way", () => {
+  beforeEach(() => {
+    signupsOpen = false;
+  });
+
+  it("offers an account to an unknown address when sign-ups are open", async () => {
+    signupsOpen = true;
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("open_signup");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "stranger@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Create your account" })).toBeTruthy();
+    expect(screen.getByText(/sign-ups are open/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Email me a link" })).toBeTruthy();
+    // There is nothing to request when the door is open.
+    expect(screen.queryByRole("link", { name: /request/i })).toBeNull();
+  });
+
+  it("keeps the invite wall when the switch is off", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "not_invited");
+
+    expect(screen.getByText(/isn't on the list yet/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Request an invite" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Create your account" })).toBeNull();
+  });
+
+  it("says it is invite only on the email step while closed, and does not while open", async () => {
+    render(<AuthPage />);
+    // The read lands asynchronously; the closed sentence is the first one drawn.
+    expect(await screen.findByText(/Invite-only for now/)).toBeTruthy();
   });
 });

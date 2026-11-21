@@ -523,6 +523,10 @@ export type Database = {
     };
     Functions: {
       admin_approve_request: { Args: { p_request: string }; Returns: string };
+      /** Added with 20261120160000_open_signups: today, the last 7 days, and the total. */
+      admin_signup_counts: { Args: never; Returns: { today: number; total: number; week: number } };
+      /** The sign-up switch, readable by anon so the sign-in screen needs no session. */
+      open_signups: { Args: never; Returns: boolean };
       admin_invites: {
         Args: never;
         Returns: {

@@ -756,3 +756,30 @@ export async function fetchTrialFunnel(days = 7): Promise<TrialFunnel> {
   if (!parsed.success) throw new Error("The funnel came back in an unexpected shape.");
   return presentFunnel(parsed.data);
 }
+
+/**
+ * The three sign-up counts, from `admin_signup_counts`.
+ *
+ * A function rather than a table read because the rows live in `auth.users`, which no caller role
+ * may read, and because the page wants three numbers rather than a list of accounts: the point of
+ * the card is how many, not who.
+ */
+export interface SignupCounts {
+  today: number;
+  week: number;
+  total: number;
+}
+
+export async function fetchSignupCounts(): Promise<SignupCounts> {
+  const { data, error } = await supabase.rpc("admin_signup_counts");
+  if (error) throw new Error(readableAdminError(error.message));
+  const counts = signupCountsShape.safeParse(data);
+  if (!counts.success) throw new Error("The sign-up counts came back in an unexpected shape.");
+  return counts.data;
+}
+
+const signupCountsShape = z.object({
+  today: z.number(),
+  week: z.number(),
+  total: z.number(),
+});

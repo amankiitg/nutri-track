@@ -329,7 +329,7 @@ describe("the meal-first trial page", () => {
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(await screen.findByRole("heading", { name: /Your trial is done/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Create an account" }).getAttribute("href")).toBe(
       "/auth?email=invited@example.com",
     );
     expect(screen.queryByRole("button", { name: /request an invite/i })).toBeNull();
@@ -512,9 +512,11 @@ describe("the anonymous trial (flag false)", () => {
     await user.click(screen.getByRole("button", { name: /analyse/i }));
 
     expect(
-      await screen.findByRole("heading", { name: "Your trial is done. Want full access?" }),
+      await screen.findByRole("heading", {
+        name: "Your trial is done. Create a free account to keep tracking.",
+      }),
     ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe("/auth");
+    expect(screen.getByRole("link", { name: /create a free account/i })).toBeTruthy();
 
     await user.type(screen.getByLabelText("Email"), "late@example.com");
     await user.click(screen.getByRole("button", { name: /request an invite/i }));

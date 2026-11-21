@@ -166,7 +166,7 @@ describe("a valid personal link", () => {
     mocks.parseTrialMeal.mockResolvedValueOnce(parsed(0));
     await scanOnce(user);
     expect(await screen.findByRole("heading", { name: /Your trial is done/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Create an account" }).getAttribute("href")).toBe(
       "/auth?email=priya@example.com",
     );
   });
