@@ -87,6 +87,12 @@ function blackFridayBody(): EmailSection[] {
     { type: "button", label: "Claim your free deal", href: TRY_BLACK_FRIDAY },
     {
       type: "paragraphs",
+      html: `<p style="margin: 0">
+                    Like it? Creating a free account to keep your meals is open to everyone now.
+                  </p>`,
+    },
+    {
+      type: "paragraphs",
       html: `<p style="margin: 0">Deal ends: never. Pie photos: optional.</p>`,
     },
     { type: "signoff", paddingTop: 26, lines: ["Enjoy the holiday,", "Aman"] },

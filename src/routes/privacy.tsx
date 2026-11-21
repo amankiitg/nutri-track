@@ -92,8 +92,10 @@ function PrivacyPage() {
           name, which is what makes an unsubscribe possible.
         </p>
         <p>
-          The free trial checks you are a person with Cloudflare Turnstile before it issues a trial
-          token. Turnstile sees the check, not your meals.
+          Anyone can create an account. We verify your email with a sign-in link or Google before
+          you can log meals. Sign-in and sign-up pages use Cloudflare Turnstile to block bots; it
+          checks your browser, not your identity, and doesn't use cookies to track you. The free
+          trial uses the same check before it issues a trial token.
         </p>
       </Section>
 
@@ -229,8 +231,8 @@ function PrivacyPage() {
           that does not exist.
         </p>
         <p>
-          To have your data removed in the meantime, reply to the email you were invited with and
-          ask. That will:
+          To have your data removed in the meantime, reply to any email from NutriTrack and ask.
+          That will:
         </p>
         <List
           items={[
