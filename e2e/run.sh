@@ -24,6 +24,14 @@ ENVFILE
 export E2E_MAILPIT_URL="$MAILPIT_URL"
 export E2E_DB_URL="$DB_URL"
 
+# The local database is rebuilt from the migration files on every run. Without this a suite can
+# pass against a function body that has since been edited, which is exactly what happened once: the
+# stack was still running the previous auth_entry_state and case (b) failed for a rule already
+# replaced. E2E_NO_RESET=1 skips it when iterating on the suite itself.
+if [ "${E2E_NO_RESET-}" != "1" ]; then
+  npx supabase db reset --workdir .e2e > /tmp/e2e-reset.log 2>&1
+fi
+
 npx vite dev --mode e2e --port 5173 --strictPort > /tmp/e2e-vite.log 2>&1 &
 VITE_PID=$!
 trap "kill $VITE_PID 2>/dev/null || true" EXIT

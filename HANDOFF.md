@@ -1,95 +1,80 @@
 # Handoff: the /auth states task
 
-Branch `task/auth-states-e2e`. Nothing is merged, and no PR is open yet: the rule for this task is
-that the matrix passes first.
+Branch `task/auth-states-e2e`. No PR yet: the rule for this task is that the matrix passes first.
 
-## Done, on the branch
+## Decided, and done
 
-1. **`docs/auth-states.md`** is the contract: every state by `open_signups`, every button, every
-   link, and what each button calls. It is the file to read before touching `auth.tsx`.
-2. **One view at a time.** `passwordInstead` (a boolean that stacked the password form under the
-   link panel) is gone. An account with a password has `accountView: "password" | "link"`, and the
-   other panel unmounts in the same commit. The two quiet links are in one row with a gap, so
-   "Forgot password?" and "Use an email link instead" no longer run together. `link_only` has no
-   password control at all, and gained the "Use a different email" way back it never had.
-3. **Password evidence, without the hash.** `20261121120000_has_password_evidence.sql` plus its
-   rollback: `profiles.has_password`, backfilled from `auth.mfa_amr_claims` where
-   `authentication_method = 'password'`, written only by the security definer `mark_has_password()`
-   (a trigger refuses a direct client write), and a new `has_password_google` answer. Settings calls
-   the function after a password is saved.
-4. **Tests.** The migration suite passes, including the new evidence test and the round trip.
-   Frontend: 84 files, 1120 tests, lint 0 errors, tsc 0. The unit tests encode the one-view
-   invariant, the toggle, the focus moves, the detail line and the field being cleared.
-5. **A local stack** (`.e2e/supabase/config.toml`, gitignored): its own project id, its own ports,
-   Turnstile with the documented test pair, mail to local Mailpit, no Resend, 200 emails an hour.
-   `e2e/run.sh` starts the app against it and runs the suite.
-6. **The e2e suite** (`e2e/`, `playwright.config.ts`): nine cases (a, b, c, d, e, f, g, h, i), each
-   at 375 px and 1280 px. It refuses any host that is not this machine, so the app cannot quietly
-   talk to production, and the mailbox is read with real links opened for real.
+**Option A.** The amr claim is gone. `profiles.has_password` is the only evidence, and three moments
+set it: Settings after `updateUser({ password })`, the reset screen after the same call, and any
+successful password sign-in (the self heal). Nothing is backfilled. `20261121120000_has_password_evidence.sql`
+holds the column, the recorder, the guard and the flag-only `auth_entry_state`; its rollback restores
+the previous function.
 
-## The finding that has to be settled before this merges
+**That migration is already applied to production**, confirmed by `supabase migration list --remote`
+(`20261121120000 | 20261121120000`). It is additive and safe before the Worker ships: no profile has
+the flag set, and nothing could set it until the new client is live, so the answer for every account
+is the one it already had. **The Worker has not been deployed.**
 
-The evidence rule does not work as written. Measured on two synthetic accounts in the local stack:
+The screen: one view at a time (`accountView: password | link`, the other panel unmounts in the same
+commit), `link_only` has no password control at all, gained the "Use a different email" way back it
+was missing, and the two quiet links sit in one row so they no longer run together.
+
+## Verified
+
+- migration suite PASS, including the new evidence test (a hash is not evidence, an amr claim is not,
+  and clearing the flag puts the account back on the link) and the round trip
+- frontend 1121 tests in 84 files, lint 0 errors (6 pre-existing warnings), `tsc --noEmit` 0,
+  `tsc -p e2e --noEmit` 0
+- e2e case **a passes** (new address, sign-up screen, link out of the local inbox, six wizard steps,
+  Today) and case **b passes** (the same account sees only the link, and the link signs it in), both
+  at 375 px
+
+## Where it stopped: case (c), and a real finding
+
+Case (c) fails on a defect the matrix was written to catch, not on the harness:
 
 ```
-email                          | profiles.has_password | amr claims     | auth_entry_state
-new.suite.mwqkst39@example.com | false                 | password,otp   | has_password
+console: [auth] captcha protection: request disallowed (no captcha_token found)
 ```
 
-GoTrue (v2.198 locally) writes `authentication_method = 'password'` into `auth.mfa_amr_claims` for a
-session established by an emailed link, so "has an amr claim of password" is true for exactly the
-accounts it was supposed to exclude. The accounts above never had a password set: the flag is false
-and the only thing that ever signed them in is the link.
+The wrong-password attempt went out with no Turnstile token, GoTrue refused it for that reason, and
+the screen therefore showed a captcha failure where the test expected the invalid-credentials
+sentence and its detail line. In production the same thing would say "something went wrong" instead
+of "wrong password", and the person would never learn that the password was the problem.
 
-So either the amr rule is dropped and `profiles.has_password` is the only evidence (accurate from now
-on, and it makes the backfill useless, which is honest: the backfill reads a record that says nothing),
-or the real production GoTrue is checked on a single account we own, with the app, before trusting the
-amr claim. That check is one row for one of Aman's own addresses, and it is the first thing to do.
-
-Until it is settled, the branch is not mergeable: case (b) of the suite fails for this exact reason,
-because the account from (a) answers `has_password` and is therefore shown the password view.
-
-## Where it stands
-
-Case (a) passes: a brand-new address, the sign-up screen, the emailed link, "Skip, take me in", the
-six wizard steps, Today. The rest were being debugged when the window ran out; the current failures
-are about the test harness, not about the screen:
-
-- Each Playwright test gets a fresh context, so a session cannot carry over. The suite now re-enters
-  through the link or the password at the start of each case instead of assuming the last one left
-  somebody signed in. That change is in the working tree and unproven.
-- `psql` does not substitute variables given with `-c`; `sql()` feeds the query on stdin.
-- The iPhone preset is pinned to chromium, and the install prompt is seeded as dismissed because it
-  is a modal over the buttons a person means to press.
+`turnstile-token.ts` already documents the shape of this: `ensure()` waits a bounded time and then
+sends without a token, deliberately, because a missing token must not block a sign-in the server
+might accept. That trade is wrong when CAPTCHA is on and the server will refuse: the honest options
+are to wait longer, to press the widget again, or to say "one more second" rather than sending a
+request that cannot succeed. That decision needs a person, so it is not taken here.
 
 ## Next steps
 
-1. Run `bash e2e/run.sh --project=iphone` with the stack up (`npx supabase start --workdir .e2e` with
-   `DOCKER_HOST`/`DOCKER_CONFIG` set as in `e2e/run.sh`), and fix what the remaining cases report.
-2. Run `bash e2e/run.sh` for both widths. Nothing merges until all of a to i pass at both.
-3. Case (j), CAPTCHA off, is not written yet: it needs the stack restarted with
-   `[auth.captcha] enabled = false` and `VITE_TURNSTILE_SITE_KEY` empty, so it belongs in its own run
-   and its own spec file.
-4. The contact sheet: screenshots of every state at 375 px, labelled, in one image under
+1. Decide what `ensure()` should do when CAPTCHA is on and no token arrives (block with a message, or
+   retry the widget once), then finish case (c), (d), (f), (g), (h), (i) and add (j) CAPTCHA off,
+   which needs the stack restarted with `[auth.captcha] enabled = false` and no site key.
+2. Contact sheet: every state at 375 px, labelled, one image in
    `~/.openclaw/workspace/outbox/`. A small Playwright page that lays the PNGs out with captions and
-   screenshots itself is the cheapest way, and needs no new dependency.
-5. The production smoke needs Aman to confirm which address is his main account; the repo does not
-   name it. `aman_kesarwani@mfe.berkeley.edu` is the other one, and it was `link_only` before this
-   branch changed the answer for every account.
-6. `docs/auth-states.md` needs two corrections found while wiring the suite: `signInWithOAuth` in
-   auth-js drops `captchaToken` (it is not in the query it builds), and the local stack writes the
-   `magiclink` template even for a new address because confirmations are off locally.
+   screenshots itself is the cheapest way and needs no new dependency.
+3. CI job: `npm run test:e2e` needs a stack in the runner. `PW_CHANNEL` must be unset there so the
+   bundled chromium is used, and `npx playwright install --with-deps chromium` runs first.
+4. Then the Worker deploy (`npm run deploy`, after the merge), then the production smoke for
+   `aman_kesarwani@mfe.berkeley.edu` and `amank.iitg@gmail.com` at 375 px: screenshots only, no
+   emails, no sign-ins.
+5. Delete this file when the task is done.
 
-## One operational detail about the local stack
+## Harness lessons, already in the code
 
-The CLI reaches the containers through an ssh tunnel and binds the forwarded ports to every
-interface, not to loopback: measured with `lsof -nP -iTCP -sTCP:LISTEN`, ports 54321, 54322 and 54324
-are held by `ssh` on `*`. The stack therefore answers on the local network while it runs, and its
-keys are the well-known defaults that ship with the CLI. Everything in there is synthetic, and no
-production key or session was ever loaded into it, but the honest habit is to stop it when the suite
-is not being run: `npx supabase stop --workdir .e2e --no-backup`.
+- `psql` does not substitute variables given with `-c`; `sql()` feeds the query on stdin.
+- `getByLabel("Password")` matches two elements, because the reveal button is labelled "Show
+  password". Use `{ exact: true }`.
+- The iPhone preset carries webkit and is pinned to chromium; the install prompt is seeded as
+  dismissed, since it is a modal over the buttons a person means to press.
+- `e2e/run.sh` resets the local database on every run. Without it the suite passes against a function
+  body that has since been edited, which is exactly what happened once.
+- `askState` presses Continue twice at most: a client side navigation can still be settling when the
+  address is typed, and the first press is lost without an error. Two failed presses throw.
 
 ## Not touched
 
-Production. No migration has been pushed to the remote project, no Worker has been deployed, and no
-email has been sent from anything but the local stack.
+No Worker deployment, no emails from anything but the local stack, and nothing pushed to `main`.

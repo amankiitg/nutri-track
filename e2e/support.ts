@@ -197,11 +197,31 @@ export function watch(page: Page, harness: Harness): void {
   });
 }
 
-/** Fills the address field and asks the database what this address deserves. */
+/**
+ * Fills the address field and asks the database what this address deserves.
+ *
+ * The press is retried once, and only once, because the address step is sometimes replaced while it
+ * is being typed into: a client side navigation that has just landed can still be settling, and a
+ * fill into the panel on its way out is lost without an error. If the step has not moved after two
+ * presses this throws, so a screen that is genuinely stuck still fails loudly rather than quietly.
+ */
 export async function askState(page: Page, email: string): Promise<void> {
-  await page.getByLabel("Email").fill(email);
-  // exact, because "Continue with Google" also answers to a prefix match.
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const field = page.getByLabel("Email", { exact: true });
+  await expect(field).toBeVisible();
+  const next = page.getByRole("button", { name: "Continue", exact: true });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await field.fill(email);
+    await next.click();
+    // The field unmounts when the answer arrives, so its disappearance is the signal that the press
+    // was taken. Anything slower than a few seconds means it was not.
+    const moved = await field
+      .waitFor({ state: "detached", timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (moved) return;
+  }
+  throw new Error("the address step did not move after Continue was pressed twice");
 }
 
 /** Signs out from Settings, the way a person does. */

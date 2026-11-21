@@ -141,7 +141,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
     const link = page.getByRole("button", { name: "Email me a sign-in link" });
     await expect(link).toBeVisible();
     // No password control of any kind: this account has never had a password to type.
-    await expect(page.getByLabel("Password")).toHaveCount(0);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /use a password instead/i })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /forgot password/i })).toHaveCount(0);
 
@@ -167,10 +167,12 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
 
     await page.goto("/settings");
-    await page.getByRole("button", { name: /set a password/i }).click();
-    await page.getByLabel("Password", { exact: true }).fill(FIRST_PASSWORD);
+    // The Settings card says "Set a password" for an account with none, and its fields are labelled
+    // for what they are: a new password and its confirmation.
+    await page.getByRole("button", { name: /set a password/i }).first().click();
+    await page.getByLabel("New password").fill(FIRST_PASSWORD);
     await page.getByLabel("Confirm password").fill(FIRST_PASSWORD);
-    await page.getByRole("button", { name: "Set password", exact: true }).click();
+    await page.getByRole("button", { name: "Set a password", exact: true }).click();
     await expect(page.getByRole("button", { name: /change password/i })).toBeVisible();
 
     // The flag is recorded, which is what makes the sign-in screen offer the box at all.
@@ -185,12 +187,12 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await askState(page, account);
 
     // The password view, with the link one press away.
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /use an email link instead/i })).toBeVisible();
 
-    await page.getByLabel("Password").fill("not the password");
+    await page.getByLabel("Password", { exact: true }).fill("not the password");
     await page.getByRole("button", { name: "Sign in" }).click();
     // The sentence, and the raw error under it: the detail line is what a person can quote.
     await expect(page.getByRole("alert")).toBeVisible();
@@ -198,7 +200,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
       page.getByText(/invalid_credentials|Invalid login credentials/i).first(),
     ).toBeVisible();
 
-    await page.getByLabel("Password").fill(FIRST_PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(FIRST_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
   });
@@ -211,7 +213,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await openAuth(page);
     await askState(page, account);
     // The password view arrives, and its quiet link opens the reset step.
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /forgot password/i }).click();
 
     const before = await mailCount(account);
@@ -229,7 +231,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
 
     await page.goto("/auth");
     await askState(page, account);
-    await page.getByLabel("Password").fill(SECOND_PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(SECOND_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
   });
@@ -268,28 +270,28 @@ test.describe.serial("the sign-in screen, end to end", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
-    await expect(page.getByLabel("Password")).toHaveCount(0);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
   });
 
   test("f. the two views toggle without ever stacking", async ({ page, harness }) => {
     watch(page, harness);
     await openAuth(page);
     await askState(page, account);
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
 
     for (let round = 0; round < 3; round += 1) {
       await page.getByRole("button", { name: /use an email link instead/i }).click();
       await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(1);
-      await expect(page.getByLabel("Password")).toHaveCount(0);
+      await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 
       await page.getByRole("button", { name: /use a password instead/i }).click();
-      await expect(page.getByLabel("Password")).toHaveCount(1);
+      await expect(page.getByLabel("Password", { exact: true })).toHaveCount(1);
       await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(0);
     }
 
     // The focus follows the view: the field in the password view, the button in the link view.
-    await expect(page.getByLabel("Password")).toBeFocused();
+    await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
     await page.getByRole("button", { name: /use an email link instead/i }).click();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeFocused();
   });
