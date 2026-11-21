@@ -44,8 +44,16 @@ function baseOptions(apiKey: string, authorization?: string) {
   };
 }
 
-/** Used only to verify access tokens. Carries no user's authority. */
-export function createAuthClient(config: Config): SupabaseClient {
+/**
+ * Used to verify access tokens, and by the mailing list job to call its gated
+ * function as anon. Carries no user's authority.
+ *
+ * The parameter is the two fields this needs rather than the whole `Config`, so the
+ * nightly job can pass its small config without inventing a Gemini key it never uses.
+ */
+export function createAuthClient(
+  config: Pick<Config, "SUPABASE_URL" | "SUPABASE_PUBLISHABLE_KEY">,
+): SupabaseClient {
   return createClient(
     config.SUPABASE_URL,
     config.SUPABASE_PUBLISHABLE_KEY,

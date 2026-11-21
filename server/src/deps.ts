@@ -6,9 +6,11 @@ import type { AppDeps } from "./app";
 import { createTokenVerifier } from "./auth";
 import { createCallerStore } from "./caller-store";
 import type { Config } from "./config";
+import { createEmailSyncStore } from "./email-sync";
 import { createGmailDraftClient } from "./gmail";
 import { createGeminiClient } from "./gemini";
 import { createResendClient } from "./resend";
+import { createResendContactsClient } from "./resend-contacts";
 import { createAuthClient, createCallerClient } from "./supabase";
 import { createTrialStore } from "./trial";
 
@@ -42,6 +44,22 @@ export function createProductionDeps(config: Config): AppDeps {
   const email =
     config.RESEND_API_KEY !== undefined ? createResendClient(config.RESEND_API_KEY) : null;
 
+  // The mailing list needs a key and an audience id. With either missing it is null,
+  // which makes the three contact routes say "not set up" rather than fail halfway.
+  // Building it does not read the key; only a request that uses it does.
+  const contacts =
+    config.RESEND_API_KEY !== undefined && config.RESEND_AUDIENCE_ID !== undefined
+      ? createResendContactsClient({
+          apiKey: config.RESEND_API_KEY,
+          audienceId: config.RESEND_AUDIENCE_ID,
+        })
+      : null;
+
+  // Always built, and inert without the secret: the database function compares the
+  // argument against Vault, so a missing copy is a refusal rather than an open door.
+  // The routes check for the secret first and answer 503 for that reason.
+  const emailSync = createEmailSyncStore(authClient, config.EMAIL_SYNC_SECRET);
+
   return {
     config,
     llm,
@@ -49,6 +67,8 @@ export function createProductionDeps(config: Config): AppDeps {
     inviteSender: config.INVITE_SENDER_ADDRESS ?? null,
     trial,
     email,
+    contacts,
+    emailSync,
     verifyToken: createTokenVerifier(authClient),
     forCaller: (user, accessToken) =>
       createCallerStore(createCallerClient(config, accessToken), user.id),

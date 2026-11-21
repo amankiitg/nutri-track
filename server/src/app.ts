@@ -12,6 +12,8 @@ import { z } from "zod";
 import { bearerToken, type TokenVerifier, type VerifiedUser } from "./auth";
 import type { CallerStore } from "./caller-store";
 import type { Config } from "./config";
+import type { EmailSyncStore } from "./email-sync";
+import { syncAudience, upsertOneContact } from "./email-sync";
 import type { GmailDraftClient } from "./gmail";
 import { invite } from "./invite";
 import type { FunnelEvent, TrialParseOutcome } from "./trial";
@@ -20,6 +22,7 @@ import { ApiError, isApiError } from "./errors";
 import { log } from "./log";
 import { parseMeal } from "./parse-meal";
 import type { EmailClient } from "./resend";
+import type { ResendContactsClient } from "./resend-contacts";
 import {
   assertPathsOwnedBy,
   inviteRequestSchema,
@@ -62,8 +65,31 @@ export interface AppDeps {
   trial: TrialStore;
   /** Null without RESEND_API_KEY; the trial route says the trial is unavailable. */
   email: EmailClient | null;
+  /**
+   * The mailing list's contacts client. Null without RESEND_API_KEY and
+   * RESEND_AUDIENCE_ID; the three contact routes then say it is not set up, and the
+   * invite path skips its upsert.
+   */
+  contacts: ResendContactsClient | null;
+  /**
+   * The read of who is eligible. Always present, and inert without
+   * EMAIL_SYNC_SECRET: the database compares the argument against Vault.
+   */
+  emailSync: EmailSyncStore;
   now?: () => Date;
 }
+
+/**
+ * One sync per minute per admin.
+ *
+ * Chosen, not measured: a run is two requests per contact and there is no reason to
+ * press the button twice inside a minute. It is a guard against a stuck client, not
+ * a security boundary; the route is already admin-only.
+ */
+const CONTACT_SYNC_COOLDOWN_MS = 60_000;
+
+/** One line for a route whose whole job is to not fail the thing that called it. */
+const CONTACTS_NOT_SET_UP = "The mailing list is not set up on the server yet.";
 
 /**
  * Counts one funnel step, and never lets that count fail the request it is counting.
@@ -174,6 +200,8 @@ export function createApp(deps: AppDeps): Express {
   const app = express();
   /** One clock for signing and verifying trial tokens, so a test can freeze both. */
   const nowMs = (): number => (deps.now?.() ?? new Date()).getTime();
+  /** When each admin last pressed Sync now, in memory. See CONTACT_SYNC_COOLDOWN_MS. */
+  const lastContactSyncAt = new Map<string, number>();
 
   // Render terminates TLS upstream, so trust its header for req.ip and the logs.
   app.set("trust proxy", true);
@@ -326,7 +354,119 @@ export function createApp(deps: AppDeps): Express {
       alreadyInvited: outcome.alreadyInvited,
     });
 
+    // The list follows the door: an invited address becomes a contact here, not on
+    // the next nightly run. Not awaited, because drafting is the admin's action and
+    // a slow Resend call must not delay the answer; a failure is a log line that the
+    // nightly sync makes right. productEmails is true for a new address, and even if
+    // an existing contact has opted out, the client never writes unsubscribed: false.
+    if (deps.contacts !== null) {
+      void upsertOneContact(deps.contacts, {
+        email: outcome.email,
+        firstName: outcome.firstName === "" ? null : outcome.firstName,
+        productEmails: true,
+      });
+    }
+
     res.json(outcome);
+  });
+
+  /**
+   * After a profile is saved: put this person on the mailing list.
+   *
+   * Authenticated, and it names nobody: the address is the token's own, and the name
+   * and switch come from the caller's own profile row. The answer is always ok,
+   * because the caller's real action was saving a profile, and a mailing list is not
+   * worth failing that over. A failure is logged and the nightly sync retries it.
+   */
+  app.post("/contacts/join", async (req: Request, res: Response) => {
+    const token = bearerToken(req.get("authorization"));
+    const user = await deps.verifyToken(token);
+
+    if (deps.contacts !== null && user.email !== null) {
+      try {
+        const preferences = await deps.forCaller(user, token).emailPreferences();
+        await upsertOneContact(deps.contacts, {
+          email: user.email,
+          firstName: preferences.firstName,
+          productEmails: preferences.productEmails,
+        });
+      } catch {
+        log("warn", "contact upsert after sign-up failed", { userId: user.id });
+      }
+    }
+    res.json({ ok: true });
+  });
+
+  /**
+   * The Settings switch turned off: make sure Resend knows.
+   *
+   * The profile write that records the choice is the browser's, under RLS; this
+   * endpoint only mirrors it, and it only ever turns the contact off. There is no
+   * route here that turns it back on, on purpose: the sync never re-subscribes an
+   * address, because Resend may hold an unsubscribe this app never saw.
+   */
+  app.post("/contacts/unsubscribe", async (req: Request, res: Response) => {
+    const token = bearerToken(req.get("authorization"));
+    const user = await deps.verifyToken(token);
+
+    if (deps.contacts !== null && user.email !== null) {
+      await upsertOneContact(deps.contacts, {
+        email: user.email,
+        firstName: null,
+        productEmails: false,
+      });
+    }
+    res.json({ ok: true });
+  });
+
+  /**
+   * Sync the whole list, from the admin page. Admin only, asked of the database with
+   * the caller's own token, and rate limited so a stuck button is one run a minute.
+   *
+   * The addresses never come back: the response is four counts, which is what the
+   * card shows.
+   */
+  app.post("/contacts/sync", async (req: Request, res: Response) => {
+    const token = bearerToken(req.get("authorization"));
+    const user = await deps.verifyToken(token);
+
+    const store = deps.forCaller(user, token);
+    if (!(await store.isAdmin())) {
+      throw new ApiError(403, "forbidden", "Only an admin can sync the mailing list.");
+    }
+
+    if (deps.contacts === null || deps.config.EMAIL_SYNC_SECRET === undefined) {
+      throw new ApiError(503, "internal_error", CONTACTS_NOT_SET_UP);
+    }
+
+    const now = nowMs();
+    const last = lastContactSyncAt.get(user.id);
+    if (last !== undefined && now - last < CONTACT_SYNC_COOLDOWN_MS) {
+      const retryAfter = Math.max(1, Math.ceil((CONTACT_SYNC_COOLDOWN_MS - (now - last)) / 1000));
+      throw new ApiError(
+        429,
+        "rate_limited",
+        "The mailing list was synced a moment ago. Try again shortly.",
+        { headers: { "Retry-After": String(retryAfter) } },
+      );
+    }
+    lastContactSyncAt.set(user.id, now);
+
+    const result = await syncAudience({
+      store: deps.emailSync,
+      contacts: deps.contacts,
+    });
+
+    // Counts only. Who is on the list is the database's answer, not a log line.
+    log("info", "mailing list synced", {
+      adminId: user.id,
+      contacts: result.contacts,
+      failed: result.failed,
+      excluded: result.excluded,
+      unsubscribed: result.unsubscribed,
+    });
+
+    res.json(result);
   });
 
   /**

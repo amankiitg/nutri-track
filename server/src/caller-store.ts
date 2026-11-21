@@ -44,6 +44,12 @@ export interface CallerStore {
   /** The profile's timezone, so the service agrees with the rest of the app. */
   timeZone(): Promise<string>;
   /**
+   * The caller's own product-mail choice and display name. Read for the one contact
+   * upsert after a profile save, so the address comes from the token and the name
+   * and switch come from the row the caller just wrote.
+   */
+  emailPreferences(): Promise<EmailPreferences>;
+  /**
    * How many analyses have run across the whole product since midnight UTC, trial included.
    *
    * A count, never rows: the function behind it is security definer, and its whole job is to
@@ -85,6 +91,14 @@ export interface IssuedTrialLink {
   version: number;
 }
 
+/** What the mailing list needs about the caller, and the only thing it reads. */
+export interface EmailPreferences {
+  /** True unless the profile says otherwise; the column's default is true. */
+  productEmails: boolean;
+  /** The first word of the display name, or null. A greeting, not an identity. */
+  firstName: string | null;
+}
+
 const issuedTrialLinkRow = z.object({
   email: z.string(),
   first_name: z.string().nullable(),
@@ -92,6 +106,19 @@ const issuedTrialLinkRow = z.object({
 });
 
 const timeZoneRow = z.object({ timezone: z.string().nullable() });
+
+const emailPreferencesRow = z.object({
+  display_name: z.string().nullable(),
+  product_emails: z.boolean(),
+});
+
+/** The first word of a name, bounded, for the greeting in a contact record. */
+function firstNameFrom(displayName: string | null): string | null {
+  const trimmed = displayName?.trim() ?? "";
+  if (trimmed === "") return null;
+  const first = trimmed.split(/\s+/)[0] ?? "";
+  return first === "" ? null : first.slice(0, 60);
+}
 
 const toBase64 = (bytes: ArrayBuffer): string => Buffer.from(bytes).toString("base64");
 
@@ -181,6 +208,26 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
       // column's own default.
       const parsed = timeZoneRow.safeParse(data);
       return safeTimeZone(parsed.success ? parsed.data.timezone : null);
+    },
+
+    async emailPreferences() {
+      const { data, error } = await client
+        .from("profiles")
+        .select("display_name, product_emails")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error) fail("profiles select", error);
+
+      const parsed = emailPreferencesRow.safeParse(data);
+      if (!parsed.success) {
+        // No profile row yet, which is the state a brand new account is in for a
+        // moment. On by default is the column's own default.
+        return { productEmails: true, firstName: null };
+      }
+      return {
+        productEmails: parsed.data.product_emails,
+        firstName: firstNameFrom(parsed.data.display_name),
+      };
     },
 
     async loadPhotos(paths) {

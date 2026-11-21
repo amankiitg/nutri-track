@@ -22,8 +22,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PasswordInput } from "@/components/auth/PasswordInput";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { providerSummary } from "@/lib/account";
+import { saveProductEmailChoice } from "@/lib/contacts";
 import { authEntryState, stateHasPassword } from "@/lib/invite-request";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import type { AnalysesLine } from "@/lib/calls";
@@ -34,11 +36,17 @@ import { ExportData } from "./ExportData";
 const MIN_PASSWORD = 8;
 
 export function AccountSection({
+  userId,
+  productEmails,
   timeZone,
   units,
   today,
   remainingAnalyses = null,
 }: {
+  /** The signed-in account's id, so the switch writes its own row. */
+  userId: string;
+  /** `profiles.product_emails`, which the mailing list sync reads. */
+  productEmails: boolean;
   /** The profile's zone and day, so the export's files and its range end are the reader's. */
   timeZone: string;
   /** The unit preference the export writes weights in. */
@@ -59,8 +67,14 @@ export function AccountSection({
   const [confirmation, setConfirmation] = useState("");
   /** One reveal for both fields, the same decision the reset page makes. */
   const [visible, setVisible] = useState(false);
-  const [busy, setBusy] = useState<"password" | "signout" | null>(null);
+  const [busy, setBusy] = useState<"password" | "signout" | "product-emails" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The switch, held here so it moves on the tap rather than after the round trip.
+   * A failed profile write puts it back, because the row is what the sync reads.
+   */
+  const [productMail, setProductMail] = useState(productEmails);
+  const [productMailError, setProductMailError] = useState<string | null>(null);
   /**
    * Whether this account actually has a password.
    *
@@ -148,6 +162,25 @@ export function AccountSection({
     );
   }
 
+  async function changeProductMail(enabled: boolean): Promise<void> {
+    const previous = productMail;
+    setProductMail(enabled);
+    setProductMailError(null);
+    setBusy("product-emails");
+    try {
+      await saveProductEmailChoice(userId, enabled);
+      // "Saved" rather than "on" when the switch goes back on: the sync never
+      // re-subscribes a contact, so a person who left the list in Resend stays off it
+      // whatever this switch says.
+      toast.success("Saved.");
+    } catch {
+      setProductMail(previous);
+      setProductMailError("Could not save that. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function signOut(): Promise<void> {
     setBusy("signout");
     setError(null);
@@ -183,6 +216,33 @@ export function AccountSection({
         </div>
 
         {/*
+          Product mail, beside the account line because it is about the address rather than
+          about the body. The switch is the whole control: the sync reads the same column.
+        */}
+        <div className="flex items-start justify-between gap-3 border-t border-border pt-3">
+          <div className="space-y-1">
+            <Label htmlFor="product-emails" className="text-base font-medium">
+              Product update emails
+            </Label>
+            <p id="product-emails-note" className="text-base text-muted-foreground">
+              Occasional updates, unsubscribe anytime
+            </p>
+          </div>
+          <Switch
+            id="product-emails"
+            aria-describedby="product-emails-note"
+            checked={productMail}
+            disabled={busy !== null}
+            onCheckedChange={(checked) => void changeProductMail(checked)}
+          />
+        </div>
+        {productMailError !== null && (
+          <p role="alert" className="text-base text-destructive">
+            {productMailError}
+          </p>
+        )}
+
+        {/* 
           The password row, with its own label and explanation, rather than a bare button beside
           Sign out. It is the one thing in this card that is not obvious from the account line: a
           person who signs in by link has no password and may not know one can be set.

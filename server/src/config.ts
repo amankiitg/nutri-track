@@ -149,6 +149,19 @@ export const envSchema = z.object({
    */
   TURNSTILE_SECRET: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /**
+   * The mailing list's audience id, named "NutriTrack list" in Resend. Not a secret;
+   * it is in the URL the dashboard shows. Absent means the invite and sign-up paths
+   * skip their contact upsert and /contacts/sync answers that it is not set up.
+   */
+  RESEND_AUDIENCE_ID: z.string().min(1).optional(),
+  /**
+   * The value the service passes as p_secret to the email_sync_* functions; the
+   * matching copy lives in Supabase Vault as 'email_sync_server_secret'. Optional
+   * for the same reason the trial's secret is: /parse-meal must start without a
+   * feature nobody is using at that moment.
+   */
+  EMAIL_SYNC_SECRET: z.string().min(1).optional(),
   TRIAL_TOKEN_SECRET: z.string().min(1).optional(),
   TRIAL_SERVER_SECRET: z.string().min(1).optional(),
   /**
@@ -194,6 +207,7 @@ const EXPECTED = [
   "TURNSTILE_SECRET, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
   "  (all optional; without any of them /try says the trial is unavailable)",
   "RESEND_API_KEY (optional; required only when TRIAL_REQUIRE_EMAIL=true)",
+  "RESEND_AUDIENCE_ID, EMAIL_SYNC_SECRET (both optional; without them the mailing list is skipped)",
   "TRIAL_REQUIRE_EMAIL (optional; true or false, defaults to false)",
   "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
   "  INVITE_SENDER_ADDRESS (all optional; without them /invite says it is not set up)",

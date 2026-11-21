@@ -71,6 +71,8 @@ function renderAccount({
   render(
     <QueryClientProvider client={client}>
       <AccountSection
+        userId="user-1"
+        productEmails
         timeZone="America/New_York"
         units="metric"
         today="2026-11-19"

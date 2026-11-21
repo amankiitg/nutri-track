@@ -863,6 +863,10 @@ export function AuthPage() {
                     The link proves the address is yours, which is also what lets your first meal be
                     read.
                   </p>
+                  <p className="text-base text-muted-foreground">
+                    We send the occasional product update to this address. You can turn that off in
+                    Settings.
+                  </p>
                   {error && (
                     <div role="alert">
                       <p className="text-sm text-destructive">{error}</p>
