@@ -24,6 +24,7 @@ import { reportPageFunnelEvent } from "@/lib/trial";
 import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
 import { createTurnstileTokenSource, type TurnstileTokenSource } from "@/lib/turnstile-token";
 import { requestEmailLink, resendConfirmation, startOAuthSignIn } from "@/lib/auth-sign-in";
+import { rememberPendingGoogleEmail } from "@/lib/pending-google-email";
 
 /**
  * Signing in, in one email-first flow.
@@ -298,6 +299,9 @@ export function AuthPage() {
     setError(null);
     setErrorDetail(null);
     const address = normalizeEmail(hint ?? email);
+    // Remembered only for the return leg: the callback compares it with whoever Google sends back,
+    // because choosing a different account in the chooser is easy and silent.
+    rememberPendingGoogleEmail(address);
     const { data, error: oauthError } = await startOAuthSignIn(supabase, captcha(), {
       provider: "google",
       options: {

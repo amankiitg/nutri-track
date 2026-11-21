@@ -74,6 +74,19 @@ export async function startOAuthSignIn(
   }
 }
 
+/**
+ * Ends the session.
+ *
+ * No captcha: signing out spends nothing and grants nothing. It lives here so the two places that
+ * offer it do the same thing, and so a screen that has just told somebody they are signed in as the
+ * wrong person can undo it without reaching for the client itself.
+ */
+export async function endSession(
+  client: SignInClient,
+): Promise<{ error: { message?: string } | null }> {
+  return await client.auth.signOut();
+}
+
 /** Resends a confirmation email, which GoTrue also guards behind the captcha. */
 export async function resendConfirmation(
   client: SignInClient,
