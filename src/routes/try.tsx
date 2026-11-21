@@ -576,9 +576,6 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
                         );
                       }}
                     />
-                    <p className="text-center text-sm text-muted-foreground">
-                      Or type what you ate
-                    </p>
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
