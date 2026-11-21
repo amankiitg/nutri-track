@@ -16,7 +16,9 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   retries: process.env.CI === undefined ? 0 : 1,
-  timeout: 60_000,
+  // A sign-up is: a page, an email in the queue, a link, then six wizard steps. 90 seconds leaves
+  // room for a slow local stack without turning a hang into a pass.
+  timeout: 90_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI === undefined ? [["list"]] : [["list"], ["github"]],
   use: {
@@ -28,7 +30,15 @@ export default defineConfig({
   projects: [
     {
       name: "iphone",
-      use: { ...devices["iPhone 13"], viewport: { width: 375, height: 812 } },
+      // The iPhone 13 preset carries device metrics, a touch screen and a mobile user agent, and it
+      // also carries webkit. Everything here runs in one engine on purpose: both widths have to work
+      // in the browser the app actually ships to, and the phone project is about the width and the
+      // touch target rather than about Safari.
+      use: {
+        ...devices["iPhone 13"],
+        browserName: "chromium" as const,
+        viewport: { width: 375, height: 812 },
+      },
     },
     {
       name: "desktop",
