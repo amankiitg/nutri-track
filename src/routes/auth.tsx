@@ -23,6 +23,7 @@ import { openSignups } from "@/lib/open-signups";
 import { reportPageFunnelEvent } from "@/lib/trial";
 import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
 import { createTurnstileTokenSource, type TurnstileTokenSource } from "@/lib/turnstile-token";
+import { requestEmailLink, resendConfirmation, startOAuthSignIn } from "@/lib/auth-sign-in";
 
 /**
  * Signing in, in one email-first flow.
@@ -224,7 +225,7 @@ export function AuthPage() {
   useEffect(() => {
     const source = createTurnstileTokenSource({
       siteKey: turnstileSiteKey(),
-      container: turnstileRef.current,
+      container: () => turnstileRef.current,
       load: loadTurnstile,
       api: turnstileApi,
     });
@@ -234,14 +235,20 @@ export function AuthPage() {
     };
   }, []);
 
-  /** A token for this attempt, and a fresh one for the next. */
-  async function takeCaptchaToken(): Promise<string | null> {
-    return (await tokenSource.current?.ensure()) ?? null;
-  }
-
-  /** Drops the spent token and resets the widget, after success or failure alike. */
-  function releaseCaptchaToken(): void {
-    tokenSource.current?.reset();
+  /**
+   * The captcha source, as the sign-in helpers want it.
+   *
+   * One object rather than a token getter, because the helper owns the whole sequence: ask, send,
+   * reset. Handing it a token alone is what let a caller forget the reset.
+   */
+  function captcha(): TurnstileTokenSource {
+    return (
+      tokenSource.current ?? {
+        ensure: async () => null,
+        reset: () => {},
+        hasToken: () => false,
+      }
+    );
   }
 
   /**
@@ -280,15 +287,10 @@ export function AuthPage() {
     setError(null);
     setErrorDetail(null);
     const address = normalizeEmail(hint ?? email);
-    // A fresh token, in the same options object as the redirect. The previous version spread a
-    // second `options` key before this one, which the literal then overwrote: the token never
-    // reached Supabase on this path at all.
-    const token = await takeCaptchaToken();
-    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+    const { data, error: oauthError } = await startOAuthSignIn(supabase, captcha(), {
       provider: "google",
       options: {
         redirectTo: callbackUrl(),
-        ...(token === null ? {} : { captchaToken: token }),
         // Take the URL back rather than letting supabase-js navigate, so any error it returns lands in
         // the error state below.
         //
@@ -300,7 +302,6 @@ export function AuthPage() {
         ...(address === "" ? {} : { queryParams: { login_hint: address } }),
       },
     });
-    releaseCaptchaToken();
     if (oauthError) {
       setError(friendlyAuthError(oauthError));
       setErrorDetail(authErrorDetail(oauthError));
@@ -326,16 +327,13 @@ export function AuthPage() {
     setError(null);
     setErrorDetail(null);
     setBusy("link");
-    const token = await takeCaptchaToken();
-    const { error: linkError } = await supabase.auth.signInWithOtp({
+    const { error: linkError } = await requestEmailLink(supabase, captcha(), {
       email: address,
       options: {
         shouldCreateUser: true,
         emailRedirectTo: `${window.location.origin}/auth/welcome`,
-        ...(token === null ? {} : { captchaToken: token }),
       },
     });
-    releaseCaptchaToken();
     setBusy(null);
     if (linkError) {
       setError(friendlyAuthError(linkError));
@@ -363,16 +361,13 @@ export function AuthPage() {
     setError(null);
     setErrorDetail(null);
     setBusy("link");
-    const token = await takeCaptchaToken();
-    const { error: linkError } = await supabase.auth.signInWithOtp({
+    const { error: linkError } = await requestEmailLink(supabase, captcha(), {
       email: address,
       options: {
         shouldCreateUser: false,
         emailRedirectTo: window.location.origin,
-        ...(token === null ? {} : { captchaToken: token }),
       },
     });
-    releaseCaptchaToken();
     setBusy(null);
     if (linkError) {
       setError(friendlyAuthError(linkError));
@@ -481,7 +476,7 @@ export function AuthPage() {
     if (linkSent === null || resendCooldown.remaining > 0) return;
     setError(null);
     if (linkSent.kind === "verify") {
-      const { error: resendError } = await supabase.auth.resend({
+      const { error: resendError } = await resendConfirmation(supabase, captcha(), {
         type: "signup",
         email: linkSent.email,
       });
@@ -490,7 +485,7 @@ export function AuthPage() {
         return;
       }
     } else {
-      const { error: linkError } = await supabase.auth.signInWithOtp({
+      const { error: linkError } = await requestEmailLink(supabase, captcha(), {
         email: linkSent.email,
         options:
           linkSent.kind === "signin"
@@ -654,6 +649,14 @@ export function AuthPage() {
             </p>
           )}
 
+          {/*
+            The Turnstile widget mounts here, once, outside every step, so it survives the step
+            changes: the create-account, existing-account and Google-only screens all borrow it, and
+            a widget that unmounted with the email step was the reason "Email me a link" arrived at
+            Supabase without a token.
+          */}
+          <div ref={turnstileRef} data-turnstile="" />
+
           {linkPanel ?? (
             <div className="mt-8 space-y-5">
               {step === "email" && (
@@ -726,10 +729,6 @@ export function AuthPage() {
                       </Link>
                     </p>
                   )}
-
-                  {/* The Turnstile widget lives here, rendered once and invisible unless Cloudflare
-                      decides a person has to do something. No site key means no widget at all. */}
-                  <div ref={turnstileRef} />
                 </>
               )}
 

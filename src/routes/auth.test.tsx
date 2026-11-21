@@ -49,6 +49,11 @@ vi.mock("@/lib/turnstile-token", () => ({
   }),
 }));
 
+/**
+ * The sign-in helper is real here, not mocked: these tests are about what it passes on. Its two
+ * collaborators are the client mock above and the captcha source mock beside it.
+ */
+
 vi.mock("@/lib/turnstile", () => ({
   turnstileSiteKey: () => "site-key",
   loadTurnstile: async () => {},
@@ -284,5 +289,47 @@ describe("the captcha token on the sign-in calls", () => {
         options: expect.objectContaining({ captchaToken: "captcha-token-1" }),
       }),
     );
+  });
+});
+
+describe("the widget slot across steps", () => {
+  beforeEach(() => {
+    signupsOpen = true;
+  });
+
+  it("keeps the container mounted on the create-account step", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("open_signup");
+    mocks.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    const { container } = render(<AuthPage />);
+
+    // On the email step, before anything is asked.
+    expect(container.querySelector("[data-turnstile]")).not.toBeNull();
+
+    await user.type(screen.getByLabelText("Email"), "stranger@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Create your account" });
+
+    // Still there after the step changed, which is what makes a token obtainable at submit.
+    expect(container.querySelector("[data-turnstile]")).not.toBeNull();
+  });
+
+  it("sends the token from the create-account step, not only from an existing account", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("open_signup");
+    mocks.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "brand-new@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Email me a link" }));
+
+    const sent = mocks.signInWithOtp.mock.calls[0]?.[0] as {
+      email: string;
+      options: Record<string, unknown>;
+    };
+    expect(sent.email).toBe("brand-new@example.com");
+    expect(sent.options["shouldCreateUser"]).toBe(true);
+    expect(sent.options["captchaToken"]).toBe("captcha-token-1");
   });
 });
