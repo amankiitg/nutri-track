@@ -12,7 +12,11 @@
  * cannot leak.
  */
 import { z } from "zod";
-import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
+import {
+  ADMIN_DAILY_ANALYSIS_LIMIT,
+  DAILY_ANALYSIS_LIMIT,
+  GLOBAL_DAILY_ANALYSIS_CAP,
+} from "../../shared/meal-parse";
 
 /** An origin or URL we can hand to `cors` and `fetch`. Shared with the sweeper's config. */
 export const httpUrl = z
@@ -125,6 +129,14 @@ export const envSchema = z.object({
   DAILY_ANALYSIS_LIMIT: wholeNumberOrDefault(DAILY_ANALYSIS_LIMIT),
   /** The same ceiling for an admin account. A permission, not a bypass. */
   ADMIN_DAILY_ANALYSIS_LIMIT: wholeNumberOrDefault(ADMIN_DAILY_ANALYSIS_LIMIT),
+  /**
+   * How many analyses the whole product may run in one UTC day, trial included.
+   *
+   * A spending ceiling rather than a user's allowance: with sign-ups open, the per-user limits
+   * bound one account and say nothing about a thousand new ones arriving at once. Absent means
+   * 400, which is the number the admin card prints and the number the refusal names.
+   */
+  GLOBAL_DAILY_ANALYSIS_CAP: wholeNumberOrDefault(GLOBAL_DAILY_ANALYSIS_CAP),
 
   /**
    * The free trial. All four secrets are optional on purpose: with any of them
@@ -178,6 +190,7 @@ const EXPECTED = [
   "PORT (optional, defaults to 8787)",
   "DAILY_ANALYSIS_LIMIT (optional, defaults to 20)",
   "ADMIN_DAILY_ANALYSIS_LIMIT (optional, defaults to 60)",
+  "GLOBAL_DAILY_ANALYSIS_CAP (optional, defaults to 400; the whole product, trial included)",
   "TURNSTILE_SECRET, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
   "  (all optional; without any of them /try says the trial is unavailable)",
   "RESEND_API_KEY (optional; required only when TRIAL_REQUIRE_EMAIL=true)",

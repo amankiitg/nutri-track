@@ -26,7 +26,11 @@ import type {
   TrialSendResult,
   TrialStore,
 } from "../src/trial";
-import { ADMIN_DAILY_ANALYSIS_LIMIT, DAILY_ANALYSIS_LIMIT } from "../../shared/meal-parse";
+import {
+  ADMIN_DAILY_ANALYSIS_LIMIT,
+  DAILY_ANALYSIS_LIMIT,
+  GLOBAL_DAILY_ANALYSIS_CAP,
+} from "../../shared/meal-parse";
 import { APPROVED_SUBJECT, SUBJECT, TRIAL_LINE, TRIAL_URL } from "../../shared/invite-email";
 import {
   signAnonymousTrialToken,
@@ -52,6 +56,7 @@ const CONFIG: Config = {
   // limits live in the database's trial_settings table, not here.
   DAILY_ANALYSIS_LIMIT,
   ADMIN_DAILY_ANALYSIS_LIMIT,
+  GLOBAL_DAILY_ANALYSIS_CAP,
   TRIAL_REQUIRE_EMAIL: false,
 };
 
@@ -82,6 +87,10 @@ interface HarnessOptions {
    */
   finishReasons?: string[];
   usedToday?: number;
+  /** The whole product's count for today, which the global ceiling compares against. */
+  globalUsedToday?: number;
+  /** False makes the verification guard refuse, the way an unconfirmed address does. */
+  emailVerified?: boolean;
   timeZone?: string;
   /** null makes the verifier reject the token. */
   user?: VerifiedUser | null;
@@ -144,6 +153,7 @@ function buildHarness(options: HarnessOptions = {}) {
   const anonStartCalls: Array<{ ip: string | null; deviceId: string | null }> = [];
   const anonScanCalls: Array<{ deviceId: string; version: number }> = [];
   const funnelEvents: Array<{ event: string; ip: string | null }> = [];
+  /** Refusals the harness can force: the day's ceiling, or an unproven address. */
   /** The refund targets the service asked for: a device id or an email, never both. */
   const refundCalls: Array<Record<string, string>> = [];
   const replies = options.replies ?? [goodReply];
@@ -181,6 +191,12 @@ function buildHarness(options: HarnessOptions = {}) {
     },
     async timeZone() {
       return options.timeZone ?? "UTC";
+    },
+    async globalAnalysesToday() {
+      return options.globalUsedToday ?? 0;
+    },
+    async emailVerified() {
+      return options.emailVerified ?? true;
     },
     async loadPhotos(paths) {
       loadedPaths.push([...paths]);
@@ -855,7 +871,12 @@ describe("GET /analysis-limit", () => {
     const response = await get(app);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ daily: 20, admin: 60, limit: 20 });
+    expect(response.body).toEqual({
+      daily: 20,
+      admin: 60,
+      limit: 20,
+      global: { used: 0, cap: GLOBAL_DAILY_ANALYSIS_CAP },
+    });
   });
 
   it("answers with the admin ceiling for an admin, and both numbers for the panel", async () => {
@@ -864,7 +885,12 @@ describe("GET /analysis-limit", () => {
 
     // `limit` is the caller's own, which is what Settings prints. `daily` and `admin` are what the
     // admin page needs, because it prints a number per row rather than just its own.
-    expect(response.body).toEqual({ daily: 20, admin: 60, limit: 60 });
+    expect(response.body).toEqual({
+      daily: 20,
+      admin: 60,
+      limit: 60,
+      global: { used: 0, cap: GLOBAL_DAILY_ANALYSIS_CAP },
+    });
   });
 
   it("follows the configured values rather than the compiled defaults", async () => {
@@ -873,7 +899,12 @@ describe("GET /analysis-limit", () => {
       config: { ...CONFIG, DAILY_ANALYSIS_LIMIT: 10, ADMIN_DAILY_ANALYSIS_LIMIT: 99 },
     });
     const response = await get(app);
-    expect(response.body).toEqual({ daily: 10, admin: 99, limit: 99 });
+    expect(response.body).toEqual({
+      daily: 10,
+      admin: 99,
+      limit: 99,
+      global: { used: 0, cap: GLOBAL_DAILY_ANALYSIS_CAP },
+    });
   });
 
   it("refuses a caller with no token, because the answer depends on who is asking", async () => {
@@ -1675,5 +1706,42 @@ describe("the trial funnel counters", () => {
     expect(response.status).toBe(422);
     expect(response.body.error.code).toBe("unparseable_response");
     expect(funnelEvents.map((event) => event.event)).toEqual(["analysis_error"]);
+  });
+});
+
+describe("the guards before a model call", () => {
+  it("refuses an unconfirmed address before spending anything", async () => {
+    const { app, completions } = buildHarness({ emailVerified: false });
+    const response = await request(app)
+      .post("/parse-meal")
+      .set("authorization", `Bearer ${TOKEN}`)
+      .send(TYPED_MEAL);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("email_unverified");
+    expect(completions).toHaveLength(0);
+  });
+
+  it("refuses every caller once the day is full, with one sentence", async () => {
+    const { app, completions } = buildHarness({ globalUsedToday: GLOBAL_DAILY_ANALYSIS_CAP });
+    const response = await request(app)
+      .post("/parse-meal")
+      .set("authorization", `Bearer ${TOKEN}`)
+      .send(TYPED_MEAL);
+
+    expect(response.status).toBe(429);
+    expect(response.body.error.code).toBe("global_limit");
+    expect(response.body.error.message).toBe("We're at today's limit, try again tomorrow.");
+    expect(completions).toHaveLength(0);
+  });
+
+  it("lets the day through when there is room", async () => {
+    const { app } = buildHarness({ globalUsedToday: GLOBAL_DAILY_ANALYSIS_CAP - 1 });
+    const response = await request(app)
+      .post("/parse-meal")
+      .set("authorization", `Bearer ${TOKEN}`)
+      .send(TYPED_MEAL);
+
+    expect(response.status).toBe(200);
   });
 });

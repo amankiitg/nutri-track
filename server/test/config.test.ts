@@ -33,6 +33,7 @@ describe("loadConfig", () => {
       // trial_settings table in the database.
       DAILY_ANALYSIS_LIMIT: 20,
       ADMIN_DAILY_ANALYSIS_LIMIT: 60,
+      GLOBAL_DAILY_ANALYSIS_CAP: 400,
       // The anonymous trial is the default: no email step, no Resend required.
       TRIAL_REQUIRE_EMAIL: false,
     });

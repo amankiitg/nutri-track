@@ -61,9 +61,20 @@ export interface AnalysisLimits {
   admin: number;
   /** Which of the two the caller is. */
   mine: number;
+  /** The whole product's day, when the service reported it. */
+  global?: { used: number; cap: number };
 }
 
-const limitsSchema = z.object({ daily: z.number(), admin: z.number(), limit: z.number() });
+const limitsSchema = z.object({
+  daily: z.number(),
+  admin: z.number(),
+  limit: z.number(),
+  /**
+   * The whole product's day, added with the cap: the admin page prints it beside the per-user
+   * ceilings, and the service is the only place that knows the cap it is enforcing.
+   */
+  global: z.object({ used: z.number(), cap: z.number() }).optional(),
+});
 
 /**
  * Asks the service what it enforces, so the screen cannot print a different number.
@@ -83,7 +94,12 @@ export async function fetchAnalysisLimits(): Promise<AnalysisLimits> {
 
   const parsed = limitsSchema.safeParse(await response.json().catch(() => null));
   if (!parsed.success) throw new Error("The daily limit came back in an unexpected shape.");
-  return { daily: parsed.data.daily, admin: parsed.data.admin, mine: parsed.data.limit };
+  return {
+    daily: parsed.data.daily,
+    admin: parsed.data.admin,
+    mine: parsed.data.limit,
+    ...(parsed.data.global === undefined ? {} : { global: parsed.data.global }),
+  };
 }
 
 export async function fetchCallBudget(): Promise<CallBudget> {
