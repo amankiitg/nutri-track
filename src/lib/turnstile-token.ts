@@ -26,7 +26,15 @@ export interface TurnstileWidgetApi {
 export interface TurnstileTokenSourceOptions {
   /** Null when no site key is configured, which means no widget and no token. */
   siteKey: string | null;
-  container: HTMLElement | null;
+  /**
+   * Where to mount the widget, asked at the moment of use rather than captured once.
+   *
+   * This is the second half of the bug: the container was read when the page mounted, and React
+   * removed it as soon as the sign-in step changed, so later attempts rendered a widget into a
+   * node that was no longer in the document and got no token back. A getter means the widget
+   * always attaches to the node that exists now, and a remount is handled below.
+   */
+  container: () => HTMLElement | null;
   load(): Promise<void>;
   api(): TurnstileWidgetApi | undefined;
   /** Injected so the tests do not wait eight real seconds. */
@@ -54,6 +62,8 @@ export function createTurnstileTokenSource(
   const timeoutMs = options.timeoutMs ?? TURNSTILE_TIMEOUT_MS;
   let token: string | null = null;
   let widgetId: string | null = null;
+  /** The element the current widget was rendered into, so a remount is detectable. */
+  let mountedIn: HTMLElement | null = null;
   let rendering: Promise<void> | null = null;
   let waiting: ((value: string | null) => void) | null = null;
 
@@ -65,9 +75,31 @@ export function createTurnstileTokenSource(
     }
   }
 
+  /** Forgets a widget whose container has left the document, so a fresh one can be made. */
+  function dropStaleWidget(): void {
+    const container = options.container();
+    if (widgetId === null) return;
+    if (mountedIn !== null && mountedIn === container && container.isConnected) return;
+    const api = options.api();
+    if (api !== undefined) {
+      try {
+        api.remove(widgetId);
+      } catch {
+        // A widget already gone is a widget already gone.
+      }
+    }
+    widgetId = null;
+    mountedIn = null;
+    token = null;
+    // The render promise is cached too, so a fresh widget needs a fresh promise or the old one
+    // answers "already rendered" and nothing mounts.
+    rendering = null;
+  }
+
   function renderWidget(): Promise<void> {
     if (rendering !== null) return rendering;
-    if (options.siteKey === null || options.container === null) {
+    const container = options.container();
+    if (options.siteKey === null || container === null) {
       rendering = Promise.resolve();
       return rendering;
     }
@@ -76,9 +108,11 @@ export function createTurnstileTokenSource(
       .load()
       .then(() => {
         const api = options.api();
-        if (api === undefined || options.container === null) return;
+        const target = options.container();
+        if (api === undefined || target === null) return;
         if (widgetId !== null) return;
-        widgetId = api.render(options.container, {
+        mountedIn = target;
+        widgetId = api.render(target, {
           sitekey: options.siteKey,
           appearance: "interaction-only",
           callback: (value: string) => {
@@ -100,6 +134,7 @@ export function createTurnstileTokenSource(
   }
 
   async function ensure(): Promise<string | null> {
+    dropStaleWidget();
     if (token !== null) return token;
     await renderWidget();
     if (token !== null) return token;

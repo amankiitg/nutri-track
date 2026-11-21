@@ -44,7 +44,7 @@ describe("the Turnstile token source", () => {
     const widget = fakeWidget();
     const source = createTurnstileTokenSource({
       siteKey: null,
-      container: CONTAINER,
+      container: () => CONTAINER,
       load: async () => {},
       api: () => widget.api,
     });
@@ -58,7 +58,7 @@ describe("the Turnstile token source", () => {
     const load = vi.fn(async () => {});
     const source = createTurnstileTokenSource({
       siteKey: "site-key",
-      container: CONTAINER,
+      container: () => CONTAINER,
       load,
       api: () => widget.api,
     });
@@ -82,7 +82,7 @@ describe("the Turnstile token source", () => {
     } as unknown as TurnstileWidgetApi;
     const source = createTurnstileTokenSource({
       siteKey: "site-key",
-      container: CONTAINER,
+      container: () => CONTAINER,
       load: async () => {},
       api: () => api,
       timeoutMs: 5,
@@ -108,7 +108,7 @@ describe("the Turnstile token source", () => {
 
     const source = createTurnstileTokenSource({
       siteKey: "site-key",
-      container: CONTAINER,
+      container: () => CONTAINER,
       load: async () => {},
       api: () => widget.api,
     });
