@@ -1,0 +1,10 @@
+{
+  // The browser suite is TypeScript too, and it is not in the app's tsconfig: it needs the node
+  // types for child_process and it must not drag them into the browser build.
+  "extends": "../tsconfig.json",
+  "include": ["**/*.ts"],
+  "compilerOptions": {
+    "types": ["node"],
+    "noUnusedLocals": true
+  }
+}

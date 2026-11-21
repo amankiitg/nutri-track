@@ -58,6 +58,8 @@ export type AuthEntryState =
   | "link_only"
   /** No password, but a Google identity beside the email one: both doors work. */
   | "link_only_google"
+  /** Evidence of a password, plus a Google identity: both doors, password view first. */
+  | "has_password_google"
   /** What a database from before the three-way split answers; read as `has_password`. */
   | "has_account"
   | "google_only"
@@ -70,10 +72,22 @@ const ENTRY_STATES: readonly AuthEntryState[] = [
   "has_password",
   "link_only",
   "link_only_google",
+  "has_password_google",
   "has_account",
   "google_only",
   "busy",
 ];
+
+/**
+ * Whether the answer says a password is known to exist for this address.
+ *
+ * One place, because three screens ask: the sign-in screen decides which view to draw, the Settings
+ * page decides between "Set a password" and "Change password", and both must not grow their own
+ * copy of the list and disagree about it.
+ */
+export function stateHasPassword(state: AuthEntryState | null): boolean {
+  return state === "has_password" || state === "has_password_google";
+}
 
 /**
  * Which form to show for this address, or null when the question could not be answered.

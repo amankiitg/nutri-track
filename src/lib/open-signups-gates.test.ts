@@ -106,6 +106,11 @@ describe("the sign-in answer", () => {
     // because GoTrue writes a 60-character hash for a magic-link account and presence proves nothing.
     // A future edit that starts claiming a password again fails here.
     expect(body).not.toContain("encrypted_password");
+    // And it must not read the amr claims either. Measured on the local stack, GoTrue writes
+    // authentication_method = 'password' for a session established by an emailed link, so that row
+    // is true for the accounts this is meant to exclude. The flag is the only evidence.
+    expect(body).not.toContain("mfa_amr_claims");
+    expect(body).toContain("has_password");
   });
 });
 

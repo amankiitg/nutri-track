@@ -192,10 +192,13 @@ describe("an invited address with an account", () => {
     await user.type(await screen.findByLabelText(/^password$/i), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
+    // Through the helper now, so the call carries the options object the token goes in. With this
+    // harness's captcha source there is no token, so the object is empty rather than absent.
     await waitFor(() =>
       expect(h.signInWithPassword).toHaveBeenCalledWith({
         email: "known@example.com",
         password: "hunter2hunter2",
+        options: {},
       }),
     );
     await waitFor(() => expect(h.replace).toHaveBeenCalled());
@@ -355,9 +358,11 @@ describe("getting back to the address", () => {
     });
     await user.click(screen.getByRole("button", { name: /use a different email/i }));
 
-    // Back on the email field, with the address still there to edit rather than retype.
+    // Back on the email field, and empty: the address that led here belonged to the screen that
+    // was just left, and a field still holding it makes "use a different email" a delete-first
+    // instruction on a phone.
     expect(screen.getByRole("heading", { name: "Welcome" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^email$/i)).toHaveValue(address);
+    expect(screen.getByLabelText(/^email$/i)).toHaveValue("");
   });
 });
 

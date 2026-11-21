@@ -300,6 +300,8 @@ export type Database = {
           fat_share: number;
           fiber_target_g: number;
           goal: Database["public"]["Enums"]["goal_type"];
+          /** Added with 20261121120000_has_password_evidence: evidence that a password exists. */
+          has_password: boolean;
           height_cm: number;
           pace_kg_per_week: number | null;
           protein_g_per_kg: number;
@@ -321,6 +323,7 @@ export type Database = {
           fat_share?: number;
           fiber_target_g?: number;
           goal: Database["public"]["Enums"]["goal_type"];
+          has_password?: boolean;
           height_cm: number;
           pace_kg_per_week?: number | null;
           protein_g_per_kg?: number;
@@ -342,6 +345,7 @@ export type Database = {
           fat_share?: number;
           fiber_target_g?: number;
           goal?: Database["public"]["Enums"]["goal_type"];
+          has_password?: boolean;
           height_cm?: number;
           pace_kg_per_week?: number | null;
           protein_g_per_kg?: number;
@@ -582,6 +586,11 @@ export type Database = {
         }[];
       };
       auth_entry_state: { Args: { p_email: string }; Returns: string };
+      /**
+       * Added with 20261121120000_has_password_evidence. Records that the caller saved a password, so
+       * the sign-in screen offers the password box for an account that has never signed in with one.
+       */
+      mark_has_password: { Args: never; Returns: undefined };
       calorie_status: {
         Args: { p_actual: number; p_target: number };
         Returns: string;

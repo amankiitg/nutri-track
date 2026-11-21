@@ -72,11 +72,20 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_global_cap.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_open_signups_post_login.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_password_claim.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_has_password_evidence.sql"
 
 # Roll back newest first, checking each predecessor comes back. The no-food rollback goes
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261121120000_has_password_evidence.sql"
+evidence=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname in ('mark_has_password', 'profiles_has_password_guard')")
+[ "${evidence}" = "0" ] || { echo "FAIL: the password recorder or its guard survived the rollback" >&2; exit 1; }
+column=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='has_password'")
+[ "${column}" = "0" ] || { echo "FAIL: profiles.has_password survived its rollback" >&2; exit 1; }
+states=$("${PSQL[@]}" -Atc "select pg_get_functiondef(oid) from pg_proc where proname='auth_entry_state'" | grep -c "has_password_google" || true)
+[ "${states}" = "0" ] || { echo "FAIL: the restored auth_entry_state still names has_password_google" >&2; exit 1; }
+echo "ok - the password evidence migration rolls back: no column, no recorder, no guard"
 apply "${ROOT}/supabase/rollback/20261121090000_no_password_claim.sql"
 claim=$("${PSQL[@]}" -Atc "select pg_get_functiondef(oid) from pg_proc where proname='auth_entry_state'" | grep -c "encrypted_password" || true)
 [ "${claim}" = "1" ] || { echo "FAIL: the rollback did not restore the encrypted_password branch" >&2; exit 1; }

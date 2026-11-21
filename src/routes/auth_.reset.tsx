@@ -124,6 +124,9 @@ function ResetPasswordPage() {
       else setError(friendlyAuthError(updateError));
       return;
     }
+    // The new password exists, which is the one thing the sign-in screen cannot work out for itself.
+    // Not awaited: the person is on their way to Today, and a failed note must not stop them.
+    void supabase.rpc("mark_has_password");
     setShowPassword(false);
     router.history.replace("/today");
   }

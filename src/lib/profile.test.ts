@@ -78,6 +78,8 @@ function storedProfile(overrides: Partial<Profile> = {}): Profile {
     protein_g_per_kg: 1.6,
     fat_share: 0.3,
     fiber_target_g: 30,
+    // Nothing about this fixture signs in with a password, and the column defaults to false.
+    has_password: false,
     units: "metric",
     timezone: "UTC",
     reminder_time: null,

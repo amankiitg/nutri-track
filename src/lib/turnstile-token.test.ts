@@ -6,7 +6,11 @@
  * token is fetched, and about throwing it away afterwards.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createTurnstileTokenSource, type TurnstileWidgetApi } from "./turnstile-token";
+import {
+  CaptchaUnavailableError,
+  createTurnstileTokenSource,
+  type TurnstileWidgetApi,
+} from "./turnstile-token";
 
 const CONTAINER = {} as HTMLElement;
 
@@ -72,11 +76,12 @@ describe("the Turnstile token source", () => {
     expect(source.hasToken()).toBe(true);
   });
 
-  it("gives up after the timeout rather than holding the form", async () => {
+  it("re-triggers the widget once, then refuses rather than sending without a token", async () => {
     const render = vi.fn(() => "widget-1");
+    const execute = vi.fn();
     const api = {
       render,
-      execute: vi.fn(),
+      execute,
       reset: vi.fn(),
       remove: vi.fn(),
     } as unknown as TurnstileWidgetApi;
@@ -88,8 +93,29 @@ describe("the Turnstile token source", () => {
       timeoutMs: 5,
     });
 
-    expect(await source.ensure()).toBeNull();
+    // Two bounded waits, two renders and two executes, and then a refusal. Null here would mean
+    // "send the request without a token", which GoTrue answers with a captcha error that the screen
+    // shows as a wrong password.
+    await expect(source.ensure()).rejects.toBeInstanceOf(CaptchaUnavailableError);
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(source.hasToken()).toBe(false);
+  });
+
+  it("answers null without waiting when CAPTCHA is off", async () => {
+    const api = { render: vi.fn(), execute: vi.fn(), reset: vi.fn(), remove: vi.fn() };
+    const source = createTurnstileTokenSource({
+      siteKey: null,
+      container: () => CONTAINER,
+      load: async () => {},
+      api: () => api as unknown as TurnstileWidgetApi,
+      timeoutMs: 5,
+    });
+
+    // No site key means no widget: the request goes without a token, which is the fallback the
+    // local suite covers with the site key removed.
+    expect(await source.ensure()).toBeNull();
+    expect(api.execute).not.toHaveBeenCalled();
   });
 
   it("drops the spent token and resets the widget, so the next attempt is fresh", async () => {

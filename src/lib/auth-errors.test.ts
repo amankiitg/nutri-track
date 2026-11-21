@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CAPTCHA_STILL_LOADING } from "./auth-sign-in";
 import {
   CREDENTIALS_MISMATCH,
   authErrorDetail,
@@ -48,6 +49,25 @@ describe("friendlyAuthError", () => {
   it("has an answer when there is no message at all", () => {
     expect(friendlyAuthError(null)).toMatch(/something went wrong/i);
     expect(friendlyAuthError(undefined)).toMatch(/something went wrong/i);
+  });
+});
+
+describe("the security check that never finished", () => {
+  it("says so, and is told apart by its code rather than its words", () => {
+    const refused = { code: "captcha_unavailable", status: 0, message: CAPTCHA_STILL_LOADING };
+
+    expect(friendlyAuthError(refused)).toBe(CAPTCHA_STILL_LOADING);
+    // Not the wrong-password sentence: a refusal for a missing token is not about the password, and
+    // telling somebody their password is wrong when it was never sent is the bug this closes.
+    expect(friendlyAuthError(refused)).not.toBe(
+      friendlyAuthError({ message: "Invalid login credentials" }),
+    );
+  });
+
+  it("shows no detail line, because HTTP 0 is not a fact worth printing", () => {
+    expect(
+      authErrorDetail({ code: "captcha_unavailable", status: 0, message: "anything" }),
+    ).toBeNull();
   });
 });
 
