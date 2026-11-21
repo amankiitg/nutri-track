@@ -23,7 +23,13 @@ import { openSignups } from "@/lib/open-signups";
 import { reportPageFunnelEvent } from "@/lib/trial";
 import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
 import { createTurnstileTokenSource, type TurnstileTokenSource } from "@/lib/turnstile-token";
-import { requestEmailLink, resendConfirmation, startOAuthSignIn } from "@/lib/auth-sign-in";
+import {
+  requestEmailLink,
+  requestPasswordReset,
+  resendConfirmation,
+  signInWithPassword,
+  startOAuthSignIn,
+} from "@/lib/auth-sign-in";
 import { rememberPendingGoogleEmail } from "@/lib/pending-google-email";
 
 /**
@@ -474,7 +480,10 @@ export function AuthPage() {
     setError(null);
     setErrorDetail(null);
     setMismatch(false);
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    // Through the helper, which carries the captcha token: a password sign-in sent without one is
+    // refused by GoTrue for the token rather than for the password, and the person is told the wrong
+    // thing about their own fingers.
+    const { error: signInError } = await signInWithPassword(supabase, captcha(), {
       email: normalizeEmail(email),
       password,
     });
@@ -572,12 +581,18 @@ export function AuthPage() {
     setError(null);
     setBusy("email");
     resetCooldown.start();
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(address, {
+    const { error: resetError } = await requestPasswordReset(supabase, captcha(), {
+      email: address,
       redirectTo: `${window.location.origin}/auth/reset`,
     });
     setBusy(null);
+    if (resetError) {
+      // No "check your email" sentence for a request that never went: it is the one claim the
+      // screen cannot afford to make up.
+      setError(friendlyAuthError(resetError));
+      return;
+    }
     setResetSent(true);
-    if (resetError) setError(friendlyAuthError(resetError));
   }
 
   /** Back to the address field, from any step. Everything typed after it belongs to that step. */

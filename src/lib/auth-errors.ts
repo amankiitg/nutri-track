@@ -14,6 +14,8 @@
  * "Database error saving new user" must win over the generic fallback, so the specific cases come
  * first.
  */
+import { CAPTCHA_STILL_LOADING } from "./auth-sign-in";
+
 /**
  * The provider's own text, which is what every check in this file reads.
  *
@@ -74,11 +76,20 @@ export function credentialsMismatchText(): string {
 
 export function friendlyAuthError(error: unknown): string {
   const raw = authErrorText(error);
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: unknown }).code)
+      : "";
 
   if (raw !== "") console.error("[auth]", raw);
   const text = raw.toLowerCase();
 
   if (text === "") return "Something went wrong. Please try again.";
+
+  // The security check did not finish, so nothing was sent. Saying so, and that a second tap works,
+  // is the difference between a dead button and a request that had no chance. The code is checked
+  // rather than the words so the copy can change without silently losing this branch.
+  if (code === "captcha_unavailable") return CAPTCHA_STILL_LOADING;
 
   if (isInvalidCredentials(error)) {
     return credentialsMismatchText();
@@ -138,6 +149,10 @@ export function authErrorDetail(error: unknown): string | null {
   const message =
     typeof shape.message === "string" && shape.message.trim() !== "" ? shape.message.trim() : null;
   const status = typeof shape.status === "number" ? `HTTP ${shape.status}` : null;
+
+  // A refusal that never reached the server has no status worth printing, and "HTTP 0" under a
+  // sentence that already explains itself is noise.
+  if (shape.status === 0) return null;
 
   const parts = [code, status, message].filter((part): part is string => part !== null);
   return parts.length === 0 ? null : parts.join(" · ");

@@ -192,10 +192,13 @@ describe("an invited address with an account", () => {
     await user.type(await screen.findByLabelText(/^password$/i), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
+    // Through the helper now, so the call carries the options object the token goes in. With this
+    // harness's captcha source there is no token, so the object is empty rather than absent.
     await waitFor(() =>
       expect(h.signInWithPassword).toHaveBeenCalledWith({
         email: "known@example.com",
         password: "hunter2hunter2",
+        options: {},
       }),
     );
     await waitFor(() => expect(h.replace).toHaveBeenCalled());

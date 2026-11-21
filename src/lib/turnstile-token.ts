@@ -41,6 +41,21 @@ export interface TurnstileTokenSourceOptions {
   timeoutMs?: number;
 }
 
+/**
+ * Thrown when CAPTCHA is on and the widget would not produce a token.
+ *
+ * The distinction this exists for: with CAPTCHA on, a request sent without a token is a request
+ * GoTrue refuses, and the person is told "something went wrong" about a sign-in that never left the
+ * screen. With no token there is nothing worth sending, so the caller stops and asks them to tap
+ * again rather than sending a request that cannot succeed.
+ */
+export class CaptchaUnavailableError extends Error {
+  constructor() {
+    super("CAPTCHA is on and no token was produced");
+    this.name = "CaptchaUnavailableError";
+  }
+}
+
 export interface TurnstileTokenSource {
   /**
    * A token for one attempt.
@@ -133,12 +148,14 @@ export function createTurnstileTokenSource(
     return rendering;
   }
 
-  async function ensure(): Promise<string | null> {
-    dropStaleWidget();
-    if (token !== null) return token;
-    await renderWidget();
-    if (token !== null) return token;
-
+  /**
+   * One bounded wait for the widget: run it, and give up when the timeout passes.
+   *
+   * Null means the widget said nothing in time, which is the caller's cue to try once more or to
+   * stop. The waiter is cleared either way, so a late callback cannot resolve a later attempt with
+   * an old token.
+   */
+  async function waitForToken(): Promise<string | null> {
     const api = options.api();
     if (api === undefined || widgetId === null) return null;
 
@@ -157,10 +174,34 @@ export function createTurnstileTokenSource(
     });
 
     const value = await Promise.race([answer, timeout]);
-    // The waiter is cleared either way, so a late callback cannot resolve a later attempt with an
-    // old token.
     waiting = null;
     return value;
+  }
+
+  async function ensure(): Promise<string | null> {
+    dropStaleWidget();
+    if (token !== null) return token;
+    await renderWidget();
+    if (token !== null) return token;
+
+    // No site key is CAPTCHA off: there is no widget and nothing to wait for, so the request goes
+    // out without a token, which is what this app did before CAPTCHA existed.
+    if (options.siteKey === null) return null;
+
+    const first = await waitForToken();
+    if (first !== null) return first;
+
+    // One re-trigger, and only one. A widget that has not answered by now is usually one that had
+    // not finished loading when the button was pressed, and pressing it again behind the scenes is
+    // what turns a dead press into a working one. The second wait is the same bound as the first.
+    dropStaleWidget();
+    await renderWidget();
+    const second = await waitForToken();
+    if (second !== null) return second;
+
+    // CAPTCHA is on and there is still nothing to send. Callers stop here rather than sending a
+    // request GoTrue will refuse for the missing token.
+    throw new CaptchaUnavailableError();
   }
 
   function reset(): void {
