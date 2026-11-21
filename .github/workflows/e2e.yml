@@ -29,6 +29,11 @@ jobs:
       - name: Install chromium
         run: npx playwright install --with-deps chromium
 
+      # The suite plants accounts and reads the state they produce, and it does that with psql
+      # against the local stack's port. The runner image does not carry the client by default.
+      - name: Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
       - name: Start the local stack and run the suite
         run: npm run test:e2e
         env:
