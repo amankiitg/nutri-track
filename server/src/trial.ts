@@ -117,6 +117,8 @@ export const FUNNEL_EVENTS = [
   "analysis_error",
   "limit_reached",
   "request_invite_submitted",
+  "signup_started",
+  "signup_completed",
 ] as const;
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number];

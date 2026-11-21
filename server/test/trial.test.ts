@@ -25,6 +25,7 @@ const CONFIG = {
   ALLOWED_ORIGINS: ["http://localhost:8080"],
   DAILY_ANALYSIS_LIMIT: 20,
   ADMIN_DAILY_ANALYSIS_LIMIT: 60,
+  GLOBAL_DAILY_ANALYSIS_CAP: 400,
   TRIAL_SERVER_SECRET: "trial-server-secret-example",
   TRIAL_REQUIRE_EMAIL: false,
 } satisfies Config;

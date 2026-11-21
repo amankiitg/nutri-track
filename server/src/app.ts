@@ -27,6 +27,15 @@ import {
   trialFunnelSchema,
 } from "./schemas";
 import type { IssuedTrialLink } from "./caller-store";
+
+/**
+ * What a person sees when the day's ceiling is reached.
+ *
+ * One sentence, shared by the refusal and by the client's error mapping: the two used to differ, and
+ * a person reading "try later" on one screen and the raw error code on the next learned nothing
+ * about when to come back.
+ */
+export const GLOBAL_LIMIT_MESSAGE = "We're at today's limit, try again tomorrow.";
 import {
   clientIp,
   parseAnonymousTrialMeal,
@@ -222,7 +231,14 @@ export function createApp(deps: AppDeps): Express {
     const daily = deps.config.DAILY_ANALYSIS_LIMIT;
     const adminLimit = deps.config.ADMIN_DAILY_ANALYSIS_LIMIT;
 
-    res.json({ daily, admin: adminLimit, limit: admin ? adminLimit : daily });
+    const globalUsed = await deps.forCaller(user, token).globalAnalysesToday();
+
+    res.json({
+      daily,
+      admin: adminLimit,
+      limit: admin ? adminLimit : daily,
+      global: { used: globalUsed, cap: deps.config.GLOBAL_DAILY_ANALYSIS_CAP },
+    });
   });
 
   app.post("/parse-meal", async (req: Request, res: Response) => {
@@ -234,10 +250,30 @@ export function createApp(deps: AppDeps): Express {
 
     assertPathsOwnedBy(user.id, parsed.data.photoPaths);
 
+    const store = deps.forCaller(user, token);
+
+    // Two guards before the model is asked, in this order because the first is about the account
+    // and the second about the day. Both are checks the screens cannot make for us: the per-user
+    // limit is about one account, and neither of these is.
+    if (!(await store.emailVerified())) {
+      throw new ApiError(
+        403,
+        "email_unverified",
+        "Confirm your email address first. The link in your inbox is what proves it.",
+      );
+    }
+
+    const usedToday = await store.globalAnalysesToday();
+    const cap = deps.config.GLOBAL_DAILY_ANALYSIS_CAP;
+    if (usedToday >= cap) {
+      log("warn", "global analysis cap reached", { usedToday, cap });
+      throw new ApiError(429, "global_limit", GLOBAL_LIMIT_MESSAGE);
+    }
+
     const outcome = await parseMeal(parsed.data, {
       config: deps.config,
       llm: deps.llm,
-      store: deps.forCaller(user, token),
+      store,
       ...(deps.now ? { now: deps.now } : {}),
     });
 

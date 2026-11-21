@@ -43,6 +43,19 @@ export interface CallerStore {
   recordCall(record: LlmCallRecord): Promise<void>;
   /** The profile's timezone, so the service agrees with the rest of the app. */
   timeZone(): Promise<string>;
+  /**
+   * How many analyses have run across the whole product since midnight UTC, trial included.
+   *
+   * A count, never rows: the function behind it is security definer, and its whole job is to
+   * answer "is there room today" without showing anybody what other people ate.
+   */
+  globalAnalysesToday(): Promise<number>;
+  /**
+   * Whether the caller's own address has been proven, asked of the database rather than inferred
+   * from the token: magic links and Google both prove an inbox, and this is the check that makes
+   * that a rule instead of an assumption.
+   */
+  emailVerified(): Promise<boolean>;
   /** Reads photos the caller owns. Storage policies enforce the ownership. */
   loadPhotos(paths: readonly string[]): Promise<Photo[]>;
   /**
@@ -141,6 +154,18 @@ export function createCallerStore(client: SupabaseClient, userId: string): Calle
         status: record.status,
       });
       if (error) fail("llm_calls insert", error);
+    },
+
+    async globalAnalysesToday() {
+      const { data, error } = await client.rpc("global_analyses_today");
+      if (error) fail("global_analyses_today", error);
+      return typeof data === "number" ? data : 0;
+    },
+
+    async emailVerified() {
+      const { data, error } = await client.rpc("caller_email_verified");
+      if (error) fail("caller_email_verified", error);
+      return data === true;
     },
 
     async timeZone() {

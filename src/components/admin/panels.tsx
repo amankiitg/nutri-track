@@ -549,6 +549,10 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
           first time it changed, and multiplying two numbers is easy enough.
         </p>
 
+        {limits.isSuccess && limits.data.global !== undefined && (
+          <GlobalDayBanner global={limits.data.global} />
+        )}
+
         {spend.isPending && <p className="text-sm text-muted-foreground">Loading…</p>}
         {spend.isError && (
           <PanelError
@@ -898,5 +902,36 @@ export function SignupsCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Today, across everybody: the number the ceiling compares against.
+ *
+ * Above the per-account rows on purpose. The rows answer "who is spending", and this answers
+ * "is there room left today", which is the only question whose answer stops every account at
+ * once.
+ */
+function GlobalDayBanner({ global }: { global: { used: number; cap: number } }) {
+  const full = global.used >= global.cap;
+
+  return (
+    <div
+      className="rounded-xl border p-3 text-sm"
+      style={{ borderColor: full ? "hsl(0 70% 45% / 0.4)" : undefined }}
+    >
+      <p className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground">Today, all accounts</span>
+        <span className="font-semibold">
+          {global.used} of {global.cap}
+        </span>
+      </p>
+      {full && (
+        <p role="alert" className="mt-1 text-destructive">
+          The day's ceiling is reached. Every analysis is refused until tomorrow, and trial scans
+          are refused with them.
+        </p>
+      )}
+    </div>
   );
 }

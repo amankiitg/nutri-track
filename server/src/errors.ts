@@ -13,6 +13,10 @@ export type ApiErrorCode =
   | "trial_link_expired"
   | "trial_already_access"
   | "email_required"
+  /** The caller's address has not been proven, so no model call is spent on them. */
+  | "email_unverified"
+  /** The day's ceiling across the whole product has been reached. */
+  | "global_limit"
   | "upstream_error"
   | "unparseable_response"
   | "internal_error";

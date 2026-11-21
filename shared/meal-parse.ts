@@ -39,6 +39,16 @@ export const DAILY_ANALYSIS_LIMIT = 20;
  */
 export const ADMIN_DAILY_ANALYSIS_LIMIT = 60;
 
+/**
+ * How many analyses the whole product may run in one UTC day, trial included.
+ *
+ * A spending ceiling, chosen rather than measured: 400 is roughly twenty ordinary accounts using
+ * their daily twenty, which is well inside what one Gemini key has been seen to serve, and it is
+ * the number to raise first if the admin card ever sits at the line. The service enforces it; the
+ * admin card prints it; neither invents its own copy.
+ */
+export const GLOBAL_DAILY_ANALYSIS_CAP = 400;
+
 /** A single item over this many kcal, or with zero kcal, is flagged for review. */
 export const MAX_ITEM_KCAL = 2000;
 /** An item over this many grams is flagged for review. */
