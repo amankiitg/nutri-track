@@ -13,6 +13,7 @@ import type { Page } from "@playwright/test";
 import {
   askState,
   expect,
+  expectQuietLinksSeparated,
   freshEmail,
   invite,
   linkOf,
@@ -205,6 +206,8 @@ test.describe.serial("the sign-in screen, end to end", () => {
 
     // The password view, with the link one press away.
     await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+    // Three quiet links under the form, each on its own line.
+    await expectQuietLinksSeparated(page);
     await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /use an email link instead/i })).toBeVisible();
@@ -294,6 +297,11 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeVisible();
     await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+    // The two quiet links of the Google-only panel, on their own lines, with the new words.
+    await expect(
+      page.getByRole("button", { name: "Prefer email? Send me a sign-in link" }),
+    ).toBeVisible();
+    await expectQuietLinksSeparated(page);
   });
 
   test("f. the two views toggle without ever stacking", async ({ page, harness }) => {
@@ -307,10 +315,12 @@ test.describe.serial("the sign-in screen, end to end", () => {
       await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(1);
       await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+      await expectQuietLinksSeparated(page);
 
       await page.getByRole("button", { name: /use a password instead/i }).click();
       await expect(page.getByLabel("Password", { exact: true })).toHaveCount(1);
       await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toHaveCount(0);
+      await expectQuietLinksSeparated(page);
     }
 
     // The focus follows the view: the field in the password view, the button in the link view.
@@ -400,6 +410,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
     ).toBeVisible({
       timeout: 25_000,
     });
+    await expectQuietLinksSeparated(page);
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeEnabled();
 
     // Nothing was sent, and nothing claims the email is on its way.
@@ -429,6 +440,8 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await openAuth(page);
     await askState(page, invited);
     await expect(page.getByRole("heading", { name: "You're invited!" })).toBeVisible();
+    // The last sentence, in the words this branch settled on.
+    await expect(page.getByText("You can set a password later in Settings.")).toBeVisible();
 
     const before = await mailCount(invited);
     await page.getByRole("button", { name: "Email me a link" }).click();

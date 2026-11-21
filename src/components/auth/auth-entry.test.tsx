@@ -296,14 +296,14 @@ describe("an address whose account has never had a password", () => {
     );
   });
 
-  it("offers a link for somebody who would rather have a password", async () => {
+  it("offers a link for somebody who would rather use email", async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     entryState("google_only");
     render(<Page />);
     await continueWith("google@example.com");
 
     await user.click(
-      await screen.findByRole("button", { name: /prefer a password\? email me a link/i }),
+      await screen.findByRole("button", { name: /prefer email\? send me a sign-in link/i }),
     );
 
     await waitFor(() =>

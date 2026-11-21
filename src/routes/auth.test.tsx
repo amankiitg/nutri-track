@@ -132,6 +132,27 @@ async function reachStep(user: ReturnType<typeof userEvent.setup>, state: string
   await screen.findByRole("heading", { name: heading });
 }
 
+describe("the copy the contact sheet settled", () => {
+  it("tells an invited address it can set a password later, and nothing about proving the inbox", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "invited_new");
+
+    expect(screen.getByText("You can set a password later in Settings.")).toBeTruthy();
+    // The sentence it replaced explained why the link mattered, which the button already says.
+    expect(screen.queryByText(/password you set afterwards/i)).toBeNull();
+  });
+
+  it("offers email in the Google-only panel, not a password", async () => {
+    const user = userEvent.setup();
+    await reachStep(user, "google_only");
+
+    expect(
+      screen.getByRole("button", { name: "Prefer email? Send me a sign-in link" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /prefer a password/i })).toBeNull();
+  });
+});
+
 describe("the sign-in link button", () => {
   it("is behind the password view on the has_account step, one press away", async () => {
     const user = userEvent.setup();

@@ -45,12 +45,12 @@ identically whether the switch is on or off.
 | `email` (first step, before any answer) | off | Continue with Google (outline); Continue (primary) | "Invite-only for now. Use the email you were invited with." | "No invite yet? Request one" goes to /auth/request with the typed address |
 | `not_invited` (no account, not on the list) | off | Request an invite (primary, link) | "**address** isn't on the list yet. Ask for an invite and you'll get an email as soon as you're approved." | Use a different email |
 | `open_signup` (no account, sign ups open) | on | Email me a link (primary); Continue with Google (outline) | "**address** has no account yet, and sign-ups are open. We'll email you a link to create one." plus "The link proves the address is yours, which is also what lets your first meal be read." | Use a different email |
-| `invited_new` (on the list, no account yet) | same | Email me a link (primary) | "**address** is on the list. We'll email you a link to finish setting up." plus "The link proves the address is yours, so the password you set afterwards is yours too." | Use a different email |
+| `invited_new` (on the list, no account yet) | same | Email me a link (primary) | "**address** is on the list. We'll email you a link to finish setting up." plus "You can set a password later in Settings." | Use a different email |
 | `link_only` (account, no password evidence, email identity only) | same | Email me a sign-in link (primary) | "**address** signs in by email link. We'll send you one to open on this device." plus "Set a password in Settings later, and this screen will offer it instead." | Use a different email |
 | `link_only_google` (the same, with Google attached) | same | Email me a sign-in link (primary); Continue with Google (outline) | "**address** signs in with a link or with Google." plus the same Settings note | Use a different email |
 | `has_password` (password evidence, email identity only) | same | Sign in (primary, submits the password); Email me a sign-in link instead (secondary, swaps to the link view) | "Signing in as **address**." | Forgot password? (opens the reset step); Use an email link instead (swaps back to the link view) while in the password view; Use a different email |
 | `has_password_google` (password evidence plus Google) | same | Sign in (primary); Continue with Google (outline); Email me a sign-in link instead (secondary) | "Signing in as **address**." | Forgot password?; Use an email link instead; Use a different email |
-| `google_only` (Google identity, no email identity) | same | Continue with Google (primary); Email me a sign-in link (outline) | "**address** has never had a password here. Sign in with Google, or ask for a link if you would rather have one." | Prefer a password? Email me a link (sends a link that lets them set one); Use a different email |
+| `google_only` (Google identity, no email identity) | same | Continue with Google (primary); Email me a sign-in link (outline) | "**address** has never had a password here. Sign in with Google, or ask for a link if you would rather have one." | Prefer email? Send me a sign-in link (sends a link that lets them set one); Use a different email |
 | `busy` (the throttle refused) | same | Continue (primary), on the email step it never left | the email step stays, with "Too many attempts. Try again in a minute." under the field | the same Request one link the email step has when sign ups are closed |
 
 Every panel above that can send something also shows the "Check your inbox" panel in place of the
@@ -84,6 +84,10 @@ field cleared.
 | Request an invite | a route change to /auth/request, no call | the request page, with the address filled in |
 | Use a different email | local state only, no call | the email step, field cleared, Turnstile widget kept mounted |
 | Resend | the same send, after 60 seconds | the same panel, countdown restarted |
+
+Every quiet link under a panel is its own block on its own line, 16px, with a gap above it. Two of
+them used to be inline buttons with margins but no line break, so at 375 px they rendered side by
+side as "Use a password insteadUse a different email".
 
 ### How an account reaches `has_password`
 
