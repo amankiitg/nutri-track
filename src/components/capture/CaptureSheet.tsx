@@ -64,7 +64,6 @@ import {
 } from "@/lib/speech";
 import { supabase } from "@/integrations/supabase/client";
 import { ReviewScreen } from "@/components/review/ReviewScreen";
-import { SnapBox } from "./SnapBox";
 import { NoFoodResult, type NoFoodSource } from "@/components/capture/NoFoodResult";
 
 /**
@@ -166,7 +165,6 @@ export function CaptureSheet({
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [dictation, setDictation] = useState<Dictation | null>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
   /**
@@ -305,13 +303,6 @@ export function CaptureSheet({
       abandonCapture();
     }
     onOpenChange(next);
-  }
-
-  /** One file as a FileList, so the box and the two hidden inputs take the same path. */
-  function listOf(file: File): FileList {
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    return transfer.files;
   }
 
   function addPhotos(files: FileList | null): void {
@@ -678,14 +669,13 @@ export function CaptureSheet({
               </ul>
             )}
 
-            <input
-              ref={cameraInput}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(event) => addPhotos(event.target.files)}
-            />
+            {/*
+              One input, two buttons, and no capture attribute on purpose. Both buttons open the
+              phone's own picker, which offers Take Photo and Photo Library; a capture attribute
+              would send the first button straight to the camera and leave no way back to the
+              library from it. The compact row is what this sheet had before the tall box, and it
+              stays here rather than in SnapBox because /try keeps the tall box.
+            */}
             <input
               ref={galleryInput}
               type="file"
@@ -695,16 +685,29 @@ export function CaptureSheet({
               onChange={(event) => addPhotos(event.target.files)}
             />
 
-            {/* The same box as /try: same question, so the same control. */}
-            <SnapBox
-              onPhoto={(file) => addPhotos(listOf(file))}
-              disabled={photos.length >= MAX_PHOTOS}
-            />
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                className="h-12 flex-1 rounded-full text-base"
+                disabled={photos.length >= MAX_PHOTOS}
+                onClick={() => galleryInput.current?.click()}
+              >
+                <Camera className="mr-1.5 size-4" aria-hidden="true" />
+                Take a photo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 flex-1 rounded-full text-base"
+                disabled={photos.length >= MAX_PHOTOS}
+                onClick={() => galleryInput.current?.click()}
+              >
+                <ImagePlus className="mr-1.5 size-4" aria-hidden="true" />
+                Choose
+              </Button>
+            </div>
 
-            <p className="text-xs text-muted-foreground">
-              Up to {MAX_PHOTOS} photos. Each one is resized to 1024 px before it is sent, which
-              keeps the request small without hiding the food.
-            </p>
+            <p className="text-base text-muted-foreground">Up to {MAX_PHOTOS} photos.</p>
           </TabsContent>
 
           <TabsContent value="voice" className="mt-4 space-y-3">
