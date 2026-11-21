@@ -30,6 +30,7 @@ import { isPlausibleEmail, normalizeEmail } from "@/lib/admin";
 import { requestInvite, type InviteResult } from "@/lib/invite-request";
 import { formatFatAmount } from "@/lib/review";
 import { loadTurnstile, turnstileApi, turnstileSiteKey } from "@/lib/turnstile";
+import { SnapBox } from "@/components/capture/SnapBox";
 import {
   clearPendingTrial,
   clearTrial,
@@ -565,27 +566,19 @@ export function TrialPage({ link }: { link?: TrialLinkProps } = {}) {
               <div className="mt-8 space-y-4">
                 {result === null && (
                   <>
-                    <label className="flex items-center gap-2 rounded-xl border border-dashed border-border p-4 text-sm cursor-pointer">
-                      <Camera className="size-5" aria-hidden="true" />
-                      Snap or upload a photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="sr-only"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file !== undefined) {
-                            // A new photo is a new question: the previous empty answer goes.
-                            setNoFood(null);
-                            setScannedPhoto(null);
-                            void fileToTrialPhoto(file).then((photo) =>
-                              beginScan({ text: null, photos: [photo] }),
-                            );
-                          }
-                        }}
-                      />
-                    </label>
+                    <SnapBox
+                      onPhoto={(file) => {
+                        // A new photo is a new question: the previous empty answer goes.
+                        setNoFood(null);
+                        setScannedPhoto(null);
+                        void fileToTrialPhoto(file).then((photo) =>
+                          beginScan({ text: null, photos: [photo] }),
+                        );
+                      }}
+                    />
+                    <p className="text-center text-sm text-muted-foreground">
+                      Or type what you ate
+                    </p>
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();

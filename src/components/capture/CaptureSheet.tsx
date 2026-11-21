@@ -64,6 +64,7 @@ import {
 } from "@/lib/speech";
 import { supabase } from "@/integrations/supabase/client";
 import { ReviewScreen } from "@/components/review/ReviewScreen";
+import { SnapBox } from "./SnapBox";
 import { NoFoodResult, type NoFoodSource } from "@/components/capture/NoFoodResult";
 
 /**
@@ -304,6 +305,13 @@ export function CaptureSheet({
       abandonCapture();
     }
     onOpenChange(next);
+  }
+
+  /** One file as a FileList, so the box and the two hidden inputs take the same path. */
+  function listOf(file: File): FileList {
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    return transfer.files;
   }
 
   function addPhotos(files: FileList | null): void {
@@ -687,27 +695,11 @@ export function CaptureSheet({
               onChange={(event) => addPhotos(event.target.files)}
             />
 
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                className="flex-1 rounded-full"
-                disabled={photos.length >= MAX_PHOTOS}
-                onClick={() => cameraInput.current?.click()}
-              >
-                <Camera className="mr-1.5 size-4" aria-hidden="true" />
-                Take a photo
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 rounded-full"
-                disabled={photos.length >= MAX_PHOTOS}
-                onClick={() => galleryInput.current?.click()}
-              >
-                <ImagePlus className="mr-1.5 size-4" aria-hidden="true" />
-                Choose
-              </Button>
-            </div>
+            {/* The same box as /try: same question, so the same control. */}
+            <SnapBox
+              onPhoto={(file) => addPhotos(listOf(file))}
+              disabled={photos.length >= MAX_PHOTOS}
+            />
 
             <p className="text-xs text-muted-foreground">
               Up to {MAX_PHOTOS} photos. Each one is resized to 1024 px before it is sent, which
