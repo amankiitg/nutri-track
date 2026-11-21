@@ -71,11 +71,16 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_open_signups.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_global_cap.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_open_signups_post_login.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_password_claim.sql"
 
 # Roll back newest first, checking each predecessor comes back. The no-food rollback goes
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261121090000_no_password_claim.sql"
+claim=$("${PSQL[@]}" -Atc "select pg_get_functiondef(oid) from pg_proc where proname='auth_entry_state'" | grep -c "encrypted_password" || true)
+[ "${claim}" = "1" ] || { echo "FAIL: the rollback did not restore the encrypted_password branch" >&2; exit 1; }
+echo "ok - the no-claim migration rolls back to the claiming version"
 apply "${ROOT}/supabase/rollback/20261120200000_link_only_google.sql"
 linkonly=$("${PSQL[@]}" -Atc "select pg_get_functiondef(oid) from pg_proc where proname='auth_entry_state'" | grep -c "link_only_google" || true)
 [ "${linkonly}" = "0" ] || { echo "FAIL: the restored auth_entry_state still names link_only_google" >&2; exit 1; }
@@ -127,6 +132,7 @@ apply "${MIGRATIONS}/20261120160000_open_signups.sql"
 apply "${MIGRATIONS}/20261120170000_global_analysis_cap.sql"
 apply "${MIGRATIONS}/20261120180000_open_signups_post_login.sql"
 apply "${MIGRATIONS}/20261120200000_link_only_google.sql"
+apply "${MIGRATIONS}/20261121090000_no_password_claim.sql"
 refund_back=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname='trial_scan_refund'")
 [ "${refund_back}" = "1" ] || { echo "FAIL: trial_scan_refund missing after the no-food migration reapplied" >&2; exit 1; }
 funnel_back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.tables where table_schema='public' and table_name='trial_funnel_daily'")

@@ -100,10 +100,12 @@ describe("the sign-in answer", () => {
     // Without these two, an account created by a magic link is shown a password box it can never
     // satisfy, which is exactly the bug this guards.
     expect(body).toContain("'link_only'");
-    expect(body).toContain("'has_password'");
-    expect(body).toContain("encrypted_password");
     // An account with a link and Google gets both doors, so the answer has to name that case.
     expect(body).toContain("'link_only_google'");
+    // The rule is now the opposite of what it was: the function must NOT read `encrypted_password`,
+    // because GoTrue writes a 60-character hash for a magic-link account and presence proves nothing.
+    // A future edit that starts claiming a password again fails here.
+    expect(body).not.toContain("encrypted_password");
   });
 });
 
