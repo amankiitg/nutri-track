@@ -40,7 +40,14 @@ const LINK_ONLY = "link.only@example.com";
  */
 async function openAuth(page: Page): Promise<void> {
   const ready = page.waitForResponse((response) => response.url().endsWith("/rpc/open_signups"));
-  await page.goto("/auth");
+  try {
+    await page.goto("/auth");
+  } catch (error) {
+    // A client side redirect that lands while the navigation is still in flight aborts the goto.
+    // One retry, and only one: a page that cannot be loaded twice is broken rather than racing.
+    if (!String(error).includes("ERR_ABORTED")) throw error;
+    await page.goto("/auth");
+  }
   await ready;
 }
 
@@ -187,6 +194,10 @@ test.describe.serial("the sign-in screen, end to end", () => {
     ).toBe("t");
 
     await signOut(page);
+    // A plain /auth, not the ?redirect=/settings the sign-out guard left behind: that redirect is
+    // honoured after sign-in, and this case is about the sign-in screen rather than where somebody
+    // was going.
+    await openAuth(page);
     await askState(page, account);
 
     // The password view, with the link one press away.
@@ -225,14 +236,17 @@ test.describe.serial("the sign-in screen, end to end", () => {
     const mail = await mailTo(account, before);
     await page.goto(linkOf(mail, "recovery"));
 
-    await page.getByLabel("Password", { exact: true }).fill(SECOND_PASSWORD);
+    // The reset screen names its fields for what they are: a new password, and its confirmation.
+    await page.getByLabel("New password").fill(SECOND_PASSWORD);
     await page.getByLabel("Confirm password").fill(SECOND_PASSWORD);
-    await page
-      .getByRole("button", { name: /save|set password/i })
-      .first()
-      .click();
+    await page.getByRole("button", { name: "Set a new password" }).click();
+    await expect(page).toHaveURL(/\/today/, { timeout: 20_000 });
 
-    await page.goto("/auth");
+    // The reset leaves the person signed in, and /auth sends a signed-in visitor to Today, so the
+    // second half of this case starts by signing out: the point is the new password, not the state
+    // the reset left behind.
+    await signOut(page);
+    await openAuth(page);
     await askState(page, account);
     await page.getByLabel("Password", { exact: true }).fill(SECOND_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
@@ -343,6 +357,47 @@ test.describe.serial("the sign-in screen, end to end", () => {
     // Give a send that should not happen time to happen, then count.
     await page.waitForTimeout(1500);
     expect(await mailCount(account)).toBe(before + 1);
+  });
+
+  test("j. a security check that never finishes says so, and sends nothing", async ({
+    page,
+    harness,
+  }) => {
+    watch(page, harness);
+
+    // A widget that exists and answers nothing. This is the shape of the failure the local stack
+    // showed: the press went out without a token, GoTrue refused it for that reason, and the screen
+    // blamed the password. The check now waits twice and then refuses to send at all.
+    await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/javascript",
+        body: "window.turnstile = { render: function () { return 'w1'; }, execute: function () {}, reset: function () {}, remove: function () {} };",
+      });
+    });
+
+    const attempts: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/auth/v1/")) attempts.push(request.url());
+    });
+
+    await openAuth(page);
+    await askState(page, account);
+    await page.getByRole("button", { name: /use an email link instead/i }).click();
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+
+    // The exact sentence, and the button back so a second tap is possible.
+    await expect(
+      page.getByText(/security check is still loading\. tap again in a second\./i),
+    ).toBeVisible({
+      timeout: 25_000,
+    });
+    await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeEnabled();
+
+    // Nothing was sent, and nothing claims the email is on its way.
+    expect(attempts.filter((url) => url.includes("/otp"))).toEqual([]);
+    await expect(page.getByRole("heading", { name: "Check your inbox" })).toHaveCount(0);
+    await expect(page.getByText(/captcha protection/i)).toHaveCount(0);
   });
 
   test("i. with the switch off, an unknown address hits the wall and an invited one still gets in", async ({
