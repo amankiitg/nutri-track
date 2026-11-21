@@ -799,7 +799,7 @@ export function AuthPage() {
                     the link so nobody has to type it twice.
                   */}
                   {signupsOpen === false && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-base text-muted-foreground">
                       No invite yet?{" "}
                       <Link
                         to="/auth/request"
@@ -826,7 +826,7 @@ export function AuthPage() {
                   </Button>
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -859,7 +859,7 @@ export function AuthPage() {
                     {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
                     Continue with Google
                   </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-base text-muted-foreground">
                     The link proves the address is yours, which is also what lets your first meal be
                     read.
                   </p>
@@ -875,7 +875,7 @@ export function AuthPage() {
                   )}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -898,9 +898,8 @@ export function AuthPage() {
                     {busy === "link" && <Loader2 className="animate-spin" />}
                     Email me a link
                   </Button>
-                  <p className="text-xs text-muted-foreground">
-                    The link proves the address is yours, so the password you set afterwards is
-                    yours too.
+                  <p className="text-base text-muted-foreground">
+                    You can set a password later in Settings.
                   </p>
                   {error && (
                     <p role="alert" className="text-sm text-destructive">
@@ -909,7 +908,7 @@ export function AuthPage() {
                   )}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -1001,14 +1000,14 @@ export function AuthPage() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground underline"
+                      className="block text-base text-muted-foreground underline underline-offset-4"
                       onClick={() => openReset("has_password")}
                     >
                       Forgot password?
                     </button>
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground underline"
+                      className="block text-base text-muted-foreground underline underline-offset-4"
                       onClick={() => showAccountView("link")}
                     >
                       Use an email link instead
@@ -1016,7 +1015,7 @@ export function AuthPage() {
                   </div>
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -1065,14 +1064,14 @@ export function AuthPage() {
                   )}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={() => showAccountView("password")}
                   >
                     Use a password instead
                   </button>
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -1101,14 +1100,14 @@ export function AuthPage() {
                     {busy === "link" && <Loader2 className="animate-spin" />}
                     Email me a sign-in link
                   </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-base text-muted-foreground">
                     Set a password in Settings, and this screen will offer it from then on.
                   </p>
                   {/* This panel had no way back: every other state has one, and a person who typed
                       the wrong address here was stuck with it. */}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -1145,7 +1144,7 @@ export function AuthPage() {
                     {busy === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
                     Continue with Google
                   </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-base text-muted-foreground">
                     Set a password in Settings, and this screen will offer it from then on.
                   </p>
                   {error && (
@@ -1160,7 +1159,7 @@ export function AuthPage() {
                   )}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline"
+                    className="block text-base text-muted-foreground underline underline-offset-4"
                     onClick={useDifferentEmail}
                   >
                     Use a different email
@@ -1202,16 +1201,16 @@ export function AuthPage() {
                   )}
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline disabled:opacity-60"
+                    className="block text-base text-muted-foreground underline underline-offset-4 disabled:opacity-60"
                     disabled={busy !== null}
                     onClick={() => void emailLink(email, "password")}
                   >
-                    Prefer a password? Email me a link
+                    Prefer email? Send me a sign-in link
                   </button>
                   <div>
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground underline"
+                      className="block text-base text-muted-foreground underline underline-offset-4"
                       onClick={useDifferentEmail}
                     >
                       Use a different email
@@ -1266,7 +1265,7 @@ export function AuthPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground underline"
+                      className="block text-base text-muted-foreground underline underline-offset-4"
                       onClick={() => {
                         setError(null);
                         setStep(resetFrom);
@@ -1278,7 +1277,7 @@ export function AuthPage() {
                     </button>
                     <button
                       type="button"
-                      className="text-xs text-muted-foreground underline"
+                      className="block text-base text-muted-foreground underline underline-offset-4"
                       onClick={useDifferentEmail}
                     >
                       Use a different email

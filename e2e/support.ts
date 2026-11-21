@@ -236,15 +236,69 @@ export async function askState(page: Page, email: string): Promise<void> {
   throw new Error("the address step did not move after Continue was pressed twice: " + body);
 }
 
+/** The quiet links under a panel's main action, by their words. */
+const QUIET_LINKS = [
+  /^use a different email$/i,
+  /^use a password instead$/i,
+  /^use an email link instead$/i,
+  /^forgot password\?$/i,
+  /^prefer email\? send me a sign-in link$/i,
+];
+
+/**
+ * Asserts the quiet links are visually separate.
+ *
+ * The bug this exists for: two of them were inline buttons with a margin but no line break, so at
+ * 375 px they rendered side by side as "Use a password insteadUse a different email". This measures
+ * the boxes rather than reading the classes, because the failure was a layout one and only geometry
+ * can see it: no two may overlap, and the gap between them must be at least 8 px either way.
+ */
+export async function expectQuietLinksSeparated(page: Page): Promise<void> {
+  const boxes: { text: string; top: number; bottom: number; left: number; right: number }[] = [];
+  for (const pattern of QUIET_LINKS) {
+    const found = page.getByRole("button", { name: pattern });
+    const count = await found.count();
+    for (let index = 0; index < count; index += 1) {
+      const box = await found.nth(index).boundingBox();
+      if (box === null) continue;
+      boxes.push({
+        text: pattern.source,
+        top: box.y,
+        bottom: box.y + box.height,
+        left: box.x,
+        right: box.x + box.width,
+      });
+    }
+  }
+
+  const GAP = 8;
+  for (let a = 0; a < boxes.length; a += 1) {
+    for (let b = a + 1; b < boxes.length; b += 1) {
+      const first = boxes[a];
+      const second = boxes[b];
+      if (first === undefined || second === undefined) continue;
+      const verticalGap = Math.max(first.top, second.top) - Math.min(first.bottom, second.bottom);
+      const horizontalGap = Math.max(first.left, second.left) - Math.min(first.right, second.right);
+      const separated = verticalGap >= GAP || horizontalGap >= GAP;
+      expect(
+        separated,
+        `two quiet links are jammed together (${first.text} and ${second.text}): verticalGap=${verticalGap}, horizontalGap=${horizontalGap}`,
+      ).toBe(true);
+    }
+  }
+}
+
 /** Signs out from Settings, the way a person does. */
 export async function signOut(page: Page): Promise<void> {
   await page.goto("/settings");
   await page.getByRole("button", { name: /sign out/i }).click();
   await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
   // The app lands on /auth?redirect=%2Fsettings through a client side redirect, and a navigation
-  // started while that is in flight is cancelled with ERR_ABORTED. A blank document in between ends
-  // the router's work, so the next navigation is a plain one.
-  await page.goto("about:blank");
+  // started while that one is in flight is cancelled with ERR_ABORTED. Waiting for the load state
+  // to settle is the quiet that matters; forcing a navigation to about:blank instead is itself a
+  // navigation that can be aborted, which is how this line failed once before.
+  await page.waitForLoadState("load").catch(() => {});
+  await page.waitForTimeout(300);
 }
 
 export { expect };
