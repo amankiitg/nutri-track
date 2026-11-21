@@ -17,6 +17,11 @@ fi
 
 mkdir -p .e2e/supabase .e2e/docker-config
 cp supabase/config.e2e.toml .e2e/supabase/config.toml
+# The stack reads its migrations and email templates from inside its workdir. Linked rather than
+# copied, so a run always applies the tree's own files, and recreated here so a fresh clone and CI
+# have them: without the links the database starts empty and every test fails on a missing table.
+ln -sfn ../../supabase/migrations .e2e/supabase/migrations
+ln -sfn ../../supabase/templates .e2e/supabase/templates
 [ -f .e2e/docker-config/config.json ] || printf '{\n  "auths": {}\n}\n' > .e2e/docker-config/config.json
 
 npx supabase start --workdir .e2e --exclude studio,realtime,imgproxy,logflare,vector,edge-runtime,pg-meta,supavisor > /tmp/e2e-stack.log 2>&1

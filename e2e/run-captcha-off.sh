@@ -7,6 +7,10 @@ ROOT="$(pwd)"
 
 export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
 export DOCKER_CONFIG="${DOCKER_CONFIG:-${ROOT}/.e2e/docker-config}"
+mkdir -p .e2e/supabase .e2e/docker-config
+cp supabase/config.e2e.toml .e2e/supabase/config.toml
+ln -sfn ../../supabase/migrations .e2e/supabase/migrations
+ln -sfn ../../supabase/templates .e2e/supabase/templates
 CONFIG=".e2e/supabase/config.toml"
 cp "$CONFIG" "$CONFIG.captcha-on"
 restore() { mv "$CONFIG.captcha-on" "$CONFIG"; }
