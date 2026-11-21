@@ -50,3 +50,5 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - the rollbacks restore admin_spend (callable, 10 columns) and request_invite (4 args) with their grants'
+
+-- Leave the switch as the tests after this one expect it.

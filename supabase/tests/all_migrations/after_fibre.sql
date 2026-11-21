@@ -5,6 +5,10 @@
 -- fail at execution). These fixtures are three complete days of 10, 20 and 30 g of fibre, one
 -- meal each, so the weekly average is 20.0 and the default target is 30.
 
+-- This file describes the invite-only product, so the switch is pinned closed for it;
+-- with sign-ups open, `check_email_allowed` and the request trigger answer differently.
+update public.app_settings set open_signups = false where id;
+
 \set ON_ERROR_STOP on
 
 insert into public.profiles
@@ -97,3 +101,5 @@ begin
 end $$;
 
 \echo 'ok - fibre totals, meal totals, weekly average and period buckets read the stored rows'
+
+update public.app_settings set open_signups = true where id;

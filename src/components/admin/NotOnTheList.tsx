@@ -22,6 +22,7 @@ import { BrandMark } from "@/components/app/BrandMark";
 import { InviteAddress } from "@/components/invite/InviteAddress";
 import { supabase } from "@/integrations/supabase/client";
 import { requestInvite } from "@/lib/invite-request";
+import { openSignups } from "@/lib/open-signups";
 
 /** Why the invite gate did not let someone through. Mirrors the layout's `beforeLoad`. */
 export type GateFailure = "denied" | "unavailable";
@@ -50,6 +51,13 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
 
     void (async () => {
       setRequest("sending");
+      // With sign-ups open there is nothing to ask for, and a request recorded on somebody's
+      // behalf would sit in the admin list until somebody cancelled it. The database refuses
+      // these too; this is the half that keeps a stale tab quiet.
+      if (await openSignups()) {
+        if (!cancelled) setRequest("sent");
+        return;
+      }
       const result = await requestInvite(email, { auto: true });
       if (cancelled) return;
       if (result === "requested") {
@@ -79,6 +87,10 @@ export function NotOnTheList({ email, reason }: { email: string; reason: GateFai
   async function requestAgain(): Promise<void> {
     setRequest("sending");
     setRequestError(null);
+    if (await openSignups()) {
+      setRequest("sent");
+      return;
+    }
     const result = await requestInvite(email, { auto: true });
     if (result === "requested") {
       setRequest("sent");

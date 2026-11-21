@@ -35,7 +35,12 @@ vi.mock("@/lib/invite-request", async (importOriginal) => ({
   requestInvite: vi.fn(),
 }));
 
+vi.mock("@/lib/open-signups", () => ({
+  openSignups: vi.fn(async () => false),
+}));
+
 const request = requestInvite as unknown as ReturnType<typeof vi.fn>;
+const switchOpen = vi.mocked(await import("@/lib/open-signups")).openSignups;
 
 beforeEach(() => {
   invalidate.mockClear();
@@ -140,5 +145,20 @@ describe("a genuine refusal", () => {
     await user.click(screen.getByRole("button", { name: /request access/i }));
 
     expect(await screen.findByText(/your request is in/i)).toBeInTheDocument();
+  });
+});
+
+describe("the same screen while sign-ups are open", () => {
+  beforeEach(() => {
+    switchOpen.mockResolvedValue(true);
+  });
+
+  it("records no request, because there is nothing to ask for", async () => {
+    render(<NotOnTheList email="new-account@example.com" reason="denied" />);
+
+    await waitFor(() => expect(switchOpen).toHaveBeenCalled());
+    // The pair that matters: a request recorded on someone's behalf is a row an admin has to
+    // cancel, and the database refuses it too.
+    expect(request).not.toHaveBeenCalled();
   });
 });

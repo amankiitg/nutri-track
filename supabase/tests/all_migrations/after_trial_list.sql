@@ -3,6 +3,10 @@
 -- Runs on the state after_links.sql left: an admin (b1), a member (b2), and trial rows
 -- from the link tests. The rows this file asserts on are its own, with known timestamps.
 
+-- This file describes the invite-only product, so the switch is pinned closed for it;
+-- with sign-ups open, `check_email_allowed` and the request trigger answer differently.
+update public.app_settings set open_signups = false where id;
+
 \set ON_ERROR_STOP on
 
 -- Shapes and grants.
@@ -145,3 +149,5 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - a non-admin is refused admin_trial_list'
+
+update public.app_settings set open_signups = true where id;

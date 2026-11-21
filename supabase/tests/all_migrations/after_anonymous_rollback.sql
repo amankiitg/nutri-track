@@ -2,6 +2,7 @@
 -- functions are gone, and the admin list and stats are back to their email-only shape
 -- while still working for the admin.
 
+
 \set ON_ERROR_STOP on
 
 DO $$

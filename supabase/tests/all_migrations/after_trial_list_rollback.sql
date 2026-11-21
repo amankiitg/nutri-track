@@ -1,6 +1,7 @@
 -- After rolling back 20261112120000 alone: the list is gone, the source column is
 -- gone, and admin_trial_link_issue is the version that predates both.
 
+
 \set ON_ERROR_STOP on
 
 DO $$

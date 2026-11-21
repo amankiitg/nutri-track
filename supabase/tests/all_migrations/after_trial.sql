@@ -1,3 +1,8 @@
+-- These checks describe the invite-only product, so the switch is pinned closed for them:
+-- with it open `request_invite` records nothing and the assertions below would be asking
+-- about a world this file is not testing.
+update public.app_settings set open_signups = false where id;
+
 -- Runs after every migration has been applied. Checks the shapes and grants the trial
 -- migration re-created, then calls the functions the way the app does, as the role the
 -- app uses, because two of this migration's defects were invisible until call time
@@ -177,3 +182,6 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - a member still logs an analysis under RLS, and no one''s count includes trial calls'
+
+-- Leave the switch as the tests after this one expect it.
+update public.app_settings set open_signups = true where id;

@@ -1,3 +1,8 @@
+-- These checks describe the invite-only product, so the switch is pinned closed for them:
+-- with it open `request_invite` records nothing and the assertions below would be asking
+-- about a world this file is not testing.
+update public.app_settings set open_signups = false where id;
+
 -- Trial funnel counters (20261120120000), after every migration. Synthetic rows only.
 --
 -- Runs after after_anonymous.sql, so the Vault secret is planted ('links-secret') and the
@@ -196,3 +201,6 @@ BEGIN
 END $$;
 commit;
 \echo 'ok - the funnel read is admin-only and answers all eight events, zero included'
+
+-- Leave the switch as the tests after this one expect it.
+update public.app_settings set open_signups = true where id;
