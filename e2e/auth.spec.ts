@@ -169,7 +169,10 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await page.goto("/settings");
     // The Settings card says "Set a password" for an account with none, and its fields are labelled
     // for what they are: a new password and its confirmation.
-    await page.getByRole("button", { name: /set a password/i }).first().click();
+    await page
+      .getByRole("button", { name: /set a password/i })
+      .first()
+      .click();
     await page.getByLabel("New password").fill(FIRST_PASSWORD);
     await page.getByLabel("Confirm password").fill(FIRST_PASSWORD);
     await page.getByRole("button", { name: "Set a password", exact: true }).click();
