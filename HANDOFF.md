@@ -80,6 +80,15 @@ are about the test harness, not about the screen:
    auth-js drops `captchaToken` (it is not in the query it builds), and the local stack writes the
    `magiclink` template even for a new address because confirmations are off locally.
 
+## One operational detail about the local stack
+
+The CLI reaches the containers through an ssh tunnel and binds the forwarded ports to every
+interface, not to loopback: measured with `lsof -nP -iTCP -sTCP:LISTEN`, ports 54321, 54322 and 54324
+are held by `ssh` on `*`. The stack therefore answers on the local network while it runs, and its
+keys are the well-known defaults that ship with the CLI. Everything in there is synthetic, and no
+production key or session was ever loaded into it, but the honest habit is to stop it when the suite
+is not being run: `npx supabase stop --workdir .e2e --no-backup`.
+
 ## Not touched
 
 Production. No migration has been pushed to the remote project, no Worker has been deployed, and no
