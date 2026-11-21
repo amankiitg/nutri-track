@@ -40,13 +40,17 @@ create table auth.users (
   -- created by a magic link. Empty string is Supabase's "no password", which is why the function
   -- tests `nullif(..., '')` and not only `is not null`.
   encrypted_password text,
-  email_confirmed_at timestamptz
+  email_confirmed_at timestamptz,
+  last_sign_in_at timestamptz
 );
 
 create table auth.identities (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
-  provider text not null
+  provider text not null,
+  -- On the real table; a test that plants an identity the way GoTrue does needs both.
+  provider_id text,
+  identity_data jsonb
 );
 
 create function auth.uid() returns uuid

@@ -444,3 +444,67 @@ describe("an account with a link and Google but no password", () => {
     );
   });
 });
+
+describe("an account whose password we cannot know about", () => {
+  it("offers the link first, with the password form behind a quiet link", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "link@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    // No password box on arrival: GoTrue writes a hash for magic-link accounts, so a box here
+    // would be asking for a password that does not exist.
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.getByRole("button", { name: "Email me a sign-in link" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Use a password instead" }));
+
+    // People who do have one get exactly the form they expected.
+    expect(await screen.findByLabelText("Password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /use an email link instead/i })).toBeTruthy();
+  });
+
+  it("shows the raw error under a refused password, as the link flow does", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only");
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: "invalid_credentials", status: 400, message: "Invalid login credentials" },
+    });
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "link@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Use a password instead" }));
+    await user.type(await screen.findByLabelText("Password"), "wrong password");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText(/invalid_credentials/)).toBeInTheDocument();
+    expect(screen.getByText(/Invalid login credentials/)).toBeInTheDocument();
+  });
+
+  it("keeps the revealed form out of the way when the address changes", async () => {
+    const user = userEvent.setup();
+    mocks.authEntryState.mockResolvedValue("link_only");
+    render(<AuthPage />);
+
+    await user.type(screen.getByLabelText("Email"), "link@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Use a password instead" }));
+    expect(await screen.findByLabelText("Password")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Use a different email" }));
+    // The field still holds the old address, so it is cleared rather than appended to.
+    await user.clear(screen.getByLabelText("Email"));
+    await user.type(screen.getByLabelText("Email"), "other@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await screen.findByRole("heading", { name: "Welcome back" });
+    // The next address starts at the link, not on the last one's password form.
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+});

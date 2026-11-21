@@ -202,6 +202,14 @@ export function AuthPage() {
 
   /** The raw error behind the friendly line, shown small underneath it. */
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  /**
+   * The password form, revealed on request.
+   *
+   * An account with an email identity is shown the link first, because a magic-link account has no
+   * password and GoTrue cannot tell us which kind an account is. People who do have a password get
+   * here by pressing the quiet link under the button.
+   */
+  const [passwordInstead, setPasswordInstead] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -426,6 +434,8 @@ export function AuthPage() {
     // The sign-up screen appearing is the funnel step; it is counted here rather than in the render
     // so a re-render cannot count it twice.
     if (state === "open_signup") reportPageFunnelEvent("signup_started");
+    // A new address starts at the link again, not on the previous address's revealed form.
+    setPasswordInstead(false);
     // One translation, in one place: a database from before the three-way split says `has_account`,
     // and everything below speaks in `has_password`.
     setStep(state === "has_account" ? "has_password" : state);
@@ -458,6 +468,7 @@ export function AuthPage() {
     e.preventDefault();
     setBusy("email");
     setError(null);
+    setErrorDetail(null);
     setMismatch(false);
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: normalizeEmail(email),
@@ -484,9 +495,13 @@ export function AuthPage() {
     // reset, both offered as buttons inside the sentence.
     if (isInvalidCredentials(signInError)) {
       setMismatch(true);
+      setErrorDetail(authErrorDetail(signInError));
       return;
     }
     setError(friendlyAuthError(signInError));
+    // The receipt under the sentence, as the link flow already shows: code, status and message, so a
+    // refusal names its own cause rather than only that something went wrong.
+    setErrorDetail(authErrorDetail(signInError));
   };
 
   async function resend(): Promise<void> {
@@ -560,6 +575,8 @@ export function AuthPage() {
   /** Back to the address field, from any step. Everything typed after it belongs to that step. */
   function useDifferentEmail(): void {
     setStep("email");
+    // A different address is a different account, so the revealed password form goes away.
+    setPasswordInstead(false);
     setPassword("");
     setShowPassword(false);
     setError(null);
@@ -853,7 +870,7 @@ export function AuthPage() {
                 </>
               )}
 
-              {step === "has_password" && (
+              {(step === "has_password" || passwordInstead) && (
                 <>
                   <p className="text-sm text-muted-foreground">
                     Signing in as <strong>{email}</strong>.
@@ -880,6 +897,24 @@ export function AuthPage() {
                     >
                       Forgot password?
                     </button>
+                    {passwordInstead && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline"
+                        onClick={() => {
+                          setPasswordInstead(false);
+                          setPassword("");
+                          setError(null);
+                          setErrorDetail(null);
+                          setMismatch(false);
+                        }}
+                      >
+                        Use an email link instead
+                      </button>
+                    )}
+                    {errorDetail !== null && (
+                      <p className="text-xs text-muted-foreground break-words">{errorDetail}</p>
+                    )}
                     {mismatch ? (
                       <p role="alert" className="text-sm text-destructive">
                         {CREDENTIALS_MISMATCH.before}
@@ -955,6 +990,18 @@ export function AuthPage() {
                   <p className="text-xs text-muted-foreground">
                     Set a password in Settings later, and this screen will offer it instead.
                   </p>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={() => {
+                      setPasswordInstead(true);
+                      setError(null);
+                      setErrorDetail(null);
+                      setMismatch(false);
+                    }}
+                  >
+                    Use a password instead
+                  </button>
                 </>
               )}
 
@@ -990,6 +1037,18 @@ export function AuthPage() {
                   <p className="text-xs text-muted-foreground">
                     Set a password in Settings later, and this screen will offer it instead.
                   </p>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline"
+                    onClick={() => {
+                      setPasswordInstead(true);
+                      setError(null);
+                      setErrorDetail(null);
+                      setMismatch(false);
+                    }}
+                  >
+                    Use a password instead
+                  </button>
                   {error && (
                     <div role="alert">
                       <p className="text-sm text-destructive">{error}</p>
