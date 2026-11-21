@@ -86,10 +86,13 @@ async function finishOnboarding(page: Page): Promise<void> {
 
 /** Plants a user in the local database in a shape only SQL can make. */
 function plantUser(email: string, providers: readonly string[]): void {
-  const id = sql(
-    "insert into auth.users (id, email, email_confirmed_at) values (gen_random_uuid(), :'email', now()) returning id",
+  // Insert, then ask for the id: psql prints the INSERT command tag after the returned row, so a
+  // RETURNING on stdin is not a value a script can read off the end of the output.
+  sql(
+    "insert into auth.users (id, email, email_confirmed_at) values (gen_random_uuid(), :'email', now())",
     { email },
   );
+  const id = sql("select id from auth.users where email = :'email'", { email });
   for (const provider of providers) {
     sql(
       "insert into auth.identities (id, user_id, provider, provider_id, identity_data) values (gen_random_uuid(), :'id', :'provider', :'id', jsonb_build_object('email', :'email'))",
@@ -234,7 +237,10 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await page.getByRole("button", { name: /send reset link/i }).click();
     await expect(page.getByRole("status")).toBeVisible();
     const mail = await mailTo(account, before);
-    await page.goto(linkOf(mail, "recovery"));
+    // domcontentloaded, because this navigation is a 303 into a page that then keeps loading fonts
+    // and the captcha script: waiting for the load event waits for all of them, and on this stack
+    // that is where the ninety seconds went.
+    await page.goto(linkOf(mail, "recovery"), { waitUntil: "domcontentloaded" });
 
     // The reset screen names its fields for what they are: a new password, and its confirmation.
     await page.getByLabel("New password").fill(SECOND_PASSWORD);
@@ -328,13 +334,15 @@ test.describe.serial("the sign-in screen, end to end", () => {
       { email: GOOGLE_ONLY, heading: "This account signs in with Google." },
     ];
 
+    // One visit, three states: "use a different email" is what puts the screen back on the address
+    // step, so navigating again in between would be testing the navigation rather than the button.
+    await openAuth(page);
     for (const state of states) {
-      await openAuth(page);
       await askState(page, state.email);
       await expect(page.getByRole("heading", { name: state.heading })).toBeVisible();
       await page.getByRole("button", { name: /use a different email/i }).click();
       await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
-      await expect(page.getByLabel("Email")).toHaveValue("");
+      await expect(page.getByLabel("Email", { exact: true })).toHaveValue("");
     }
   });
 
@@ -359,7 +367,7 @@ test.describe.serial("the sign-in screen, end to end", () => {
     expect(await mailCount(account)).toBe(before + 1);
   });
 
-  test("j. a security check that never finishes says so, and sends nothing", async ({
+  test("l. a security check that never finishes says so, and sends nothing", async ({
     page,
     harness,
   }) => {

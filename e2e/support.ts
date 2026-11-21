@@ -148,6 +148,13 @@ export const test = base.extend<{ harness: Harness }>({
     async ({ context }, use) => {
       const harness: Harness = { problems: [], blocked: [] };
 
+      // The state check is throttled per address, per IP and in total, and those limits are right for
+      // production. A suite that runs three times in ten minutes from one machine trips the IP limit,
+      // and the screen then says "too many attempts" rather than answering, which looks like a bug in
+      // the screen. Each test starts as a fresh visitor: the throttle rows are cleared, and nothing
+      // here asserts on throttling (the unit tests do).
+      sql("delete from public.auth_entry_state_throttle");
+
       // "Add NutriTrack to your home screen" arrives a second or two into the phone flow and covers
       // the buttons under it, so a test that meant to press Continue would press the dialog. It is
       // stored as dismissed instead, which is the state every returning visitor is already in: the
@@ -190,6 +197,10 @@ export function watch(page: Page, harness: Harness): void {
     // A refused request is already reported by the guard above, by URL; the browser adds its own
     // line about it, and counting it twice would say the same thing in two places.
     if (text.includes("ERR_FAILED") || text.includes("Failed to load resource")) return;
+    // The app logs the provider's raw text under [auth] on purpose, so that a bug report carries the
+    // cause. That is a diagnostic line rather than a fault, and the sentences a person reads are
+    // asserted on the screen instead.
+    if (text.startsWith("[auth]")) return;
     harness.problems.push("console: " + text);
   });
   page.on("pageerror", (error) => {
@@ -221,7 +232,8 @@ export async function askState(page: Page, email: string): Promise<void> {
       .catch(() => false);
     if (moved) return;
   }
-  throw new Error("the address step did not move after Continue was pressed twice");
+  const body = (await page.locator("body").innerText()).replace(/\n+/g, " | ").slice(0, 240);
+  throw new Error("the address step did not move after Continue was pressed twice: " + body);
 }
 
 /** Signs out from Settings, the way a person does. */
@@ -229,6 +241,10 @@ export async function signOut(page: Page): Promise<void> {
   await page.goto("/settings");
   await page.getByRole("button", { name: /sign out/i }).click();
   await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
+  // The app lands on /auth?redirect=%2Fsettings through a client side redirect, and a navigation
+  // started while that is in flight is cancelled with ERR_ABORTED. A blank document in between ends
+  // the router's work, so the next navigation is a plain one.
+  await page.goto("about:blank");
 }
 
 export { expect };
