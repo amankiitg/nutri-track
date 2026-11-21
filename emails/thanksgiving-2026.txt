@@ -1,8 +1,6 @@
 Black Friday deal: 100% off.
 
-Hi there,
-
-Happy early Thanksgiving!
+Hi {{{contact.first_name|there}}},
 
 Everyone’s running Black Friday deals, so here’s mine: NutriTrack is now open to everyone.
 No invite needed, and it’s 100% off. Free, free, free.

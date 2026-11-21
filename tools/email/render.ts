@@ -63,9 +63,7 @@ function blackFridayBody(): EmailSection[] {
   return [
     {
       type: "paragraphs",
-      html: `<p style="margin: 0 0 16px 0">Hi there,</p>
-
-                <p style="margin: 0 0 16px 0">Happy early Thanksgiving!</p>
+      html: `<p style="margin: 0 0 16px 0">Hi {{{contact.first_name|there}}},</p>
 
                 <p style="margin: 0 0 16px 0">
                   Everyone&rsquo;s running Black Friday deals, so here&rsquo;s mine:
