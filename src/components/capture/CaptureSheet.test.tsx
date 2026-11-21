@@ -57,6 +57,39 @@ function renderSheet() {
 }
 
 /**
+ * The photo tab's compact row.
+ *
+ * Both buttons open the phone's own picker, so both have to click the same input: one input, no
+ * capture attribute. Two inputs was the older shape, and a capture attribute would send the first
+ * button straight to the camera with no way back to the library from it.
+ */
+describe("the photo tab", () => {
+  it("offers Take a photo and Choose, both opening the same picker", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    const input = document.querySelector<HTMLInputElement>('input[type="file"][accept="image/*"]');
+    expect(input).not.toBeNull();
+    // No capture attribute: the choice of camera or library belongs to the phone's sheet.
+    expect(input?.hasAttribute("capture")).toBe(false);
+    expect(input?.multiple).toBe(true);
+
+    const opened = vi.spyOn(input as HTMLInputElement, "click");
+    await user.click(screen.getByRole("button", { name: /take a photo/i }));
+    await user.click(screen.getByRole("button", { name: /^choose$/i }));
+
+    expect(opened).toHaveBeenCalledTimes(2);
+  });
+
+  it("says how many photos, and nothing about pixels", () => {
+    renderSheet();
+
+    expect(screen.getByText("Up to 3 photos.")).toBeInTheDocument();
+    expect(screen.queryByText(/1024/)).toBeNull();
+  });
+});
+
+/**
  * Renders the sheet and opens the Type tab.
  *
  * Split from the rest because Radix mounts a tab panel through its own effects, which
