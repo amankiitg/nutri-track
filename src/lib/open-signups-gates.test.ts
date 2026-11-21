@@ -106,3 +106,16 @@ describe("the sign-in answer", () => {
     expect(body).toContain("'link_only_google'");
   });
 });
+
+describe("the settings page", () => {
+  it("still mounts the Account card, where the password control lives", () => {
+    const route = readFileSync(
+      join(process.cwd(), "src", "routes", "_authenticated", "settings.tsx"),
+      "utf8",
+    );
+    // A component tested in isolation is not a screen: the password control exists only if this
+    // page renders the card that holds it.
+    expect(route).toContain("<AccountSection");
+    expect(route).toContain('from "@/components/settings/AccountSection"');
+  });
+});

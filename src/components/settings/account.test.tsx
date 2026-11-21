@@ -239,3 +239,25 @@ describe("the day's analyses, in one line", () => {
     expect(screen.queryByText(/photo analyses left today/)).toBeNull();
   });
 });
+
+describe("finding the password control", () => {
+  it("labels the row, so the control is not a bare button beside Sign out", async () => {
+    h.getUser.mockResolvedValue(account(["email"]));
+    h.authEntryState.mockResolvedValue("link_only");
+
+    renderAccount();
+
+    expect(await screen.findByText("Password")).toBeInTheDocument();
+    // The sentence that says what setting one would do, which is what a link-only account needs.
+    expect(screen.getByText(/set a password to sign in without waiting/i)).toBeInTheDocument();
+  });
+
+  it("describes the other case in the same place", async () => {
+    h.getUser.mockResolvedValue(account(["email"]));
+    h.authEntryState.mockResolvedValue("has_password");
+
+    renderAccount();
+
+    expect(await screen.findByText(/you can sign in with this password/i)).toBeInTheDocument();
+  });
+});

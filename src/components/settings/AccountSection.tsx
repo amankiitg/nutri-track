@@ -169,6 +169,20 @@ export function AccountSection({
           )}
         </div>
 
+        {/*
+          The password row, with its own label and explanation, rather than a bare button beside
+          Sign out. It is the one thing in this card that is not obvious from the account line: a
+          person who signs in by link has no password and may not know one can be set.
+        */}
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">Password</p>
+          <p className="text-xs text-muted-foreground">
+            {hasPassword === true
+              ? "You can sign in with this password, and reset it if you forget it."
+              : "You sign in with an email link. Set a password to sign in without waiting for one."}
+          </p>
+        </div>
+
         {open ? (
           <form onSubmit={savePassword} className="space-y-3">
             <div className="space-y-1.5">
