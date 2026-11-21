@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
-# Starts the app against the local stack and runs the sign-in suite against it.
+# Starts the app against a local Supabase stack and runs the sign-in suite against it.
 #
 # Nothing here reads production: the keys come from the local stack, they are written to .env.e2e
-# (gitignored), and the suite refuses any host that is not this machine.
+# (gitignored), and the suite refuses any host that is not this machine. The stack config lives in
+# supabase/config.e2e.toml and is copied into a gitignored workdir, so a fresh clone (and CI) can run
+# this without any local setup beyond docker.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
-export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
-export DOCKER_CONFIG="${DOCKER_CONFIG:-${ROOT}/.e2e/docker-config}"
+# colima on a laptop, plain docker on CI.
+if [ -z "${DOCKER_HOST-}" ] && [ -d "${HOME}/.colima/default" ]; then
+  export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
+  export DOCKER_CONFIG="${DOCKER_CONFIG:-${ROOT}/.e2e/docker-config}"
+fi
+
+mkdir -p .e2e/supabase .e2e/docker-config
+cp supabase/config.e2e.toml .e2e/supabase/config.toml
+[ -f .e2e/docker-config/config.json ] || printf '{\n  "auths": {}\n}\n' > .e2e/docker-config/config.json
+
+npx supabase start --workdir .e2e --exclude studio,realtime,imgproxy,logflare,vector,edge-runtime,pg-meta,supavisor > /tmp/e2e-stack.log 2>&1
 
 eval "$(npx supabase status --workdir .e2e -o env | grep -E "^(API_URL|ANON_KEY|MAILPIT_URL|DB_URL)=")"
 

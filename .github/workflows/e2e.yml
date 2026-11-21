@@ -1,0 +1,48 @@
+name: e2e
+
+# The sign-in suite, against a local Supabase stack: the links come out of the local inbox, the
+# CAPTCHA is Cloudflare's documented test pair, and both widths run. This is the only place the
+# app is walked the way a person walks it, so it runs on every pull request.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-sign-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Start the local stack and run the suite
+        run: npm run test:e2e
+        env:
+          CI: "true"
+          # CI downloads its own chromium: PW_CHANNEL is unset, so playwright.config.ts uses the
+          # bundled browser rather than the machine's Chrome.
+          PW_CHANNEL: ""
+
+      - name: Keep the failure artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
