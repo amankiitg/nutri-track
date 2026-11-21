@@ -127,12 +127,12 @@ describe("every file in emails/", () => {
 
   it("keeps the Black Friday copy, headline and links", () => {
     const html = read("emails/thanksgiving-2026.html");
-    expect(html).toContain("Claim your free deal");
-    // The green italic in the headline is the only emphasis now: the sentence in the body says
-    // "100% off" plainly, because bold next to the same words in the headline read as a second
-    // announcement.
+    expect(html).toContain("Try it free");
+    // The headline keeps its green italic, and the body now makes one promise in bold: that the app
+    // is open to everyone. The bold is the announcement; the headline is the joke around it.
     expect(html).toContain('Black Friday deal: <em style="color: #195c2e">100% off</em>.');
-    expect(html).not.toContain("<strong");
+    expect(html).toContain("<strong>NutriTrack is now open to everyone.</strong>");
+    expect(html).toContain("Open to everyone now. No invite, no sign-up to try.");
     // The animated demo, whose first frame is the result screen, so a client that does not
     // animate still shows the numbers. Its own filename, so no cached copy of the older GIF
     // (which opened on the add-meal form) can linger.

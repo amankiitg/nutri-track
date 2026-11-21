@@ -68,14 +68,15 @@ function blackFridayBody(): EmailSection[] {
                 <p style="margin: 0 0 16px 0">Happy early Thanksgiving!</p>
 
                 <p style="margin: 0 0 16px 0">
-                  Everyone&rsquo;s running Black Friday deals, so here&rsquo;s mine: NutriTrack is
-                  now 100% off. Free, free, free. (It was free before too, but now you don&rsquo;t
-                  even need to sign up.)
+                  Everyone&rsquo;s running Black Friday deals, so here&rsquo;s mine:
+                  <strong>NutriTrack is now open to everyone.</strong> No invite needed, and
+                  it&rsquo;s 100% off. Free, free, free.
                 </p>
 
                 <p style="margin: 0">
-                  Snap a photo of your plate and get the calories, protein and fibre in a few
-                  seconds. No account, no email, no 5 AM line outside a store.
+                  Try it right now, no sign-up: snap a photo of your plate and get the calories,
+                  protein and fibre in a few seconds. Like it? Create a free account in one tap to
+                  keep your meals.
                 </p>`,
     },
     {
@@ -84,11 +85,12 @@ function blackFridayBody(): EmailSection[] {
       href: TRY_BLACK_FRIDAY,
       alt: "NutriTrack analysing a meal photo",
     },
-    { type: "button", label: "Claim your free deal", href: TRY_BLACK_FRIDAY },
+    { type: "button", label: "Try it free", href: TRY_BLACK_FRIDAY },
     {
       type: "paragraphs",
       html: `<p style="margin: 0">
-                    Like it? Creating a free account to keep your meals is open to everyone now.
+                    Know someone counting calories this holiday? Forward this to them. (Or to
+                    someone who should be.)
                   </p>`,
     },
     {
@@ -113,7 +115,7 @@ export const BROADCASTS = [
   {
     file: "emails/thanksgiving-2026.html",
     title: "Black Friday deal: 100% off. (It was always free.)",
-    preview: "No sign-up, no 5 AM lines. Happy early Thanksgiving.",
+    preview: "Open to everyone now. No invite, no sign-up to try.",
     headlineHtml: `Black Friday deal: <em style="color: #195c2e">100% off</em>.`,
     sections: blackFridayBody(),
     comment: [
@@ -121,7 +123,7 @@ export const BROADCASTS = [
       'run "npm run email:render" from the repo root.',
       "",
       "Subject: Black Friday deal: 100% off. (It was always free.)",
-      "Preview: No sign-up, no 5 AM lines. Happy early Thanksgiving.",
+      "Preview: Open to everyone now. No invite, no sign-up to try.",
       "From:    Aman at NutriTrack <hello@tracknutri.app>, reply-to the same (it forwards to Gmail).",
     ].join("\n      "),
   },
