@@ -304,6 +304,8 @@ export type Database = {
           has_password: boolean;
           height_cm: number;
           pace_kg_per_week: number | null;
+          /** Added with 20261121140000_email_sync_audience: product mail is on unless turned off. */
+          product_emails: boolean;
           protein_g_per_kg: number;
           reminder_time: string | null;
           sex: Database["public"]["Enums"]["sex_type"];
@@ -326,6 +328,7 @@ export type Database = {
           has_password?: boolean;
           height_cm: number;
           pace_kg_per_week?: number | null;
+          product_emails?: boolean;
           protein_g_per_kg?: number;
           reminder_time?: string | null;
           sex: Database["public"]["Enums"]["sex_type"];
@@ -348,6 +351,7 @@ export type Database = {
           has_password?: boolean;
           height_cm?: number;
           pace_kg_per_week?: number | null;
+          product_emails?: boolean;
           protein_g_per_kg?: number;
           reminder_time?: string | null;
           sex?: Database["public"]["Enums"]["sex_type"];
@@ -529,6 +533,16 @@ export type Database = {
       admin_approve_request: { Args: { p_request: string }; Returns: string };
       /** Added with 20261120160000_open_signups: today, the last 7 days, and the total. */
       admin_signup_counts: { Args: never; Returns: { today: number; total: number; week: number } };
+      /** Added with 20261121140000_email_sync_audience: the last run, for the admin card. */
+      admin_email_sync_summary: {
+        Args: never;
+        Returns: {
+          contacts: number;
+          excluded: number;
+          last_sync_at: string | null;
+          unsubscribed: number;
+        };
+      };
       /** The sign-up switch, readable by anon so the sign-in screen needs no session. */
       open_signups: { Args: never; Returns: boolean };
       admin_invites: {

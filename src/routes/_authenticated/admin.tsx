@@ -19,6 +19,7 @@ import {
   FunnelCard,
   InviteList,
   InviteRequestsPanel,
+  MailingListCard,
   SignupsCard,
   SpendPanel,
   TrialCard,
@@ -69,6 +70,7 @@ function AdminPage() {
       <SignupsCard />
       {signupsOpen !== true && <InviteRequestsPanel />}
       <InviteList adminId={user.id} />
+      <MailingListCard />
       <TrialCard />
       <FunnelCard />
       <SpendPanel viewerId={user.id} />

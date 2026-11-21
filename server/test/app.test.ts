@@ -192,6 +192,9 @@ function buildHarness(options: HarnessOptions = {}) {
     async timeZone() {
       return options.timeZone ?? "UTC";
     },
+    async emailPreferences() {
+      return { productEmails: true, firstName: null };
+    },
     async globalAnalysesToday() {
       return options.globalUsedToday ?? 0;
     },
@@ -316,6 +319,18 @@ function buildHarness(options: HarnessOptions = {}) {
     inviteSender: options.inviteSender === undefined ? "aman@example.com" : options.inviteSender,
     trial,
     email,
+    // The mailing list is not exercised here; server/test/contacts.test.ts owns
+    // those routes. Present because AppDeps says so, and inert.
+    contacts: null,
+    emailSync: {
+      async page() {
+        return [];
+      },
+      async counts() {
+        return { eligible: 0, excluded: 0, unsubscribed: 0 };
+      },
+      async record() {},
+    },
     now: () => NOW,
   });
 

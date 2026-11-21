@@ -329,14 +329,15 @@ guessing "false" deletes photos.
 
 ### Deploying to production
 
-`render.yaml` declares two services, both building from `server/`:
+`render.yaml` declares three services, all building from `server/`:
 
-| Service                          | Type   | Plan      | What it runs                             |
-| -------------------------------- | ------ | --------- | ---------------------------------------- |
-| `nutritrack-parse-meal`          | `web`  | `starter` | `npm start`: the parse-meal API          |
-| `nutritrack-sweep-orphan-photos` | `cron` | `starter` | `node dist/sweep.js`, daily at 04:00 UTC |
+| Service                          | Type   | Plan      | What it runs                              |
+| -------------------------------- | ------ | --------- | ----------------------------------------- |
+| `nutritrack-parse-meal`          | `web`  | `starter` | `npm start`: the parse-meal API           |
+| `nutritrack-sweep-orphan-photos` | `cron` | `starter` | `node dist/sweep.js`, daily at 04:00 UTC  |
+| `nutritrack-resend-sync`         | `cron` | `starter` | `node dist/resend-sync.js`, daily at 06:00 UTC |
 
-Neither service uses the free instance type, for different reasons. The web service is
+None of the three uses the free instance type, for different reasons. The web service is
 **not** free on purpose: a free instance sleeps after about fifteen minutes idle and the
 next request pays a cold start of tens of seconds, which is the wrong thing to meet while
 standing at a dinner table waiting to log a meal. The cron job cannot be free. Render does
@@ -365,6 +366,12 @@ lives in the dashboard and never in the file).
 | `GMAIL_OAUTH_CLIENT_SECRET` | as above                                   | **Yes**                        |
 | `GMAIL_OAUTH_REFRESH_TOKEN` | from `npm run gmail:consent` in `server/`  | **Yes**                        |
 | `INVITE_SENDER_ADDRESS`     | the mailbox the drafts are created in      | **Yes**: not a secret          |
+| `RESEND_AUDIENCE_ID`        | the audience id for "NutriTrack list"      | **Yes**: not filled in locally |
+| `EMAIL_SYNC_SECRET`         | matches Vault's `email_sync_server_secret` | **Yes**: not filled in locally |
+
+`RESEND_AUDIENCE_ID` and `EMAIL_SYNC_SECRET` are optional to the service and not to the
+feature: without them it still starts, the invite and profile-save upserts are skipped, and
+`/contacts/sync` answers that the mailing list is not set up.
 
 The four Gmail ones are **optional to the service and not to the feature**: with any of them
 missing it still starts and serves `/parse-meal`, and `/invite` answers that invites are not set up.
@@ -426,6 +433,27 @@ this one.
 Two things **not** to set: `PORT` (Render injects it) and `NODE_VERSION` /
 `SWEEP_DRY_RUN` (already literal in the file). `SWEEP_DRY_RUN` stays `true` until a dry
 run looks right. See [Going live with the sweeper](#going-live-with-the-sweeper).
+
+**Cron job: `nutritrack-resend-sync`**
+
+| Key                         | Value                                                                 | Differs from local `.env`? |
+| --------------------------- | --------------------------------------------------------------------- | --------------------------- |
+| `SUPABASE_URL`              | as above                                                              | No                          |
+| `SUPABASE_PUBLISHABLE_KEY`  | as above                                                              | No                          |
+| `RESEND_API_KEY`            | the same key the web service uses for trial codes                     | **Yes**: not filled in locally |
+| `RESEND_AUDIENCE_ID`        | the audience id in Resend's URL for "NutriTrack list"                 | **Yes**: not filled in locally |
+| `EMAIL_SYNC_SECRET`         | any long random string; its matching copy is the Vault secret below   | **Yes**: not filled in locally |
+
+This job must never be given `SUPABASE_SERVICE_ROLE_KEY`. It reads the list through
+`email_sync_page()`, a security definer function gated by `EMAIL_SYNC_SECRET`. Before its
+first run, create the matching Vault row once, in the SQL editor:
+
+```sql
+select vault.create_secret('email_sync_server_secret', '<the value set as EMAIL_SYNC_SECRET>');
+```
+
+Until that row exists the sync refuses every call, and the admin page's "Sync now" says the
+mailing list is not set up. The same page can run the sync on demand once both are in place.
 
 #### 2. Supabase dashboard
 
@@ -557,9 +585,9 @@ the file. Only `server/` is uploaded: `shared/meal-parse.ts` is compiled into th
 at build time, so nothing outside `rootDir` is needed at runtime, and anything outside
 `ALLOWED_ORIGINS` is refused by CORS before a handler runs.
 
-The sweeper and the web service share one build (`npm run build` emits both
-`dist/index.js` and `dist/sweep.js`), so they cannot drift apart, and a broken build fails
-both. The sweeper's schedule is in UTC and nothing depends on the hour: the grace period,
+The three services share one build (`npm run build` emits `dist/index.js`,
+`dist/sweep.js` and `dist/resend-sync.js`), so they cannot drift apart, and a broken
+build fails all three. The sweeper's schedule is in UTC and nothing depends on the hour: the grace period,
 not the timing, is what protects a capture in progress. It is the only service that reads
 `SUPABASE_SERVICE_ROLE_KEY`, and the web service must never be given it.
 

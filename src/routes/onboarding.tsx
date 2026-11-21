@@ -1,6 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchProfile, saveProfileWithTargets } from "@/lib/profile";
+import { notifyContactJoin } from "@/lib/contacts";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { BrandMark } from "@/components/app/BrandMark";
 
@@ -35,7 +36,14 @@ function OnboardingPage() {
         <OnboardingWizard
           userId={user.id}
           // Onboarding is the one save that seeds the starting weight on purpose.
-          onConfirm={(profile) => saveProfileWithTargets(profile, { seedWeight: true })}
+          onConfirm={async (profile) => {
+            const saved = await saveProfileWithTargets(profile, { seedWeight: true });
+            // After the profile exists, not before: the service reads the name and the
+            // switch from that row. Not awaited, so a mailing list can never make the
+            // one save that finishes onboarding wait or fail.
+            void notifyContactJoin();
+            return saved;
+          }}
           onSaved={() => {
             navigate({ to: "/today", replace: true });
           }}

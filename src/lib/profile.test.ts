@@ -80,6 +80,8 @@ function storedProfile(overrides: Partial<Profile> = {}): Profile {
     fiber_target_g: 30,
     // Nothing about this fixture signs in with a password, and the column defaults to false.
     has_password: false,
+    // Product mail is on by default, which is the column's own default.
+    product_emails: true,
     units: "metric",
     timezone: "UTC",
     reminder_time: null,

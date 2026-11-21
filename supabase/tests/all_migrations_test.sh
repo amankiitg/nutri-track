@@ -73,11 +73,25 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_open_signups_post_login.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_password_claim.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_has_password_evidence.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_email_sync.sql"
 
 # Roll back newest first, checking each predecessor comes back. The no-food rollback goes
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261121140000_email_sync_audience.sql"
+sync_left=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname in ('email_sync_page', 'email_sync_addresses', 'email_sync_candidates', 'email_sync_counts', 'email_sync_record', 'email_sync_check_secret', 'email_sync_server_secret', 'admin_email_sync_summary')")
+[ "${sync_left}" = "0" ] || { echo "FAIL: an email sync function survived its rollback" >&2; exit 1; }
+sync_table=$("${PSQL[@]}" -Atc "select coalesce(to_regclass('public.email_sync_state')::text, 'none')")
+[ "${sync_table}" = "none" ] || { echo "FAIL: email_sync_state survived its rollback" >&2; exit 1; }
+sync_profile=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='profiles' and column_name='product_emails'")
+[ "${sync_profile}" = "0" ] || { echo "FAIL: profiles.product_emails survived its rollback" >&2; exit 1; }
+sync_settings=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='app_settings' and column_name='email_sync_exclude'")
+[ "${sync_settings}" = "0" ] || { echo "FAIL: app_settings.email_sync_exclude survived its rollback" >&2; exit 1; }
+apply "${MIGRATIONS}/20261121140000_email_sync_audience.sql"
+sync_back=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname = 'email_sync_page'")
+[ "${sync_back}" = "1" ] || { echo "FAIL: email_sync_page missing after the migration reapplied" >&2; exit 1; }
+echo "ok - the email sync migration rolls back and applies again"
 apply "${ROOT}/supabase/rollback/20261121120000_has_password_evidence.sql"
 evidence=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname in ('mark_has_password', 'profiles_has_password_guard')")
 [ "${evidence}" = "0" ] || { echo "FAIL: the password recorder or its guard survived the rollback" >&2; exit 1; }

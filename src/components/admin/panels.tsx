@@ -45,6 +45,12 @@ import {
 } from "@/lib/admin";
 import { DAILY_ANALYSIS_LIMIT } from "@shared/meal-parse";
 import { fetchAnalysisLimits } from "@/lib/calls";
+import {
+  fetchMailingList,
+  mailingListSummary,
+  syncMailingList,
+  syncResultLine,
+} from "@/lib/mailing-list";
 import { Section } from "./Section";
 import { TrialLinkControls } from "./TrialLinkControls";
 import { useTrialLinks } from "./use-trial-links";
@@ -619,6 +625,70 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
             })}
           </ul>
         )}
+      </CardContent>
+    </Section>
+  );
+}
+
+/**
+ * The mailing list: what the last run did, and a button to run it now.
+ *
+ * One line, because that is the whole question. The counts come from the database's
+ * state row, so the nightly job's run appears here without this tab having done
+ * anything. The response to "Sync now" is four numbers and never an address.
+ */
+export function MailingListCard() {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const list = useQuery({
+    queryKey: ["admin-mailing-list"],
+    queryFn: fetchMailingList,
+    retry: false,
+  });
+
+  const sync = useMutation({
+    mutationFn: syncMailingList,
+    onSuccess: (result) => {
+      setError(null);
+      toast.success(syncResultLine(result));
+      void queryClient.invalidateQueries({ queryKey: ["admin-mailing-list"] });
+    },
+    onError: (caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : "Could not sync the mailing list.");
+    },
+  });
+
+  return (
+    <Section
+      id="mailing-list"
+      title="Mailing list"
+      summary={list.isSuccess ? mailingListSummary(list.data) : "Loading the mailing list figures."}
+    >
+      <CardContent className="space-y-3">
+        {list.isPending && <p className="text-base text-muted-foreground">Loading...</p>}
+        {list.isError && (
+          <PanelError message={`Could not load the mailing list. ${errorDetail(list.error)}`} />
+        )}
+        {list.isSuccess && <p className="text-base">{mailingListSummary(list.data)}</p>}
+
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-full text-base"
+          disabled={sync.isPending}
+          onClick={() => sync.mutate()}
+        >
+          {sync.isPending && <Loader2 className="animate-spin" />}
+          Sync now
+        </Button>
+
+        <p className="text-base text-muted-foreground">
+          Runs on its own every night. Nothing here sends an email; it only keeps the contacts in
+          step with who can use the app. One press a minute.
+        </p>
+
+        {error !== null && <PanelError message={error} />}
       </CardContent>
     </Section>
   );

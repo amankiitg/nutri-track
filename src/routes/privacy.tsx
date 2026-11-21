@@ -161,11 +161,17 @@ function PrivacyPage() {
           your account, and they are the only emails NutriTrack has to send you.
         </p>
         <p className="pt-2 font-medium">Occasional updates</p>
-        <p>
+        <p className="text-base">
           We may send a few emails that are not about your account: a festival greeting, or a note
           when something worth knowing changes. They go out through Resend, to people who joined
           NutriTrack or were invited to it. For that, your email address and your first name, if the
-          list we were given has one, are stored in Resend.
+          list we were given has one, are stored in Resend, because an email needs an address to
+          reach and a name is what makes it read like a person wrote it. That is the only reason
+          either is there.
+        </p>
+        <p className="text-base">
+          Settings, under Account, has a switch for these emails. Turning it off also tells Resend
+          to stop sending them to your address.
         </p>
         <p>
           Every one of those emails has an Unsubscribe link at the bottom. Unsubscribing stops them
