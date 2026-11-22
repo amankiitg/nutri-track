@@ -165,6 +165,7 @@ export function CaptureSheet({
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [dictation, setDictation] = useState<Dictation | null>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
   /**
@@ -670,18 +671,26 @@ export function CaptureSheet({
             )}
 
             {/*
-              One input, two buttons, and no capture attribute on purpose. Both buttons open the
-              phone's own picker, which offers Take Photo and Photo Library; a capture attribute
-              would send the first button straight to the camera and leave no way back to the
-              library from it. The compact row is what this sheet had before the tall box, and it
-              stays here rather than in SnapBox because /try keeps the tall box.
+              Two inputs, as this sheet had before the tall box took over: one with
+              capture="environment", so Take a photo goes straight to the camera, and one without
+              it, so Choose goes straight to the library. SnapBox, which /try uses, is untouched.
             */}
+            <input
+              ref={cameraInput}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              data-photo-input="camera"
+              onChange={(event) => addPhotos(event.target.files)}
+            />
             <input
               ref={galleryInput}
               type="file"
               accept="image/*"
               multiple
               className="hidden"
+              data-photo-input="gallery"
               onChange={(event) => addPhotos(event.target.files)}
             />
 
@@ -690,7 +699,7 @@ export function CaptureSheet({
                 type="button"
                 className="h-12 flex-1 rounded-full text-base"
                 disabled={photos.length >= MAX_PHOTOS}
-                onClick={() => galleryInput.current?.click()}
+                onClick={() => cameraInput.current?.click()}
               >
                 <Camera className="mr-1.5 size-4" aria-hidden="true" />
                 Take a photo

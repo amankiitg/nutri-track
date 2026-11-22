@@ -59,26 +59,38 @@ function renderSheet() {
 /**
  * The photo tab's compact row.
  *
- * Both buttons open the phone's own picker, so both have to click the same input: one input, no
- * capture attribute. Two inputs was the older shape, and a capture attribute would send the first
- * button straight to the camera with no way back to the library from it.
+ * Two inputs and one button each, which is the shape this sheet had before the tall box: the
+ * camera input carries capture="environment" so Take a photo goes to the camera, and the gallery
+ * input does not, so Choose opens the library. Both buttons opening one input is the regression
+ * this guards.
  */
 describe("the photo tab", () => {
-  it("offers Take a photo and Choose, both opening the same picker", async () => {
+  it("sends Take a photo to the camera and Choose to the library", async () => {
     const user = userEvent.setup();
     renderSheet();
 
-    const input = document.querySelector<HTMLInputElement>('input[type="file"][accept="image/*"]');
-    expect(input).not.toBeNull();
-    // No capture attribute: the choice of camera or library belongs to the phone's sheet.
-    expect(input?.hasAttribute("capture")).toBe(false);
-    expect(input?.multiple).toBe(true);
+    // The shapes this sheet had before the tall box: one input that asks the phone for the camera,
+    // one that does not, and each button wired to its own.
+    const camera = document.querySelector<HTMLInputElement>('input[data-photo-input="camera"]');
+    const gallery = document.querySelector<HTMLInputElement>('input[data-photo-input="gallery"]');
+    expect(camera).not.toBeNull();
+    expect(gallery).not.toBeNull();
+    expect(camera?.getAttribute("capture")).toBe("environment");
+    expect(camera?.getAttribute("accept")).toBe("image/*");
+    expect(camera?.multiple).toBe(false);
+    expect(gallery?.hasAttribute("capture")).toBe(false);
+    expect(gallery?.getAttribute("accept")).toBe("image/*");
+    expect(gallery?.multiple).toBe(true);
 
-    const opened = vi.spyOn(input as HTMLInputElement, "click");
+    const cameraClick = vi.spyOn(camera as HTMLInputElement, "click");
+    const galleryClick = vi.spyOn(gallery as HTMLInputElement, "click");
     await user.click(screen.getByRole("button", { name: /take a photo/i }));
     await user.click(screen.getByRole("button", { name: /^choose$/i }));
 
-    expect(opened).toHaveBeenCalledTimes(2);
+    // One press each, on its own input: the mistake this guards is both buttons opening the same
+    // one, which is what "Take a photo" silently did for a while.
+    expect(cameraClick).toHaveBeenCalledTimes(1);
+    expect(galleryClick).toHaveBeenCalledTimes(1);
   });
 
   it("says how many photos, and nothing about pixels", () => {
