@@ -10,6 +10,13 @@
  * account: (a) creates it, (b) signs it back in, (c) gives it a password, (d) resets that password.
  */
 import type { Page } from "@playwright/test";
+
+declare global {
+  interface Window {
+    /** The inputs the photo buttons opened, in order, recorded by the check in case (a). */
+    __photoOpened?: string[];
+  }
+}
 import {
   askState,
   expect,
@@ -137,6 +144,29 @@ test.describe.serial("the sign-in screen, end to end", () => {
     await page.getByRole("button", { name: "Skip, take me in" }).click();
 
     await finishOnboarding(page);
+
+    // The sheet's two photo inputs, at phone size. Two, not one: Take a photo carries
+    // capture="environment" so the phone opens the camera, and Choose does not, so it opens the
+    // library. Each button opens its own input.
+    await page.getByRole("button", { name: "Add a meal" }).click();
+    await expect(page.locator('input[data-photo-input="camera"]')).toHaveAttribute(
+      "capture",
+      "environment",
+    );
+    await expect(page.locator('input[data-photo-input="gallery"]')).not.toHaveAttribute("capture");
+
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      const native = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function patched(this: HTMLInputElement, ...args) {
+        opened.push(this.dataset["photoInput"] ?? "unknown");
+        window.__photoOpened = opened;
+        return native.apply(this, args as never);
+      };
+    });
+    await page.getByRole("button", { name: /take a photo/i }).click();
+    await page.getByRole("button", { name: /^choose$/i }).click();
+    expect(await page.evaluate(() => window.__photoOpened ?? [])).toEqual(["camera", "gallery"]);
   });
 
   test("b. the same account sees only the link, and the link signs it in", async ({
