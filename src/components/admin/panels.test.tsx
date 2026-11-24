@@ -14,7 +14,14 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FunnelCard, InviteList, InviteRequestsPanel, SpendPanel, TrialCard } from "./panels";
+import {
+  FunnelCard,
+  InviteList,
+  InviteRequestsPanel,
+  MailingListCard,
+  SpendPanel,
+  TrialCard,
+} from "./panels";
 import { supabase } from "@/integrations/supabase/client";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -83,6 +90,47 @@ function serviceSays(status: number, body: unknown) {
     }),
   );
 }
+
+describe("the mailing list card", () => {
+  const STATE = {
+    last_sync_at: "2026-11-21T14:00:00.000Z",
+    contacts: 12,
+    excluded: 5,
+    unsubscribed: 1,
+  };
+
+  it("shows the line once, in the header rather than twice on the card", async () => {
+    client.rpc.mockResolvedValue({ data: STATE, error: null });
+    client.auth.getSession.mockResolvedValue({ data: { session: { access_token: "token" } } });
+
+    const { container } = renderWithQuery(<MailingListCard />);
+
+    // The count is what proves it: the header and the body used to both print the whole sentence.
+    await waitFor(() => expect(container.textContent).toContain("12 synced"));
+    const occurrences = (container.textContent ?? "").split("12 synced").length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("shows the service's own sentence when the sync refuses", async () => {
+    const user = userEvent.setup();
+    client.rpc.mockResolvedValue({ data: STATE, error: null });
+    client.auth.getSession.mockResolvedValue({ data: { session: { access_token: "token" } } });
+    serviceSays(503, {
+      error: {
+        code: "internal_error",
+        message:
+          "The mailing list is not set up on this service: RESEND_AUDIENCE_ID and EMAIL_SYNC_SECRET must both be set.",
+      },
+    });
+
+    renderWithQuery(<MailingListCard />);
+    await openSection(user, /mailing list/i);
+    await user.click(await screen.findByRole("button", { name: /sync now/i }));
+
+    // Not "Could not sync": the reason, because the reason is what an admin can act on.
+    expect(await screen.findByText(/RESEND_AUDIENCE_ID and EMAIL_SYNC_SECRET/)).toBeInTheDocument();
+  });
+});
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

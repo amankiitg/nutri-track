@@ -1,10 +1,10 @@
 /**
- * The Settings switch, and the two fire-and-forget calls that follow it.
+ * The Settings switch, and the one call that follows it.
  *
- * The switch is a preference stored on the profile. That row is the source of truth:
- * the nightly sync reads it, so a failed call here does not lose the choice. The
- * Resend calls are mirrors of it, and the one after a profile save is best effort by
- * design, because the thing the person actually did was save a profile.
+ * The switch is a preference stored on the profile. That row is the source of truth: the manual
+ * sync from the admin page reads it, so a failed call here does not lose the choice. The call to
+ * Resend mirrors it, and turning the switch off is the only reason this file talks to the
+ * service: there is no call that puts somebody on the list, because the list is built by the sync.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { parseMealUrl } from "@/lib/capture";
@@ -30,16 +30,6 @@ async function postContact(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * After a profile is saved: put this person on the mailing list.
- *
- * Not awaited anywhere. The service answers ok even when Resend refuses, and a
- * failure on the way is the same as no call: the nightly sync will see the profile.
- */
-export async function notifyContactJoin(): Promise<void> {
-  await postContact("contacts/join");
 }
 
 /**
