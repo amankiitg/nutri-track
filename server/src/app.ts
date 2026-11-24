@@ -89,7 +89,8 @@ export interface AppDeps {
 const CONTACT_SYNC_COOLDOWN_MS = 60_000;
 
 /** One line for a route whose whole job is to not fail the thing that called it. */
-const CONTACTS_NOT_SET_UP = "The mailing list is not set up on the server yet.";
+const CONTACTS_NOT_SET_UP =
+  "The mailing list is not set up on this service: RESEND_AUDIENCE_ID and EMAIL_SYNC_SECRET must both be set. The sync reads the list through email_sync_page, which compares EMAIL_SYNC_SECRET with Vault's email_sync_server_secret.";
 
 /**
  * Counts one funnel step, and never lets that count fail the request it is counting.
@@ -354,47 +355,10 @@ export function createApp(deps: AppDeps): Express {
       alreadyInvited: outcome.alreadyInvited,
     });
 
-    // The list follows the door: an invited address becomes a contact here, not on
-    // the next nightly run. Not awaited, because drafting is the admin's action and
-    // a slow Resend call must not delay the answer; a failure is a log line that the
-    // nightly sync makes right. productEmails is true for a new address, and even if
-    // an existing contact has opted out, the client never writes unsubscribed: false.
-    if (deps.contacts !== null) {
-      void upsertOneContact(deps.contacts, {
-        email: outcome.email,
-        firstName: outcome.firstName === "" ? null : outcome.firstName,
-        productEmails: true,
-      });
-    }
+    // The mailing list is not touched here: it is built by the admin's manual sync, so
+    // drafting an invite and adding a contact are separate actions.
 
     res.json(outcome);
-  });
-
-  /**
-   * After a profile is saved: put this person on the mailing list.
-   *
-   * Authenticated, and it names nobody: the address is the token's own, and the name
-   * and switch come from the caller's own profile row. The answer is always ok,
-   * because the caller's real action was saving a profile, and a mailing list is not
-   * worth failing that over. A failure is logged and the nightly sync retries it.
-   */
-  app.post("/contacts/join", async (req: Request, res: Response) => {
-    const token = bearerToken(req.get("authorization"));
-    const user = await deps.verifyToken(token);
-
-    if (deps.contacts !== null && user.email !== null) {
-      try {
-        const preferences = await deps.forCaller(user, token).emailPreferences();
-        await upsertOneContact(deps.contacts, {
-          email: user.email,
-          firstName: preferences.firstName,
-          productEmails: preferences.productEmails,
-        });
-      } catch {
-        log("warn", "contact upsert after sign-up failed", { userId: user.id });
-      }
-    }
-    res.json({ ok: true });
   });
 
   /**

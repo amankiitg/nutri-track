@@ -633,9 +633,9 @@ export function SpendPanel({ viewerId }: { viewerId?: string }) {
 /**
  * The mailing list: what the last run did, and a button to run it now.
  *
- * One line, because that is the whole question. The counts come from the database's
- * state row, so the nightly job's run appears here without this tab having done
- * anything. The response to "Sync now" is four numbers and never an address.
+ * One line, because that is the whole question. The counts come from the database's state row,
+ * written by the last run wherever it was started. The response to "Sync now" is four numbers and
+ * never an address, and a failure shows the service's own sentence rather than a shrug.
  */
 export function MailingListCard() {
   const queryClient = useQueryClient();
@@ -670,8 +670,6 @@ export function MailingListCard() {
         {list.isError && (
           <PanelError message={`Could not load the mailing list. ${errorDetail(list.error)}`} />
         )}
-        {list.isSuccess && <p className="text-base">{mailingListSummary(list.data)}</p>}
-
         <Button
           type="button"
           variant="outline"
@@ -684,8 +682,8 @@ export function MailingListCard() {
         </Button>
 
         <p className="text-base text-muted-foreground">
-          Runs on its own every night. Nothing here sends an email; it only keeps the contacts in
-          step with who can use the app. One press a minute.
+          Runs only when you press it, and at most once a minute. Nothing here sends an email; it
+          keeps the contacts in Resend in step with who can use the app.
         </p>
 
         {error !== null && <PanelError message={error} />}

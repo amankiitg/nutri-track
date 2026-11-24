@@ -1,9 +1,9 @@
 /**
  * The admin page's one mailing list line, and the button beside it.
  *
- * The numbers come from the database's own state row, not from this tab's memory, so
- * a sync run by the nightly job shows up here without a reload inventing anything.
- * The sync itself is the service's: this file only reports what it answered.
+ * The numbers come from the database's own state row, not from this tab's memory, so the last run
+ * shows up here without a reload inventing anything. The sync itself is the service's: this file
+ * only reports what it answered, including the sentence it refused with.
  */
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";

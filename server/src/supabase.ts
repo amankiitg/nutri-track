@@ -49,7 +49,8 @@ function baseOptions(apiKey: string, authorization?: string) {
  * function as anon. Carries no user's authority.
  *
  * The parameter is the two fields this needs rather than the whole `Config`, so the
- * nightly job can pass its small config without inventing a Gemini key it never uses.
+ * job that is not the web service can pass its small config without inventing a Gemini key it
+ * never uses.
  */
 export function createAuthClient(
   config: Pick<Config, "SUPABASE_URL" | "SUPABASE_PUBLISHABLE_KEY">,

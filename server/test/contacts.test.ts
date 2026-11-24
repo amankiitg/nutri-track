@@ -183,38 +183,19 @@ function buildApp(options: {
 
 const auth = { authorization: "Bearer a-valid-access-token" };
 
-describe("POST /contacts/join", () => {
-  it("puts the caller on the list with the address from the token", async () => {
+describe("POST /contacts/join, which no longer exists", () => {
+  it("answers 404, because the list is built by the manual sync and nothing else", async () => {
     const fake = fakeContacts();
-    const app = buildApp({ contacts: fake.contacts, productEmails: false });
-
-    const response = await request(app).post("/contacts/join").set(auth).send({});
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ok: true });
-    expect(fake.upserted).toEqual([
-      { email: "person@one.test", firstName: "Aman", productEmails: false },
-    ]);
-  });
-
-  it("still answers ok when Resend refuses, so the saved profile stands", async () => {
-    const fake = fakeContacts({ throwOnUpsert: true });
     const app = buildApp({ contacts: fake.contacts });
 
     const response = await request(app).post("/contacts/join").set(auth).send({});
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ok: true });
-  });
-
-  it("is a no-op without a configured audience", async () => {
-    const app = buildApp({ contacts: null });
-    const response = await request(app).post("/contacts/join").set(auth).send({});
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ok: true });
+    // A sign-up must not put anybody on the list behind the admin's back: the only writer is the
+    // sync, which reads who may use the app.
+    expect(response.status).toBe(404);
+    expect(fake.upserted).toEqual([]);
   });
 });
-
 describe("POST /contacts/unsubscribe", () => {
   it("turns the caller's contact off and sends nothing else", async () => {
     const fake = fakeContacts();

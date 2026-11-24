@@ -93,9 +93,11 @@ services:
       - key: RESEND_AUDIENCE_ID
         sync: false
       # The value passed as p_secret to the email_sync_* functions; the matching
-      # copy lives in Supabase Vault as 'email_sync_server_secret'. The same secret
-      # is on the nightly resend-sync cron. Without it /contacts/sync says the
-      # mailing list is not set up.
+      # copy lives in Supabase Vault as 'email_sync_server_secret'. Without it
+      # /contacts/sync says the mailing list is not set up, and names it.
+      #
+      # The sync runs here and only here, when an admin presses Sync now: there is no
+      # cron service, so nothing happens on a schedule.
       - key: EMAIL_SYNC_SECRET
         sync: false
       # Whether /try asks for an email and a 6-digit code. False (the default) is the
@@ -189,53 +191,3 @@ services:
       # rather than being guessed at. Set to "false" once a dry run looks right.
       - key: SWEEP_DRY_RUN
         value: "true"
-
-  # ---------------------------------------------------------------------------
-  # The mailing list sync (server/scripts/resend-sync.ts).
-  #
-  # Keeps the Resend audience named "NutriTrack list" in step with who can use the
-  # app: one contact per inbox, an unsubscribe when somebody turns product mail off,
-  # and never a re-subscribe. It sends no email; Resend's Contacts API is the only
-  # thing it calls.
-  #
-  # It needs no SUPABASE_SERVICE_ROLE_KEY and must never be given one. The list is
-  # read through email_sync_page(), a security definer function gated by
-  # EMAIL_SYNC_SECRET against Supabase Vault's 'email_sync_server_secret'. That is
-  # the difference between this job and the sweeper: the sweeper must see every
-  # meal, and this must see only addresses it can name one page at a time.
-  #
-  # 06:00 UTC is chosen, not measured: it is after the sweeper and before the
-  # working day in Europe. Nothing depends on the hour, and the admin page can run
-  # the same sync on demand.
-  #
-  # Shares the build with the web service, so a failed build fails both and they
-  # cannot drift. The first deploy does nothing until RESEND_AUDIENCE_ID is set.
-  # ---------------------------------------------------------------------------
-  - type: cron
-    name: nutritrack-resend-sync
-    runtime: node
-    plan: starter
-    rootDir: server
-    buildCommand: npm ci && npm run build
-    schedule: "0 6 * * *"
-    startCommand: node dist/resend-sync.js
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_PUBLISHABLE_KEY
-        sync: false
-
-      # The same Resend key the trial uses. It can create a contact and set one
-      # unsubscribed; it cannot send from this job, because no send path is called.
-      - key: RESEND_API_KEY
-        sync: false
-      # The audience id from Resend's dashboard, not a secret. "NutriTrack list".
-      - key: RESEND_AUDIENCE_ID
-        sync: false
-      # Must match the Vault secret named 'email_sync_server_secret'. A mismatch is
-      # a refused run, not a half synced list.
-      - key: EMAIL_SYNC_SECRET
-        sync: false
