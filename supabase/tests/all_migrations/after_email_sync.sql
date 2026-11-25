@@ -165,14 +165,18 @@ BEGIN
   END IF;
 
   -- A run records what it did, and the admin read returns it.
-  PERFORM public.email_sync_record('email-sync-secret-for-tests', 3, 3, 1);
+  -- The counters, in the order the function takes them: checked, added, already, names, failed,
+  -- then the two totals and the first error. Three added of three checked is a run that had
+  -- nothing to do twice, which this call does not distinguish from anything else; the counters
+  -- file owns that question.
+  PERFORM public.email_sync_record('email-sync-secret-for-tests', 3, 3, 0, 0, 0, 3, 1, NULL);
 
   INSERT INTO auth.users (id, email) VALUES (v_admin, 'admin@one.test');
   INSERT INTO public.admins (user_id) VALUES (v_admin);
   PERFORM set_config('request.jwt.claim.sub', v_admin::text, true);
 
   v_summary := public.admin_email_sync_summary();
-  IF (v_summary ->> 'contacts')::integer <> 3
+  IF (v_summary ->> 'added')::integer <> 3
      OR (v_summary ->> 'excluded')::integer <> 3
      OR (v_summary ->> 'unsubscribed')::integer <> 1
      OR v_summary ->> 'last_sync_at' IS NULL THEN
