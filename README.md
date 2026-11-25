@@ -331,10 +331,10 @@ guessing "false" deletes photos.
 
 `render.yaml` declares three services, all building from `server/`:
 
-| Service                          | Type   | Plan      | What it runs                              |
-| -------------------------------- | ------ | --------- | ----------------------------------------- |
-| `nutritrack-parse-meal`          | `web`  | `starter` | `npm start`: the parse-meal API           |
-| `nutritrack-sweep-orphan-photos` | `cron` | `starter` | `node dist/sweep.js`, daily at 04:00 UTC  |
+| Service                          | Type   | Plan      | What it runs                             |
+| -------------------------------- | ------ | --------- | ---------------------------------------- |
+| `nutritrack-parse-meal`          | `web`  | `starter` | `npm start`: the parse-meal API          |
+| `nutritrack-sweep-orphan-photos` | `cron` | `starter` | `node dist/sweep.js`, daily at 04:00 UTC |
 
 The mailing list has no service of its own any more: the sync runs on the web service, when an
 admin presses **Sync now** on the admin page, so there is nothing to schedule and no cron job to
@@ -443,9 +443,9 @@ Two more values sit on `nutritrack-parse-meal`, and both are needed before **Syn
 They are declared in `render.yaml`, so the only thing missing is the value:
 
 | Key                  | Value                                                               | Differs from local `.env`?     |
-| -------------------- | ------------------------------------------------------------------- | ------------------------------- |
-| `RESEND_AUDIENCE_ID` | the audience id in Resend's URL for "NutriTrack list"               | **Yes**: not filled in locally  |
-| `EMAIL_SYNC_SECRET`  | any long random string; its matching copy is the Vault secret below | **Yes**: not filled in locally  |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------ |
+| `RESEND_AUDIENCE_ID` | the audience id in Resend's URL for "NutriTrack list"               | **Yes**: not filled in locally |
+| `EMAIL_SYNC_SECRET`  | any long random string; its matching copy is the Vault secret below | **Yes**: not filled in locally |
 
 The web service must never be given `SUPABASE_SERVICE_ROLE_KEY`. It reads the list through
 `email_sync_page()`, a security definer function gated by `EMAIL_SYNC_SECRET`. Create the matching
@@ -904,6 +904,31 @@ of what an invite says. `docs/invite-email.html` is generated from it by `npm ru
 and is not edited by hand: two copies of an email drift, and the copy that drifts is the one you
 send. Adding the address and drafting the email are one request, drafted first, so a failure grants
 nobody access.
+
+### The mailing list
+
+**Sync now** on the admin page, and nothing else, is what puts the allow list into Resend. No email
+is sent by it and no address is ever written to a log: the run reports counts.
+
+The run's own line is seven numbers, and the shape of it is the point. `checked` is the rows the
+run walked, so a list that answered nothing says `0 checked` rather than a zero that could have
+meant anything. Every checked row is then in exactly one of four buckets:
+
+| Counter   | Means                                                              |
+| --------- | ------------------------------------------------------------------ |
+| `added`   | Resend did not have the contact                                    |
+| `already` | in step when the run ended; includes a contact it had to turn off  |
+| `names`   | had no first name in Resend, so the run filled one in              |
+| `failed`  | Resend refused it, and the card names the first refusal's sentence |
+
+Beside those, `excluded` and `unsubscribed` are **totals over the list**, not over the run.
+Excluded is the two rules (the `example.com` suffix and the stored `email_sync_exclude` list);
+unsubscribed is how many people turned product mail off.
+
+The counters exist because the single `contacts` number they replace could not be read. The run of
+25 Nov 06:15 recorded 0 accepted with 5 excluded, and that row cannot say whether the list was
+empty or whether every contact was refused; if a run ever does refuse every contact it walked, it
+now logs `mailing list sync refused every contact` at error level rather than leaving a zero.
 
 ## Privacy and account deletion
 

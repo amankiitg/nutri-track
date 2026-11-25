@@ -92,7 +92,7 @@ function fakeContacts(options: { throwOnUpsert?: boolean } = {}): {
       async upsert(contact) {
         if (options.throwOnUpsert === true) throw new Error("Resend refused");
         upserted.push(contact);
-        return "updated";
+        return "unchanged";
       },
     },
   };
@@ -227,7 +227,7 @@ describe("POST /contacts/sync", () => {
     expect(fake.upserted).toEqual([]);
   });
 
-  it("answers the four counts and records what it did", async () => {
+  it("answers the counters and records what it did", async () => {
     const recorded: unknown[] = [];
     const sync: EmailSyncStore = {
       async page() {
@@ -245,8 +245,30 @@ describe("POST /contacts/sync", () => {
     const response = await request(app).post("/contacts/sync").set(auth).send({});
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ contacts: 0, failed: 0, excluded: 3, unsubscribed: 1 });
-    expect(recorded).toEqual([{ contacts: 0, excluded: 3, unsubscribed: 1 }]);
+    // An empty list is now visibly an empty list rather than a zero that could have meant
+    // anything: checked is 0, and every bucket with it.
+    expect(response.body).toEqual({
+      checked: 0,
+      added: 0,
+      alreadyUpToDate: 0,
+      namesUpdated: 0,
+      failed: 0,
+      firstError: null,
+      excluded: 3,
+      unsubscribed: 1,
+    });
+    expect(recorded).toEqual([
+      {
+        checked: 0,
+        added: 0,
+        already: 0,
+        names: 0,
+        failed: 0,
+        excluded: 3,
+        unsubscribed: 1,
+        firstError: null,
+      },
+    ]);
   });
 
   it("rate limits a second press inside a minute", async () => {

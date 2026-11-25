@@ -55,11 +55,32 @@ export interface EmailSyncCounts {
   unsubscribed: number;
 }
 
+/**
+ * What one run did, in numbers that can tell three cases apart.
+ *
+ * The single "contacts" counter this replaces could not: a run that found everything already in
+ * step and a run that read no rows both reported zero, and on 25 Nov the card said 0 synced next to
+ * roughly fifty contacts that were already in Resend.
+ *
+ * Every checked row lands in exactly one of added, alreadyUpToDate, namesUpdated or failed.
+ */
 export interface EmailSyncResult {
-  /** Contacts the API accepted, including ones that were already in step. */
-  contacts: number;
-  /** Contacts the API refused. Any number above zero is a run worth looking at. */
+  /** Rows the run walked. Zero here means the list itself was empty, which is a bug, not an idle run. */
+  checked: number;
+  /** Contacts Resend did not have before this run. */
+  added: number;
+  /**
+   * Contacts in step at the end of the run with nothing left to write, which counts both a contact
+   * that was already in step and one this run had to turn off: by the time the run ends there is no
+   * difference between them, and neither is work a reader needs to see.
+   */
+  alreadyUpToDate: number;
+  /** Contacts whose first name this run filled in. */
+  namesUpdated: number;
+  /** Contacts Resend refused, plus the first refusal's sentence for the card. */
   failed: number;
+  firstError: string | null;
+  /** Totals over the list, not over the run. */
   excluded: number;
   unsubscribed: number;
 }
@@ -115,7 +136,16 @@ const countsShape = z.object({
 export interface EmailSyncStore {
   page(after: string | null, limit: number): Promise<EmailSyncRow[]>;
   counts(): Promise<EmailSyncCounts>;
-  record(state: { contacts: number; excluded: number; unsubscribed: number }): Promise<void>;
+  record(state: {
+    checked: number;
+    added: number;
+    already: number;
+    names: number;
+    failed: number;
+    excluded: number;
+    unsubscribed: number;
+    firstError: string | null;
+  }): Promise<void>;
 }
 
 /**
@@ -167,9 +197,14 @@ export function createEmailSyncStore(
     async record(state) {
       const { error } = await client.rpc("email_sync_record", {
         p_secret: serverSecret,
-        p_contacts: state.contacts,
+        p_checked: state.checked,
+        p_added: state.added,
+        p_already: state.already,
+        p_names: state.names,
+        p_failed: state.failed,
         p_excluded: state.excluded,
         p_unsubscribed: state.unsubscribed,
+        p_first_error: state.firstError,
       });
       if (error) fail("email_sync_record");
     },
@@ -201,8 +236,12 @@ export async function syncAudience(deps: SyncAudienceDeps): Promise<EmailSyncRes
   const counts = await deps.store.counts();
 
   let after: string | null = null;
-  let synced = 0;
+  let checked = 0;
+  let added = 0;
+  let already = 0;
+  let names = 0;
   let failed = 0;
+  let firstError: string | null = null;
   let pages = 0;
   const seen = new Set<string>();
 
@@ -219,13 +258,25 @@ export async function syncAudience(deps: SyncAudienceDeps): Promise<EmailSyncRes
         firstName: row.firstName,
         productEmails: row.productEmails,
       };
+      checked += 1;
       try {
-        await deps.contacts.upsert(contact);
-        synced += 1;
-      } catch {
-        // The address is not logged. One failure is a contact to look at by hand;
-        // it is not a reason to abandon the rest of the list.
+        // The outcome is what makes these counters mean anything: "created" is a
+        // contact this run added, "unchanged" is one that was already in step, and
+        // the difference between them is the whole question the old single number
+        // could not answer.
+        const outcome = await deps.contacts.upsert(contact);
+        if (outcome === "created") added += 1;
+        else if (outcome === "named") names += 1;
+        else already += 1;
+      } catch (error) {
+        // The address is not logged, and neither is the error's own body. One
+        // failure is a contact to look at by hand; it is not a reason to abandon
+        // the rest of the list, but the first sentence is kept for the card so the
+        // refusal can be read without opening the Render log.
         failed += 1;
+        if (firstError === null) {
+          firstError = error instanceof Error ? error.message : "contact upsert failed";
+        }
         log("warn", "contact upsert failed", {});
       }
     }
@@ -240,17 +291,35 @@ export async function syncAudience(deps: SyncAudienceDeps): Promise<EmailSyncRes
   // already updated the audience, so this is the one call whose error is swallowed.
   try {
     await deps.store.record({
-      contacts: synced,
+      checked,
+      added,
+      already,
+      names,
+      failed,
       excluded: counts.excluded,
       unsubscribed: counts.unsubscribed,
+      firstError,
     });
   } catch {
     log("warn", "mailing list state not recorded", {});
   }
 
+  // The 25 Nov run recorded 0 accepted with 5 excluded and no failure count at all, and nothing in
+  // the log said which of the two histories it had been. A run that walked rows and refused every
+  // one of them now says so at the level a dashboard shows.
+  if (checked > 0 && added + already + names === 0) {
+    log("error", "mailing list sync refused every contact", { checked, failed });
+  }
+
+  log("info", "mailing list synced", { checked, added, already, names, failed });
+
   return {
-    contacts: synced,
+    checked,
+    added,
+    alreadyUpToDate: already,
+    namesUpdated: names,
     failed,
+    firstError,
     excluded: counts.excluded,
     unsubscribed: counts.unsubscribed,
   };

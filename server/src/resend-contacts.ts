@@ -31,7 +31,14 @@ export interface ContactInput {
   productEmails: boolean;
 }
 
-export type ContactOutcome = "created" | "updated" | "unchanged" | "exists";
+/**
+ * What a write did, named exactly.
+ *
+ * This used to answer "updated" for both a filled-in first name and a contact turned off, which
+ * made the two indistinguishable to a caller reading the return value and left the sync counting
+ * them as one number. They are different events and the sync reports them separately.
+ */
+export type ContactOutcome = "created" | "named" | "unsubscribed" | "unchanged" | "exists";
 
 export interface ResendContactsClient {
   upsert(contact: ContactInput): Promise<ContactOutcome>;
@@ -126,7 +133,11 @@ export function createResendContactsClient(options: {
     throw new ResendContactsError("contact create", response.status);
   }
 
-  async function patch(email: string, body: Record<string, unknown>): Promise<ContactOutcome> {
+  async function patch(
+    email: string,
+    body: Record<string, unknown>,
+    outcome: Extract<ContactOutcome, "named" | "unsubscribed">,
+  ): Promise<ContactOutcome> {
     const response = await fetchImpl(`${base}/${encodeURIComponent(email)}`, {
       method: "PATCH",
       headers: headers(),
@@ -134,7 +145,7 @@ export function createResendContactsClient(options: {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) throw new ResendContactsError("contact update", response.status);
-    return "updated";
+    return outcome;
   }
 
   return {
@@ -148,18 +159,23 @@ export function createResendContactsClient(options: {
       // Only a contact with no name gets one. A name already in Resend is not ours
       // to replace, even when the profile's display name differs.
       const hasName = typeof existing.first_name === "string" && existing.first_name.trim() !== "";
+      let outcome: Extract<ContactOutcome, "named" | "unsubscribed"> = "unsubscribed";
       if (!hasName && contact.firstName !== null && contact.firstName.trim() !== "") {
         body["first_name"] = contact.firstName.trim();
+        outcome = "named";
       }
 
       // One direction only. `existing.unsubscribed === true` means there is nothing
       // to do, and `productEmails` true means there is nothing to say.
       if (!contact.productEmails && existing.unsubscribed !== true) {
         body["unsubscribed"] = true;
+        // A row that both gained a name and lost its subscription is reported as the
+        // name, because that is the rarer event and the one worth seeing; the
+        // unsubscribe is a consequence of the profile it came from.
       }
 
       if (Object.keys(body).length === 0) return "unchanged";
-      return patch(email, body);
+      return patch(email, body, outcome);
     },
   };
 }

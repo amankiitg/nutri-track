@@ -105,7 +105,7 @@ describe("createResendContactsClient", () => {
       productEmails: true,
     });
 
-    expect(outcome).toBe("updated");
+    expect(outcome).toBe("named");
     expect(calls[1]?.method).toBe("PATCH");
     expect(calls[1]?.body).toEqual({ first_name: "Aman" });
   });
@@ -138,7 +138,7 @@ describe("createResendContactsClient", () => {
       productEmails: false,
     });
 
-    expect(outcome).toBe("updated");
+    expect(outcome).toBe("unsubscribed");
     expect(calls[1]?.method).toBe("PATCH");
     expect(calls[1]?.body).toEqual({ unsubscribed: true });
   });

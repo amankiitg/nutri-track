@@ -424,7 +424,10 @@ export function createApp(deps: AppDeps): Express {
     // Counts only. Who is on the list is the database's answer, not a log line.
     log("info", "mailing list synced", {
       adminId: user.id,
-      contacts: result.contacts,
+      checked: result.checked,
+      added: result.added,
+      already: result.alreadyUpToDate,
+      names: result.namesUpdated,
       failed: result.failed,
       excluded: result.excluded,
       unsubscribed: result.unsubscribed,

@@ -533,13 +533,23 @@ export type Database = {
       admin_approve_request: { Args: { p_request: string }; Returns: string };
       /** Added with 20261120160000_open_signups: today, the last 7 days, and the total. */
       admin_signup_counts: { Args: never; Returns: { today: number; total: number; week: number } };
-      /** Added with 20261121140000_email_sync_audience: the last run, for the admin card. */
+      /**
+       * Added with 20261121140000_email_sync_audience, and given its seven counters with
+       * 20261125120000_email_sync_counters: the last run, for the admin card. The old single
+       * `contacts` count is gone because a run that found everything in step and a run that read
+       * nothing both answered zero.
+       */
       admin_email_sync_summary: {
         Args: never;
         Returns: {
-          contacts: number;
+          already: number;
+          added: number;
+          checked: number;
           excluded: number;
+          failed: number;
+          first_error: string | null;
           last_sync_at: string | null;
+          names: number;
           unsubscribed: number;
         };
       };

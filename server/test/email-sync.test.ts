@@ -14,7 +14,7 @@ import {
   type EmailSyncRow,
   type EmailSyncStore,
 } from "../src/email-sync";
-import type { ContactInput, ResendContactsClient } from "../src/resend-contacts";
+import type { ContactInput, ContactOutcome, ResendContactsClient } from "../src/resend-contacts";
 
 function row(canonical: string, overrides: Partial<EmailSyncRow> = {}): EmailSyncRow {
   return {
@@ -26,7 +26,15 @@ function row(canonical: string, overrides: Partial<EmailSyncRow> = {}): EmailSyn
   };
 }
 
-function fakeContacts(throwsFor: readonly string[] = []): {
+/**
+ * A contacts client that answers with a chosen outcome, because the sync's counters are read off
+ * that answer: a fake that always said "unchanged" would make added and names unreachable and the
+ * test would pass over the bug it exists to catch.
+ */
+function fakeContacts(
+  throwsFor: readonly string[] = [],
+  outcomeFor: Partial<Record<string, ContactOutcome>> = {},
+): {
   contacts: ResendContactsClient;
   upserted: ContactInput[];
 } {
@@ -37,7 +45,7 @@ function fakeContacts(throwsFor: readonly string[] = []): {
       async upsert(contact) {
         if (throwsFor.includes(contact.email)) throw new Error("refused");
         upserted.push(contact);
-        return "updated";
+        return outcomeFor[contact.email] ?? "unchanged";
       },
     },
   };
@@ -129,11 +137,26 @@ describe("syncAudience", () => {
       pages: [[first, second], [third]],
       counts: { eligible: 3, excluded: 2, unsubscribed: 1 },
     });
-    const { contacts, upserted } = fakeContacts();
+    // One of each outcome the client can answer with, so the three buckets are all exercised:
+    // the first contact is new, the second was only turned off, the third gained a name.
+    const { contacts, upserted } = fakeContacts([], {
+      "first@one.test": "created",
+      "second@two.test": "unsubscribed",
+      "third@three.test": "named",
+    });
 
     const result = await syncAudience({ store, contacts, pageSize: 2, log: () => {} });
 
-    expect(result).toEqual({ contacts: 3, failed: 0, excluded: 2, unsubscribed: 1 });
+    expect(result).toEqual({
+      checked: 3,
+      added: 1,
+      alreadyUpToDate: 1,
+      namesUpdated: 1,
+      failed: 0,
+      firstError: null,
+      excluded: 2,
+      unsubscribed: 1,
+    });
     expect(upserted).toEqual([
       { email: "first@one.test", firstName: null, productEmails: true },
       { email: "second@two.test", firstName: null, productEmails: false },
@@ -143,7 +166,18 @@ describe("syncAudience", () => {
       { after: null, limit: 2 },
       { after: "second@two.test", limit: 2 },
     ]);
-    expect(recorded).toEqual([{ contacts: 3, excluded: 2, unsubscribed: 1 }]);
+    expect(recorded).toEqual([
+      {
+        checked: 3,
+        added: 1,
+        already: 1,
+        names: 1,
+        failed: 0,
+        excluded: 2,
+        unsubscribed: 1,
+        firstError: null,
+      },
+    ]);
   });
 
   it("does not upsert the same inbox twice across a page boundary", async () => {
@@ -158,7 +192,7 @@ describe("syncAudience", () => {
 
     const result = await syncAudience({ store, contacts, pageSize: 1, log: () => {} });
 
-    expect(result.contacts).toBe(1);
+    expect(result.checked).toBe(1);
     expect(upserted).toHaveLength(1);
   });
 
@@ -179,10 +213,56 @@ describe("syncAudience", () => {
       },
     });
 
-    expect(result.contacts).toBe(1);
+    expect(result.checked).toBe(2);
+    expect(result.added + result.alreadyUpToDate + result.namesUpdated).toBe(1);
     expect(result.failed).toBe(1);
+    // The card shows this sentence, so it has to be the refusal and not a shrug.
+    expect(result.firstError).toBe("refused");
     expect(upserted).toEqual([{ email: "good@two.test", firstName: null, productEmails: true }]);
     expect(warned).toEqual(["contact upsert failed"]);
+  });
+
+  it("says at error level when it walked rows and refused every one", async () => {
+    // The 25 Nov run's shape: zero accepted, and nothing in the row or the log to say whether it had
+    // read nothing or refused everything. This is the line that now answers that.
+    const { store } = fakeStore({
+      pages: [[row("bad@one.test"), row("worse@two.test")]],
+      counts: { eligible: 2, excluded: 5, unsubscribed: 0 },
+    });
+    const { contacts } = fakeContacts(["bad@one.test", "worse@two.test"]);
+    const errors: string[] = [];
+
+    const result = await syncAudience({
+      store,
+      contacts,
+      pageSize: 2,
+      log: (level, message) => {
+        if (level === "error") errors.push(message);
+      },
+    });
+
+    expect(result).toMatchObject({ checked: 2, failed: 2, added: 0, alreadyUpToDate: 0 });
+    expect(errors).toEqual(["mailing list sync refused every contact"]);
+  });
+
+  it("says nothing at error level for an idle run, because an idle run is not a fault", async () => {
+    const { store } = fakeStore({
+      pages: [[row("one@one.test")]],
+      counts: { eligible: 1, excluded: 0, unsubscribed: 0 },
+    });
+    const { contacts } = fakeContacts();
+    const errors: string[] = [];
+
+    await syncAudience({
+      store,
+      contacts,
+      pageSize: 1,
+      log: (level, message) => {
+        if (level === "error") errors.push(message);
+      },
+    });
+
+    expect(errors).toEqual([]);
   });
 
   it("finishes even when the state row cannot be written", async () => {
@@ -202,7 +282,7 @@ describe("syncAudience", () => {
       },
     });
 
-    expect(result.contacts).toBe(1);
+    expect(result.checked).toBe(1);
     expect(recorded).toEqual([]);
     expect(warned).toContain("mailing list state not recorded");
   });
