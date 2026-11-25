@@ -94,9 +94,14 @@ function serviceSays(status: number, body: unknown) {
 describe("the mailing list card", () => {
   const STATE = {
     last_sync_at: "2026-11-21T14:00:00.000Z",
-    contacts: 12,
+    checked: 12,
+    added: 2,
+    already: 9,
+    names: 1,
+    failed: 0,
     excluded: 5,
     unsubscribed: 1,
+    first_error: null,
   };
 
   it("shows the line once, in the header rather than twice on the card", async () => {
@@ -106,9 +111,30 @@ describe("the mailing list card", () => {
     const { container } = renderWithQuery(<MailingListCard />);
 
     // The count is what proves it: the header and the body used to both print the whole sentence.
-    await waitFor(() => expect(container.textContent).toContain("12 synced"));
-    const occurrences = (container.textContent ?? "").split("12 synced").length - 1;
+    await waitFor(() => expect(container.textContent).toContain("12 checked"));
+    const occurrences = (container.textContent ?? "").split("12 checked").length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it("prints all seven counters and the first refusal, once", async () => {
+    client.rpc.mockResolvedValue({
+      data: { ...STATE, failed: 1, first_error: "Resend contact create failed (422)" },
+      error: null,
+    });
+    client.auth.getSession.mockResolvedValue({ data: { session: { access_token: "token" } } });
+
+    const { container } = renderWithQuery(<MailingListCard />);
+
+    await waitFor(() =>
+      expect(container.textContent).toContain(
+        "12 checked: 2 added, 9 already up to date, 1 name filled in.",
+      ),
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("5 excluded, 1 unsubscribed.");
+    expect(text).toContain("1 contact refused, first: Resend contact create failed (422)");
+    // Once, for the same reason the sentence above is once.
+    expect(text.split("Resend contact create failed (422)").length - 1).toBe(1);
   });
 
   it("shows the service's own sentence when the sync refuses", async () => {

@@ -74,11 +74,18 @@ echo "ok - applied all ${count} migrations in order"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_no_password_claim.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_has_password_evidence.sql"
 "${PSQL[@]}" -f "${TESTS}/all_migrations/after_email_sync.sql"
+"${PSQL[@]}" -f "${TESTS}/all_migrations/after_email_sync_counters.sql"
 
 # Roll back newest first, checking each predecessor comes back. The no-food rollback goes
 # before the funnel one because it restores the eight-event reader that the funnel rollback
 # then drops; and the funnel goes before the trial tables, whose rollback drops a column its
 # trigger depends on.
+apply "${ROOT}/supabase/rollback/20261125120000_email_sync_counters.sql"
+counters=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='email_sync_state' and column_name in ('checked','added','already','names','failed','first_error')")
+[ "${counters}" = "0" ] || { echo "FAIL: the counter columns survived their rollback" >&2; exit 1; }
+back=$("${PSQL[@]}" -Atc "select count(*) from information_schema.columns where table_schema='public' and table_name='email_sync_state' and column_name = 'contacts'")
+[ "${back}" = "1" ] || { echo "FAIL: the rollback did not restore the contacts column" >&2; exit 1; }
+echo "ok - the counter migration rolls back to the contacts column"
 apply "${ROOT}/supabase/rollback/20261121140000_email_sync_audience.sql"
 sync_left=$("${PSQL[@]}" -Atc "select count(*) from pg_proc where proname in ('email_sync_page', 'email_sync_addresses', 'email_sync_candidates', 'email_sync_counts', 'email_sync_record', 'email_sync_check_secret', 'email_sync_server_secret', 'admin_email_sync_summary')")
 [ "${sync_left}" = "0" ] || { echo "FAIL: an email sync function survived its rollback" >&2; exit 1; }
