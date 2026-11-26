@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config";
+import { contactsApiKey, loadConfig } from "../src/config";
 
 const VALID: Record<string, string> = {
   NODE_ENV: "test",
@@ -162,6 +162,26 @@ describe("loadConfig", () => {
     expect(
       loadConfig({ ...VALID, TRIAL_SERVER_SECRET: "vault-agreed-secret" }).TRIAL_SERVER_SECRET,
     ).toBe("vault-agreed-secret");
+  });
+
+  it("reads the contacts key, which is separate from the sending key", () => {
+    expect(loadConfig(VALID).RESEND_CONTACTS_API_KEY).toBeUndefined();
+    expect(
+      loadConfig({ ...VALID, RESEND_CONTACTS_API_KEY: "re_contacts" }).RESEND_CONTACTS_API_KEY,
+    ).toBe("re_contacts");
+  });
+
+  it("uses the contacts key for the Contacts API and falls back to the sending key", () => {
+    const base = loadConfig(VALID);
+    expect(contactsApiKey(base)).toBeUndefined();
+    expect(contactsApiKey({ ...base, RESEND_API_KEY: "re_sending" })).toBe("re_sending");
+    expect(
+      contactsApiKey({
+        ...base,
+        RESEND_API_KEY: "re_sending",
+        RESEND_CONTACTS_API_KEY: "re_contacts",
+      }),
+    ).toBe("re_contacts");
   });
 
   it("never asks for the service role key", () => {

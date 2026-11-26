@@ -66,9 +66,10 @@ export interface AppDeps {
   /** Null without RESEND_API_KEY; the trial route says the trial is unavailable. */
   email: EmailClient | null;
   /**
-   * The mailing list's contacts client. Null without RESEND_API_KEY and
-   * RESEND_AUDIENCE_ID; the three contact routes then say it is not set up, and the
-   * invite path skips its upsert.
+   * The mailing list's contacts client. Null without a contacts key
+   * (RESEND_CONTACTS_API_KEY, or RESEND_API_KEY as its fallback) and
+   * RESEND_AUDIENCE_ID; /contacts/sync then answers that the mailing list is not set
+   * up, and /contacts/unsubscribe answers ok without writing anything.
    */
   contacts: ResendContactsClient | null;
   /**
@@ -387,8 +388,8 @@ export function createApp(deps: AppDeps): Express {
    * Sync the whole list, from the admin page. Admin only, asked of the database with
    * the caller's own token, and rate limited so a stuck button is one run a minute.
    *
-   * The addresses never come back: the response is four counts, which is what the
-   * card shows.
+   * The addresses never come back: the response is seven numbers and the first
+   * refusal's sentence, which is what the card shows.
    */
   app.post("/contacts/sync", async (req: Request, res: Response) => {
     const token = bearerToken(req.get("authorization"));
