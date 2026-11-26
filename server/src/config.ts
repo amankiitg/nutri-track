@@ -150,9 +150,18 @@ export const envSchema = z.object({
   TURNSTILE_SECRET: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   /**
+   * The key the Contacts API uses, which is not the sending key.
+   *
+   * A sending-only key cannot manage contacts: Resend answers 401 to every contact write, which
+   * is what the mailing list sync was getting. This one needs full access. Optional, and the
+   * contacts client falls back to RESEND_API_KEY when it is unset, for a deployment whose one key
+   * already has full access. Nothing that sends email reads this.
+   */
+  RESEND_CONTACTS_API_KEY: z.string().min(1).optional(),
+  /**
    * The mailing list's audience id, named "NutriTrack list" in Resend. Not a secret;
-   * it is in the URL the dashboard shows. Absent means the invite and sign-up paths
-   * skip their contact upsert and /contacts/sync answers that it is not set up.
+   * it is in the URL the dashboard shows. Absent means /contacts/sync answers that the
+   * mailing list is not set up, and /contacts/unsubscribe writes nothing.
    */
   RESEND_AUDIENCE_ID: z.string().min(1).optional(),
   /**
@@ -207,6 +216,7 @@ const EXPECTED = [
   "TURNSTILE_SECRET, TRIAL_TOKEN_SECRET, TRIAL_SERVER_SECRET",
   "  (all optional; without any of them /try says the trial is unavailable)",
   "RESEND_API_KEY (optional; required only when TRIAL_REQUIRE_EMAIL=true)",
+  "RESEND_CONTACTS_API_KEY (optional; full access for the Contacts API, falls back to RESEND_API_KEY)",
   "RESEND_AUDIENCE_ID, EMAIL_SYNC_SECRET (both optional; without them the mailing list is skipped)",
   "TRIAL_REQUIRE_EMAIL (optional; true or false, defaults to false)",
   "GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REFRESH_TOKEN,",
@@ -224,6 +234,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
   return parsed.data;
+}
+
+/**
+ * Which key the contacts client uses.
+ *
+ * The Contacts API refuses a sending-only key with 401, so the mailing list needs its own
+ * full-access key. The fallback to RESEND_API_KEY keeps a deployment where the one key has full
+ * access working unchanged, and a deployment with neither still gets a null client and the
+ * "not set up" answer rather than a failure halfway through a sync.
+ */
+export function contactsApiKey(config: Config): string | undefined {
+  return config.RESEND_CONTACTS_API_KEY ?? config.RESEND_API_KEY;
 }
 
 /**

@@ -369,12 +369,14 @@ lives in the dashboard and never in the file).
 | `GMAIL_OAUTH_CLIENT_SECRET` | as above                                   | **Yes**                        |
 | `GMAIL_OAUTH_REFRESH_TOKEN` | from `npm run gmail:consent` in `server/`  | **Yes**                        |
 | `INVITE_SENDER_ADDRESS`     | the mailbox the drafts are created in      | **Yes**: not a secret          |
+| `RESEND_CONTACTS_API_KEY`   | full-access key for the Contacts API       | **Yes**: not filled in locally |
 | `RESEND_AUDIENCE_ID`        | the audience id for "NutriTrack list"      | **Yes**: not filled in locally |
 | `EMAIL_SYNC_SECRET`         | matches Vault's `email_sync_server_secret` | **Yes**: not filled in locally |
 
-`RESEND_AUDIENCE_ID` and `EMAIL_SYNC_SECRET` are optional to the service and not to the
-feature: without them it still starts, the invite and profile-save upserts are skipped, and
-`/contacts/sync` answers that the mailing list is not set up.
+`RESEND_CONTACTS_API_KEY`, `RESEND_AUDIENCE_ID` and `EMAIL_SYNC_SECRET` are optional to the
+service and not to the feature: without the audience id or the sync secret it still starts, the
+invite and profile-save upserts are skipped, and `/contacts/sync` answers that the mailing list is
+not set up. The contacts key falls back to `RESEND_API_KEY` when it is unset.
 
 The four Gmail ones are **optional to the service and not to the feature**: with any of them
 missing it still starts and serves `/parse-meal`, and `/invite` answers that invites are not set up.
@@ -439,13 +441,16 @@ run looks right. See [Going live with the sweeper](#going-live-with-the-sweeper)
 
 **The mailing list, on the web service**
 
-Two more values sit on `nutritrack-parse-meal`, and both are needed before **Sync now** works.
-They are declared in `render.yaml`, so the only thing missing is the value:
+Three more values sit on `nutritrack-parse-meal`, and all are needed before **Sync now** works.
+They are declared in `render.yaml`, so the only thing missing is the value. The contacts key is
+separate from the sending key on purpose: a sending-only key gets 401 from the Contacts API, and
+`RESEND_API_KEY` is used only when this one is unset.
 
-| Key                  | Value                                                               | Differs from local `.env`?     |
-| -------------------- | ------------------------------------------------------------------- | ------------------------------ |
-| `RESEND_AUDIENCE_ID` | the audience id in Resend's URL for "NutriTrack list"               | **Yes**: not filled in locally |
-| `EMAIL_SYNC_SECRET`  | any long random string; its matching copy is the Vault secret below | **Yes**: not filled in locally |
+| Key                       | Value                                                               | Differs from local `.env`?     |
+| ------------------------- | ------------------------------------------------------------------- | ------------------------------ |
+| `RESEND_CONTACTS_API_KEY` | full-access Resend key; a sending-only key gets 401 from Contacts   | **Yes**: not filled in locally |
+| `RESEND_AUDIENCE_ID`      | the audience id in Resend's URL for "NutriTrack list"               | **Yes**: not filled in locally |
+| `EMAIL_SYNC_SECRET`       | any long random string; its matching copy is the Vault secret below | **Yes**: not filled in locally |
 
 The web service must never be given `SUPABASE_SERVICE_ROLE_KEY`. It reads the list through
 `email_sync_page()`, a security definer function gated by `EMAIL_SYNC_SECRET`. Create the matching

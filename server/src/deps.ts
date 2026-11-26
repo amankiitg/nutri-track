@@ -5,7 +5,7 @@
 import type { AppDeps } from "./app";
 import { createTokenVerifier } from "./auth";
 import { createCallerStore } from "./caller-store";
-import type { Config } from "./config";
+import { contactsApiKey, type Config } from "./config";
 import { createEmailSyncStore } from "./email-sync";
 import { createGmailDraftClient } from "./gmail";
 import { createGeminiClient } from "./gemini";
@@ -44,13 +44,16 @@ export function createProductionDeps(config: Config): AppDeps {
   const email =
     config.RESEND_API_KEY !== undefined ? createResendClient(config.RESEND_API_KEY) : null;
 
-  // The mailing list needs a key and an audience id. With either missing it is null,
-  // which makes the three contact routes say "not set up" rather than fail halfway.
-  // Building it does not read the key; only a request that uses it does.
+  // The mailing list needs a contacts key and an audience id. With either missing it is null,
+  // which makes the three contact routes say "not set up" rather than fail halfway. The contacts
+  // key is separate from the sending key, because a sending-only key gets 401 from the Contacts
+  // API; RESEND_API_KEY is the fallback for a key that already has full access. Building the
+  // client does not read the key; only a request that uses it does.
+  const contactsKey = contactsApiKey(config);
   const contacts =
-    config.RESEND_API_KEY !== undefined && config.RESEND_AUDIENCE_ID !== undefined
+    contactsKey !== undefined && config.RESEND_AUDIENCE_ID !== undefined
       ? createResendContactsClient({
-          apiKey: config.RESEND_API_KEY,
+          apiKey: contactsKey,
           audienceId: config.RESEND_AUDIENCE_ID,
         })
       : null;

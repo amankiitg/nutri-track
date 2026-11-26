@@ -89,6 +89,12 @@ services:
         sync: false
 
       # --- Mailing list --------------------------------------------------------
+      # The Contacts API key, which is not the sending key above: Resend answers
+      # 401 to a contact write made with a sending-only key. This one needs full
+      # access, and is set in the dashboard. `sync: false` is deliberate: a
+      # Blueprint sync must not overwrite or clear the value already there.
+      - key: RESEND_CONTACTS_API_KEY
+        sync: false
       # The audience named "NutriTrack list" in Resend. Not a secret.
       - key: RESEND_AUDIENCE_ID
         sync: false
